@@ -65,6 +65,22 @@ export default function CandidatesPage() {
     }
   };
 
+  const handleReset = async () => {
+    if (!confirm("Yakin ingin mereset semua data? Tindakan ini tidak bisa diurungkan.")) return;
+    setLoading(true);
+    setError(null);
+    try {
+      await api.post("/upload/reset");
+      setCandidates([]);
+      setProcessId("");
+      setError(null);
+    } catch (err: any) {
+      setError(err.message || "Gagal mereset data.");
+    } finally {
+      setLoading(false);
+    }
+  };
+
   const fetchCandidates = async () => {
     if (!processId) return;
     setLoading(true);
@@ -344,6 +360,15 @@ export default function CandidatesPage() {
             className="px-3 py-1.5 border border-neo-border bg-neo-white hover:bg-[#e5e4e7] text-xs font-semibold rounded-sm shadow-[0_2px_0_#0a0a0a]"
           >
             🔄 Refresh
+          </button>
+
+          <button
+            onClick={handleReset}
+            disabled={loading}
+            className="px-3 py-1.5 border border-[#dc2626] bg-[#fee2e2] hover:bg-[#fef2f2] text-[#dc2626] text-xs font-semibold rounded-sm shadow-[0_2px_0_#0a0a0a] disabled:opacity-50"
+            title="Hapus semua data dan mulai dari awal"
+          >
+            🗑️ Reset Data
           </button>
 
           {/* Tombol Konfirmasi Selesai -> Langsung ke Hasil */}
@@ -661,7 +686,7 @@ export default function CandidatesPage() {
                     </td>
                     <td className="p-3 border-r border-neo-border">{c.candidate_nama || "-"}</td>
                     <td className="p-3 border-r border-neo-border">
-                      <span className={`px-1.5 py-0.5 rounded text-[10px] font-bold ${
+                      <span className={`px-1.5 py-1 rounded neo-highlight text-[10px] font-bold ${
                         (c.jenis_layanan || "PASCABAYAR") === "PRABAYAR"
                           ? "bg-blue-100 text-blue-800"
                           : "bg-gray-100 text-gray-800"
@@ -679,15 +704,15 @@ export default function CandidatesPage() {
                     </td>
                     <td className="p-3 border-r border-neo-border">
                       {isOutOfRadius ? (
-                        <span className="px-2 py-0.5 border border-[#dc2626] bg-[#fee2e2] text-[#dc2626] rounded text-[10px] font-bold">
+                        <span className="px-2 py-1 neo-highlight border border-[#dc2626] bg-[#fee2e2] text-[#dc2626] rounded text-[10px] font-bold">
                           🔴 LUAR JANGKAUAN
                         </span>
                       ) : hasRealIdpel ? (
-                        <span className="px-2 py-0.5 border border-[#16a34a] bg-[#dcfce7] text-[#16a34a] rounded text-[10px] font-bold">
+                        <span className="px-2 py-1 neo-highlight border border-[#16a34a] bg-[#dcfce7] text-[#16a34a] rounded text-[10px] font-bold">
                           ✓ VALID (ASLI)
                         </span>
                       ) : (
-                        <span className="px-2 py-0.5 border border-[#ea580c] bg-[#ffedd5] text-[#ea580c] rounded text-[10px] font-bold">
+                        <span className="px-2 py-1 neo-highlight border border-[#ea580c] bg-[#ffedd5] text-[#ea580c] rounded text-[10px] font-bold">
                           ⚠️ KONFIRMASI ULANG
                         </span>
                       )}
@@ -704,17 +729,17 @@ export default function CandidatesPage() {
                     </td>
                     <td className="p-3 border-r border-neo-border">
                       {c.is_accepted === 1 && (
-                        <span className="px-2 py-0.5 border border-[#16a34a] bg-[#dcfce7] text-[#16a34a] rounded text-[10px] font-bold">
+                        <span className="px-2 py-1 neo-highlight border border-[#16a34a] bg-[#dcfce7] text-[#16a34a] rounded text-[10px] font-bold">
                           VALID
                         </span>
                       )}
                       {c.is_accepted === -1 && (
-                        <span className="px-2 py-0.5 border border-[#dc2626] bg-[#fee2e2] text-[#dc2626] rounded text-[10px] font-bold">
+                        <span className="px-2 py-1 neo-highlight border border-[#dc2626] bg-[#fee2e2] text-[#dc2626] rounded text-[10px] font-bold">
                           DITOLAK
                         </span>
                       )}
                       {c.is_accepted === 0 && (
-                        <span className="px-2 py-0.5 border border-[#d97706] bg-[#fef3c7] text-[#d97706] rounded text-[10px] font-bold">
+                        <span className="px-2 py-1 neo-highlight border border-[#d97706] bg-[#fef3c7] text-[#d97706] rounded text-[10px] font-bold">
                           PENDING
                         </span>
                       )}

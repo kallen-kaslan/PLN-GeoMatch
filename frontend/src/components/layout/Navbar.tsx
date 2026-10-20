@@ -1,6 +1,6 @@
-import { Link, useLocation, useNavigate } from "react-router-dom";
+import { useLocation, useNavigate } from "react-router-dom";
 import { useAppStore } from "@/store/app";
-import { ChevronDown, User, LogOut } from "lucide-react";
+import { ChevronDown, User, LogOut, MapPin, Radio } from "lucide-react";
 import { useState, useRef, useEffect } from "react";
 
 export default function Navbar() {
@@ -21,39 +21,30 @@ export default function Navbar() {
     return () => document.removeEventListener("mousedown", handleClickOutside);
   }, []);
 
-  const menu = [
-    { to: "/", label: "Dashboard" },
-    { to: "/upload", label: "Upload & Master" },
-    { to: "/process", label: "Input & Matching" },
-    { to: "/candidates", label: "Review & Peta Spasial" },
-    { to: "/result", label: "Hasil" },
-    { to: "/history", label: "Riwayat" },
-    ...(user?.role === "admin" ? [{ to: "/admin", label: "Manajemen User" }] : []),
-  ];
-
   return (
     <header className="border-b-2 border-neo-border bg-neo-white px-6 py-3 flex items-center justify-between shadow-[0_4px_0_#0a0a0a]">
       <div className="flex items-center gap-3">
         <span className="font-bold text-lg tracking-tighter">PLN GeoMatch</span>
-        <span className="text-xs text-neo-border border border-neo-border px-2 py-0.5 rounded">
+        <span className="text-xs text-neo-border border border-neo-border px-2 py-1 neo-highlight rounded">
           Verifikasi Koordinat Pelanggan
         </span>
       </div>
-      <nav className="flex gap-2">
-        {menu.map((m) => (
-          <Link
-            key={m.to}
-            to={m.to}
-            className={`px-4 py-2 border border-neo-border rounded-sm text-sm font-medium transition ${
-              location.pathname === m.to
-                ? "bg-neo-black text-white shadow-[0_2px_0_#0a0a0a]"
-                : "text-neo-black hover:bg-[#e5e4e7]"
-            }`}
-          >
-            {m.label}
-          </Link>
-        ))}
-      </nav>
+
+      {/* Center Animation */}
+      <div className="flex items-center gap-2">
+        <div className="relative w-8 h-8 animate-pulse">
+          <div className="absolute inset-0 bg-[#ff6b35] rounded-full animate-ping opacity-20"></div>
+          <div className="absolute inset-0 flex items-center justify-center">
+            <div className="w-6 h-6 bg-[#ff6b35] rounded-full border-2 border-neo-border shadow-[0_2px_0_#0a0a0a]"></div>
+          </div>
+        </div>
+        <div className="flex flex-col">
+          <div className="h-1 w-12 bg-[#0a0a0a] rounded-full animate-[width_2s_ease-in-out_infinite]"></div>
+          <div className="h-1 w-8 bg-[#333333] rounded-full mt-1 animate-[width_2s_ease-in-out_infinite_0.5s]"></div>
+        </div>
+        <MapPin className="w-6 h-6 text-[#2563eb] animate-bounce" aria-hidden="true" />
+        <Radio className="w-4 h-4 text-[#16a34a] animate-pulse" aria-hidden="true" />
+      </div>
       <div className="flex items-center gap-3 relative" ref={dropdownRef}>
         <button
           onClick={() => setDropdownOpen(!dropdownOpen)}

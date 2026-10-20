@@ -43,7 +43,10 @@ html, body, #root {
   height: 100%;
 }
 
+/* Badge yang membungkus teks menjadi satu kesatuan, bukan terpecah per baris */
 .neo-highlight {
-  box-decoration-break: clone;
-  -webkit-box-decoration-break: clone;
+  display: inline-block;
+  white-space: normal;
+  word-wrap: break-word;
+  overflow-wrap: break-word;
 }
