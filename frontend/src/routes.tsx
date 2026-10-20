@@ -13,12 +13,12 @@ import HistoryPage from "@/pages/History";
 import AdminPage from "@/pages/Admin";
 
 export const routeTree: RouteObject[] = [
+  { path: "/login", Component: LoginPage },
   {
     path: "/",
     Component: Shell,
     children: [
       { index: true, Component: DashboardPage },
-      { path: "login", Component: LoginPage },
       { path: "upload", Component: UploadPage },
       { path: "process", Component: ProcessPage },
       { path: "candidates", Component: CandidatesPage },
