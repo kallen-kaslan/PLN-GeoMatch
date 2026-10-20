@@ -14,13 +14,13 @@
   "dependencies": {
     "@tanstack/react-query": "^5.104.4",
     "axios": "^1.20.0",
+    "lucide-react": "^1.59.0",
     "papaparse": "^5.7.0",
     "react": "^19.3.1",
     "react-dom": "^19.3.1",
     "react-router-dom": "^7.18.4",
     "xlsx": "^0.18.5",
-    "zustand": "^5.0.15",
-    "lucide-react": "^0.475.0"
+    "zustand": "^5.0.15"
   },
   "devDependencies": {
     "@types/node": "^24.19.2",
