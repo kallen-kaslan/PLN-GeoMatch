@@ -1,0 +1,44 @@
+@import "tailwindcss";
+
+@theme {
+  --color-neo-black: #0a0a0a;
+  --color-neo-white: #fafafa;
+  --color-neo-gray: #1a1a1a;
+  --color-neo-border: #333333;
+  --color-neo-accent: #ff6b35;
+  --font-sans: "IBM Plex Sans", system-ui, "Segoe UI", Roboto, sans-serif;
+  --font-mono: "IBM Plex Mono", ui-monospace, Consolas, monospace;
+}
+
+:root {
+  /* Neo-brutalism design tokens (PRD §12.1) */
+  --geo-bg: #fafafa;
+  --geo-text: #0a0a0a;
+  --geo-border: #333333;
+  --geo-shadow: 0 4px 0 #0a0a0a;
+  --geo-shadow-pressed: 0 2px 0 #0a0a0a;
+  --geo-accent: #ff6b35;
+  --geo-accent-hover: #e55a2b;
+  --geo-status-valid: #16a34a;
+  --geo-status-review: #d97706;
+  --geo-status-invalid: #dc2626;
+  --geo-status-info: #2563eb;
+  --geo-radius: 4px;
+  --geo-border-width: 2px;
+  --geo-font-sans: var(--font-sans);
+  --geo-font-mono: var(--font-mono);
+}
+
+body {
+  margin: 0;
+  background: var(--geo-bg);
+  color: var(--geo-text);
+  font-family: var(--geo-font-sans);
+  font-size: 16px;
+  line-height: 1.5;
+  color-scheme: light;
+}
+
+html, body, #root {
+  height: 100%;
+}

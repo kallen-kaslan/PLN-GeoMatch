@@ -1,0 +1,13 @@
+{
+  "devDependencies": {
+    "@tailwindcss/postcss": "^4.3.3",
+    "postcss": "^8.5.31",
+    "tailwindcss": "^4.3.3"
+  },
+  "dependencies": {
+    "lucide-react": "^1.59.0"
+  },
+  "scripts": {
+    "dev": "npx concurrently \"cd backend && uvicorn app.main:app --reload --port 8000\" \"cd frontend && npm run dev\""
+  }
+}
