@@ -80,6 +80,8 @@ export default function UploadPage() {
   const navigate = useNavigate();
   const [datasetType, setDatasetType] = useState<DatasetType>("pascabayar");
   const [file, setFile] = useState<File | null>(null);
+  const [, setUploadSuccess] = useState(false);
+  const [loading, setLoading] = useState(false);
   const [headers, setHeaders] = useState<string[]>([]);
   const [previewRows, setPreviewRows] = useState<Record<string, any>[]>([]);
   const [mapping, setMapping] = useState<Record<string, string>>({});
@@ -249,10 +251,12 @@ export default function UploadPage() {
   const handleSubmit = async () => {
     if (!file) return;
 
+    setLoading(true);
     setPipelineActive(true);
     setPipelineTitle(`Mengunggah & Memproses [${DATASET_CONFIG[datasetType].title}]...`);
     setPipelineStepIndex(0);
     setErrorMessage(null);
+    setUploadSuccess(false);
 
     try {
       // Langkah 1: Upload file mentah
@@ -498,7 +502,7 @@ export default function UploadPage() {
                 Sistem otomatis mendeteksi kolom yang relevan dari file Anda.
               </p>
             </div>
-            <span className="px-2 py-0.5 border border-[#16a34a] bg-[#dcfce7] text-[#16a34a] text-[10px] font-bold rounded-xs">
+            <span className="px-2 py-1 neo-highlight border border-[#16a34a] bg-[#dcfce7] text-[#16a34a] text-[10px] font-bold rounded-xs">
               ✓ Auto-Filtered
             </span>
           </div>
