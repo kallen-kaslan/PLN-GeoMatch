@@ -52,6 +52,19 @@ export default function CandidatesPage() {
 
   const [seedingQuick, setSeedingQuick] = useState(false);
 
+  const handleFinishReview = async () => {
+    if (!processId) return;
+    setLoading(true);
+    try {
+      await api.post(`/process/${processId}/finalize-review`);
+      navigate(`/result?process_id=${processId}`);
+    } catch (err: any) {
+      setError(err.message || "Gagal menyelesaikan review. Coba lagi.");
+    } finally {
+      setLoading(false);
+    }
+  };
+
   const fetchCandidates = async () => {
     if (!processId) return;
     setLoading(true);
@@ -335,8 +348,9 @@ export default function CandidatesPage() {
 
           {/* Tombol Konfirmasi Selesai -> Langsung ke Hasil */}
           <button
-            onClick={() => navigate(`/result?process_id=${processId}`)}
-            className="px-4 py-2 border border-neo-border bg-neo-accent hover:bg-[#e85a26] text-white text-xs font-bold rounded-sm shadow-[0_2px_0_#0a0a0a] flex items-center gap-1.5"
+            onClick={handleFinishReview}
+            disabled={loading}
+            className="px-4 py-2 border border-neo-border bg-neo-accent hover:bg-[#e85a26] text-white text-xs font-bold rounded-sm shadow-[0_2px_0_#0a0a0a] flex items-center gap-1.5 disabled:opacity-50"
             title="Selesaikan verifikasi dan lihat rekapitulasi serta download CSV"
           >
             <span>✅ Selesai & Buka Hasil Rekonsiliasi</span>
@@ -622,7 +636,7 @@ export default function CandidatesPage() {
                     key={c.id}
                     onClick={() => handleSelectRow(c)}
                     className={`border-b border-neo-border cursor-pointer transition ${
-                      isSelected ? "bg-[#fef9c3] font-semibold" : "hover:bg-[#f5f5f5]"
+                      isSelected ? "bg-[#fef9c3] font-semibold neo-highlight" : "hover:bg-[#f5f5f5]"
                     }`}
                   >
                     <td className="p-3 border-r border-neo-border font-bold text-center">
@@ -745,8 +759,9 @@ export default function CandidatesPage() {
             <p className="text-[11px] text-neo-border">Lanjutkan untuk melihat statistik final dan mengunduh laporan CSV.</p>
           </div>
           <button
-            onClick={() => navigate(`/result?process_id=${processId}`)}
-            className="px-5 py-2.5 border border-neo-border bg-neo-black text-white text-xs font-bold rounded-sm shadow-[0_2px_0_#0a0a0a] hover:bg-[#222]"
+            onClick={handleFinishReview}
+            disabled={loading}
+            className="px-5 py-2.5 border border-neo-border bg-neo-black text-white text-xs font-bold rounded-sm shadow-[0_2px_0_#0a0a0a] hover:bg-[#222] disabled:opacity-50"
           >
             ✅ Selesaikan Review & Buka Hasil Rekonsiliasi →
           </button>

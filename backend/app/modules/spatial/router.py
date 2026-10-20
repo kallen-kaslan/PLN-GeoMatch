@@ -7,7 +7,7 @@ from app.database import get_db
 from app.modules.spatial.master_builder import build_combined_master
 from app.modules.spatial.preparation import process_master_sisa_exclusion
 from app.modules.spatial.engine import run_spatial_matching_job
-from app.models.matching import MatchCandidate, ReconciliationProcess
+from app.models.matching import MatchCandidate, ReconciliationProcess, ReviewStatus
 
 router = APIRouter(prefix="/process", tags=["Process & Matching"])
 
@@ -141,3 +141,14 @@ async def submit_candidate_decision(
     cand.is_accepted = req.is_accepted
     db.commit()
     return {"message": "Keputusan berhasil disimpan", "candidate_id": candidate_id, "is_accepted": cand.is_accepted}
+
+@router.post("/{process_id}/finalize-review")
+async def finalize_review(process_id: int, db: Session = Depends(get_db)):
+    process = db.query(ReconciliationProcess).filter(ReconciliationProcess.id == process_id).first()
+    if not process:
+        raise HTTPException(status_code=404, detail="Proses tidak ditemukan")
+    if process.review_status == ReviewStatus.FINALIZED:
+        return {"message": "Review sudah final", "review_status": process.review_status, "already_finalized": True}
+    process.review_status = ReviewStatus.FINALIZED
+    db.commit()
+    return {"message": "Review finalisasi berhasil", "review_status": process.review_status, "already_finalized": False}

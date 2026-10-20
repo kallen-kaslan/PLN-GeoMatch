@@ -42,3 +42,8 @@ body {
 html, body, #root {
   height: 100%;
 }
+
+.neo-highlight {
+  box-decoration-break: clone;
+  -webkit-box-decoration-break: clone;
+}
