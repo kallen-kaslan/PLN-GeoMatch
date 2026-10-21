@@ -259,21 +259,36 @@ export default function UploadPage() {
 
     setBatchProcessing(true);
     setBatchProgress("Membentuk master dan memproses dataset terkunci...");
+    setPipelineActive(true);
+    setPipelineTitle("Membentuk master dan memproses dataset...");
+    setPipelineStepIndex(0);
     setErrorMessage(null);
     try {
-      const response = await api.post("/upload/batch-process", {
+      const processing = api.post("/upload/batch-process", {
         pascabayar_batch_id: locked.pascabayar.batchId ?? null,
         prabayar_batch_id: locked.prabayar.batchId ?? null,
         pdpj_batch_id: locked.pdpj.batchId ?? null,
         target_batch_id: locked.koordinat_kosong.batchId,
       });
+      let processingFinished = false;
+      processing.then(
+        () => { processingFinished = true; },
+        () => { processingFinished = true; },
+      );
+      for (let step = 0; step < pipelineSteps.length - 1 && !processingFinished; step++) {
+        setPipelineStepIndex(step);
+        await new Promise((resolve) => setTimeout(resolve, 900));
+      }
+      const response = await processing;
       const id = Number(response.data.process_id);
       if (!Number.isFinite(id)) throw new Error("Server tidak mengembalikan process_id yang valid.");
+      setPipelineStepIndex(pipelineSteps.length - 1);
       setBatchProgress("Pemrosesan selesai. Membuka halaman review...");
       setTimeout(() => navigate(`/candidates?process_id=${id}`), 500);
     } catch (error: any) {
       setErrorMessage(error.response?.data?.detail || error.message || "Gagal memproses dataset.");
       setBatchProcessing(false);
+      setPipelineActive(false);
     }
   };
 
@@ -617,7 +632,7 @@ export default function UploadPage() {
             onClick={handleLockDataset}
             className="w-full sm:w-auto px-6 py-2.5 border border-neo-border bg-[#16a34a] text-white text-xs font-bold rounded-sm shadow-[0_2px_0_#0a0a0a] disabled:opacity-50 hover:bg-[#15803d] flex items-center justify-center gap-2"
           >
-            <span>🔒 Keep & Lock Dataset</span>
+            <span>🔒 {loading ? "Menyimpan dataset..." : "Keep & Lock Dataset"}</span>
           </button>
         </div>
       )}
@@ -638,7 +653,7 @@ export default function UploadPage() {
               onClick={handleBatchProcess}
               className="px-6 py-2.5 border border-neo-border bg-neo-black text-white text-xs font-bold rounded-sm shadow-[0_2px_0_#0a0a0a] disabled:opacity-50 hover:bg-[#1a1a1a]"
             >
-              {batchProcessing ? batchProgress : "🚀 Proses Semua Dataset"}
+              {batchProcessing ? batchProgress : "🔐 Konfirmasi Dataset & Lanjut ke Review"}
             </button>
           </div>
         </div>

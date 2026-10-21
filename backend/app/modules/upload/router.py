@@ -452,23 +452,8 @@ async def confirm_mapping(req: MappingRequest, db: Session = Depends(get_db)):
 
     batch.column_mapping = req.column_mapping
     batch.status = BatchStatus.COMPLETED
+    # valid_rows dihitung dari jumlah baris yang sudah disimpan saat upload
+    batch.valid_rows = db.query(SourceRecord).filter(SourceRecord.batch_id == batch.id).count()
     db.commit()
 
-    # Terapkan column_mapping ke SourceRecord: kolom file -> key standar sistem
-    records = db.query(SourceRecord).filter(SourceRecord.batch_id == batch.id).all()
-    file_col_to_std = {v: k for k, v in (req.column_mapping or {}).items() if v}
-
-    for r in records:
-        new_data = {}
-        for k, v in (r.data or {}).items():
-            std_key = file_col_to_std.get(k, k)
-            new_data[std_key] = v
-        r.data = new_data
-
-        idpel = new_data.get("idpel") or new_data.get("idpelanggan") or new_data.get("nopelanggan")
-        r.idpel = str(idpel).strip() if idpel not in (None, "") else None
-
-    batch.valid_rows = len(records)
-    db.commit()
-
-    return {"message": "Mapping dikonfirmasi, data berhasil disimpan", "batch_id": batch.id, "rows": len(records)}
+    return {"message": "Mapping dikonfirmasi, data berhasil disimpan", "batch_id": batch.id, "rows": batch.valid_rows}
