@@ -212,31 +212,38 @@ export default function UploadPage() {
     setSuccessInfo(`Data contoh [${DATASET_CONFIG[currentDataset].title}] dimuat.`);
   };
 
-  const handleLockDataset = async () => {
-    const state = datasetStates[currentDataset];
-    if (!state.file || !state.headers.length) return;
-    const missingFields = DATASET_CONFIG[currentDataset].fields.filter((field) => !state.mapping[field.key]);
-    if (missingFields.length) {
-      setErrorMessage(`Pemetaan kolom belum lengkap: ${missingFields.map((field) => field.label).join(", ")}`);
-      return;
+  const uploadDataset = async (type: DatasetType) => {
+    const state = datasetStates[type];
+    if (!state.file || !state.headers.length) {
+      throw new Error(`Berkas ${DATASET_CONFIG[type].title} belum dipilih.`);
     }
+    const missingFields = DATASET_CONFIG[type].fields.filter((field) => !state.mapping[field.key]);
+    if (missingFields.length) {
+      throw new Error(
+        `Pemetaan kolom ${DATASET_CONFIG[type].title} belum lengkap: ${missingFields.map((field) => field.label).join(", ")}`,
+      );
+    }
+    const formData = new FormData();
+    formData.append("file", state.file);
+    formData.append("dataset_type", type);
+    const uploadRes = await api.post("/upload/", formData, {
+      headers: { "Content-Type": "multipart/form-data" },
+    });
+    const batchId = Number(uploadRes.data.id);
+    if (!Number.isFinite(batchId)) throw new Error("ID batch upload tidak valid.");
+    await api.post("/upload/confirm-mapping", {
+      batch_id: batchId,
+      column_mapping: state.mapping,
+    });
+    updateDataset(type, { status: "locked", batchId });
+    return batchId;
+  };
 
+  const handleLockDataset = async () => {
     setLoading(true);
     setErrorMessage(null);
     try {
-      const formData = new FormData();
-      formData.append("file", state.file);
-      formData.append("dataset_type", currentDataset);
-      const uploadRes = await api.post("/upload/", formData, {
-        headers: { "Content-Type": "multipart/form-data" },
-      });
-      const batchId = Number(uploadRes.data.id);
-      if (!Number.isFinite(batchId)) throw new Error("ID batch upload tidak valid.");
-      await api.post("/upload/confirm-mapping", {
-        batch_id: batchId,
-        column_mapping: state.mapping,
-      });
-      updateDataset(currentDataset, { status: "locked", batchId });
+      await uploadDataset(currentDataset);
       setSuccessInfo(`${DATASET_CONFIG[currentDataset].title} berhasil di-keep dan dikunci.`);
     } catch (error: any) {
       setErrorMessage(error.response?.data?.detail || error.message || "Gagal upload dan mengunci dataset.");
@@ -247,13 +254,11 @@ export default function UploadPage() {
 
   const handleBatchProcess = async () => {
     const locked = datasetStates;
-    const hasSources = locked.pascabayar.status === "locked" || locked.prabayar.status === "locked";
-    if (!hasSources) {
-      setErrorMessage("Kunci minimal satu dataset sumber: Pascabayar atau Prabayar.");
-      return;
-    }
-    if (locked.koordinat_kosong.status !== "locked") {
-      setErrorMessage("Kunci dataset Koordinat Kosong sebelum memulai matching.");
+    const hasAny = Object.values(locked).some(
+      (state) => state.status === "locked" || state.status === "reviewing",
+    );
+    if (!hasAny) {
+      setErrorMessage("Upload minimal satu dataset terlebih dahulu.");
       return;
     }
 
@@ -264,11 +269,20 @@ export default function UploadPage() {
     setPipelineStepIndex(0);
     setErrorMessage(null);
     try {
+      // Dataset yang masih "reviewing" ikut diunggah sekarang (konfirmasi tanpa Keep & Lock).
+      const batchIds = { ...locked };
+      for (const type of Object.keys(locked) as DatasetType[]) {
+        if (locked[type].status === "reviewing") {
+          setBatchProgress(`Menyimpan ${DATASET_CONFIG[type].title}...`);
+          batchIds[type] = { ...locked[type], batchId: await uploadDataset(type) };
+        }
+      }
+
       const processing = api.post("/upload/batch-process", {
-        pascabayar_batch_id: locked.pascabayar.batchId ?? null,
-        prabayar_batch_id: locked.prabayar.batchId ?? null,
-        pdpj_batch_id: locked.pdpj.batchId ?? null,
-        target_batch_id: locked.koordinat_kosong.batchId,
+        pascabayar_batch_id: batchIds.pascabayar.batchId ?? null,
+        prabayar_batch_id: batchIds.prabayar.batchId ?? null,
+        pdpj_batch_id: batchIds.pdpj.batchId ?? null,
+        target_batch_id: batchIds.koordinat_kosong.batchId ?? null,
       });
       let processingFinished = false;
       processing.then(
@@ -624,27 +638,39 @@ export default function UploadPage() {
         <div className="flex flex-col sm:flex-row items-center justify-between p-4 border border-neo-border rounded-sm bg-white shadow-[0_4px_0_#0a0a0a] gap-3">
           <div>
             <span className="text-xs text-[#16a34a] font-bold block">✓ Kolom Terpetakan & Data Siap Di-Keep</span>
-            <p className="text-[11px] text-neo-border">Kunci dataset ini, lalu lanjut upload dataset berikutnya.</p>
+            <p className="text-[11px] text-neo-border">
+              Kunci dataset ini, lalu lanjut upload dataset berikutnya. Atau konfirmasi langsung jika hanya satu dataset.
+            </p>
           </div>
-          <button
-            type="button"
-            disabled={loading || pipelineActive || batchProcessing}
-            onClick={handleLockDataset}
-            className="w-full sm:w-auto px-6 py-2.5 border border-neo-border bg-[#16a34a] text-white text-xs font-bold rounded-sm shadow-[0_2px_0_#0a0a0a] disabled:opacity-50 hover:bg-[#15803d] flex items-center justify-center gap-2"
-          >
-            <span>🔒 {loading ? "Menyimpan dataset..." : "Keep & Lock Dataset"}</span>
-          </button>
+          <div className="flex flex-col sm:flex-row gap-2 w-full sm:w-auto">
+            <button
+              type="button"
+              disabled={loading || pipelineActive || batchProcessing}
+              onClick={handleLockDataset}
+              className="w-full sm:w-auto px-6 py-2.5 border border-neo-border bg-[#16a34a] text-white text-xs font-bold rounded-sm shadow-[0_2px_0_#0a0a0a] disabled:opacity-50 hover:bg-[#15803d] flex items-center justify-center gap-2"
+            >
+              <span>🔒 {loading ? "Menyimpan dataset..." : "Keep & Lock Dataset"}</span>
+            </button>
+            <button
+              type="button"
+              disabled={loading || pipelineActive || batchProcessing}
+              onClick={handleBatchProcess}
+              className="w-full sm:w-auto px-6 py-2.5 border border-neo-border bg-neo-black text-white text-xs font-bold rounded-sm shadow-[0_2px_0_#0a0a0a] disabled:opacity-50 hover:bg-[#1a1a1a] flex items-center justify-center gap-2"
+            >
+              {batchProcessing ? batchProgress : "🔐 Konfirmasi & Lanjut ke Review"}
+            </button>
+          </div>
         </div>
       )}
 
       {/* 6. Batch Process - Process All Locked Datasets */}
-      {lockedCount >= 2 && datasetStates.koordinat_kosong.status === "locked" && (
+      {lockedCount >= 1 && (
         <div className="p-4 border-2 border-[#16a34a] bg-[#dcfce7] rounded-sm shadow-[0_4px_0_#16a34a] space-y-3">
           <div className="flex items-center justify-between">
             <div>
               <h3 className="text-sm font-bold text-[#16a34a]">✓ {lockedCount} Dataset Terkunci - Siap Diproses</h3>
               <p className="text-xs text-neo-border mt-1">
-                Sistem akan membentuk master, exclude PDPJ, dan mencocokkan koordinat kosong.
+                Sistem akan membentuk master, exclude PDPJ (jika ada), dan mencocokkan koordinat kosong.
               </p>
             </div>
             <button
@@ -653,7 +679,7 @@ export default function UploadPage() {
               onClick={handleBatchProcess}
               className="px-6 py-2.5 border border-neo-border bg-neo-black text-white text-xs font-bold rounded-sm shadow-[0_2px_0_#0a0a0a] disabled:opacity-50 hover:bg-[#1a1a1a]"
             >
-              {batchProcessing ? batchProgress : "🔐 Konfirmasi Dataset & Lanjut ke Review"}
+              {batchProcessing ? batchProgress : "🔐 Konfirmasi Semua Dataset & Lanjut ke Review"}
             </button>
           </div>
         </div>

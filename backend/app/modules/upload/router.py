@@ -239,7 +239,13 @@ async def batch_process_endpoint(req: BatchProcessRequest, db: Session = Depends
                 target_id = target_batch.id
 
         if not target_id:
-            raise HTTPException(status_code=400, detail="Data Koordinat Kosong (Target) belum diunggah atau dilock.")
+            # Jika hanya upload source, kembalikan dummy process_id atau message sukses build master
+            return {
+                "status": "completed",
+                "process_id": 1, # Minimal ID untuk navigasi frontend
+                "message": "Master data berhasil dibentuk. Koordinat Kosong belum ada untuk dicocokkan.",
+                "matching_summary": {"total_targets": 0, "matched_targets": 0}
+            }
 
         match_res = run_spatial_matching_job(
             db=db,

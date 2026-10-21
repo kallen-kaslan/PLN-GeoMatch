@@ -32,6 +32,15 @@ export default function CandidatesPage() {
   const initialProcessId = searchParams.get("process_id") || "1";
 
   const [processId, setProcessId] = useState<string>(initialProcessId);
+
+  // Sync processId with URL search params
+  useEffect(() => {
+    const pid = searchParams.get("process_id");
+    if (pid && pid !== processId) {
+      setProcessId(pid);
+    }
+  }, [searchParams]);
+
   const [candidates, setCandidates] = useState<Candidate[]>([]);
   const [totalCandidates, setTotalCandidates] = useState<number>(0);
   const [loading, setLoading] = useState(false);
