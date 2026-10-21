@@ -48,7 +48,7 @@ KETERANGAN_TARGET = [
 random.seed(42)
 
 
-def offset_coord(base, spread=0.0025):
+def offset_coord(base, spread=0.0005):
     return round(base + random.uniform(-spread, spread), 6)
 
 

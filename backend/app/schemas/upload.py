@@ -19,3 +19,10 @@ class UploadBatchResponse(UploadBatchBase):
 class MappingRequest(BaseModel):
     batch_id: int
     column_mapping: Dict[str, str]
+
+class BatchProcessRequest(BaseModel):
+    pascabayar_batch_id: Optional[int] = None
+    prabayar_batch_id: Optional[int] = None
+    pdpj_batch_id: Optional[int] = None
+    target_batch_id: Optional[int] = None
+    radius_meters: float = 100.0

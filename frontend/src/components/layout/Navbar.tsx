@@ -1,10 +1,9 @@
-import { useLocation, useNavigate } from "react-router-dom";
+import { useNavigate } from "react-router-dom";
 import { useAppStore } from "@/store/app";
 import { ChevronDown, User, LogOut, MapPin, Radio } from "lucide-react";
 import { useState, useRef, useEffect } from "react";
 
 export default function Navbar() {
-  const location = useLocation();
   const navigate = useNavigate();
   const { user, logout } = useAppStore();
   const [dropdownOpen, setDropdownOpen] = useState(false);

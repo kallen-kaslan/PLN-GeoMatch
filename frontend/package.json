@@ -6,7 +6,7 @@
   "scripts": {
     "dev": "vite",
     "backend": "cd ../backend && uvicorn app.main:app --reload",
-    "start": "npm install && concurrently \"npm run dev\" \"npm run backend\"",
+    "start": "npm install && npx concurrently \"npm run dev\" \"npm run backend\"",
     "build": "tsc -b && vite build",
     "lint": "oxlint",
     "preview": "vite preview"
