@@ -33,16 +33,20 @@ export default function CandidatesPage() {
 
   const [processId, setProcessId] = useState<string>(initialProcessId);
   const [candidates, setCandidates] = useState<Candidate[]>([]);
+  const [totalCandidates, setTotalCandidates] = useState<number>(0);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [selectedCandidateId, setSelectedCandidateId] = useState<number | null>(null);
 
   // Filter States
   const [statusFilter, setStatusFilter] = useState<string>("all");
-  const [colorFilter, setColorFilter] = useState<"all" | "valid" | "unassigned" | "luar_jangkauan" | "under5m">("all");
-  const [bulkUpdating, setBulkUpdating] = useState(false);
-  const [distanceThresholdFilter, setDistanceThresholdFilter] = useState<string>("all");
-  const [layananFilter, setLayananFilter] = useState<string>("all");
+  const [validityFilters, setValidityFilters] = useState<string[]>([]);
+  const [layananFilters, setLayananFilters] = useState<string[]>([]);
+  const [idpelFilters, setIdpelFilters] = useState<string[]>([]);
+
+  // Pagination States
+  const [currentPage, setCurrentPage] = useState<number>(1);
+  const [rowsPerPage, setRowsPerPage] = useState<number>(50);
 
   // Map references
   const mapContainerRef = useRef<HTMLDivElement>(null);
@@ -65,19 +69,47 @@ export default function CandidatesPage() {
     }
   };
 
+  const handleReset = async () => {
+    if (!confirm("Yakin ingin mereset semua data? Tindakan ini tidak bisa diurungkan.")) return;
+    setLoading(true);
+    setError(null);
+    try {
+      await api.post("/upload/reset");
+      setCandidates([]);
+      setTotalCandidates(0);
+      setProcessId("");
+      setError(null);
+    } catch (err: any) {
+      setError(err.message || "Gagal mereset data.");
+    } finally {
+      setLoading(false);
+    }
+  };
+
   const fetchCandidates = async () => {
     if (!processId) return;
     setLoading(true);
     setError(null);
     try {
-      let url = `/process/${processId}/candidates`;
+      const skip = (currentPage - 1) * rowsPerPage;
+      let url = `/process/${processId}/candidates?skip=${skip}&limit=${rowsPerPage}`;
       if (statusFilter !== "all") {
-        url += `?status_filter=${statusFilter}`;
+        url += `&status_filter=${statusFilter}`;
+      }
+      if (validityFilters.length > 0) {
+        url += `&validity_filters=${validityFilters.join(",")}`;
+      }
+      if (layananFilters.length > 0) {
+        url += `&layanan_filters=${layananFilters.join(",")}`;
+      }
+      if (idpelFilters.length > 0) {
+        url += `&idpel_filters=${idpelFilters.join(",")}`;
       }
       const res = await api.get(url);
-      setCandidates(res.data);
-      if (res.data.length > 0 && res.data[0].process_id && String(res.data[0].process_id) !== processId) {
-        setProcessId(String(res.data[0].process_id));
+      setCandidates(res.data.items);
+      setTotalCandidates(res.data.total);
+      if (res.data.items.length > 0 && res.data.items[0].process_id && String(res.data.items[0].process_id) !== processId) {
+        setProcessId(String(res.data.items[0].process_id));
       }
     } catch (err: any) {
       setError(err.message || "Gagal memuat kandidat.");
@@ -93,9 +125,9 @@ export default function CandidatesPage() {
       const res = await api.post("/upload/seed-dummy");
       const pid = res.data.process_id || 1;
       setProcessId(String(pid));
-      let url = `/process/${pid}/candidates`;
-      const candRes = await api.get(url);
-      setCandidates(candRes.data);
+      const candRes = await api.get(`/process/${pid}/candidates`);
+      setCandidates(candRes.data.items);
+      setTotalCandidates(candRes.data.total);
     } catch (err: any) {
       setError(err.message || "Gagal memuat data demo.");
     } finally {
@@ -105,7 +137,7 @@ export default function CandidatesPage() {
 
   useEffect(() => {
     fetchCandidates();
-  }, [processId, statusFilter]);
+  }, [processId, statusFilter, validityFilters, layananFilters, idpelFilters, currentPage, rowsPerPage]);
 
   // Inisialisasi Peta Leaflet
   useEffect(() => {
@@ -124,7 +156,7 @@ export default function CandidatesPage() {
     }
   }, []);
 
-  // Update Markers di Peta saat data atau filter berubah
+  // Update Markers di Peta saat data atau halaman berubah
   useEffect(() => {
     const map = mapInstanceRef.current;
     const L = window.L;
@@ -133,8 +165,7 @@ export default function CandidatesPage() {
     markersLayerRef.current.clearLayers();
     markerRegistryRef.current = {};
 
-    const filtered = getFilteredCandidates();
-    if (filtered.length === 0) return;
+    if (candidates.length === 0) return;
 
     const bounds: [number, number][] = [];
 
@@ -148,7 +179,7 @@ export default function CandidatesPage() {
       });
     };
 
-    filtered.forEach((c) => {
+    candidates.forEach((c) => {
       // 1. Marker Target Lapangan
       const targetGmapsUrl = `https://www.google.com/maps/search/?api=1&query=${c.target_lat},${c.target_lon}`;
       const targetMarker = L.marker([c.target_lat, c.target_lon], {
@@ -184,8 +215,10 @@ export default function CandidatesPage() {
 
       const candGmapsUrl = `https://www.google.com/maps/search/?api=1&query=${c.candidate_lat},${c.candidate_lon}`;
 
+      const markerShape = isOutOfRadius ? "square" : "circle";
+
       const candMarker = L.marker([c.candidate_lat, c.candidate_lon], {
-        icon: createCustomIcon(candColor, labelIcon, "circle"),
+        icon: createCustomIcon(candColor, labelIcon, markerShape),
       }).bindPopup(`
         <div style="font-family: sans-serif; font-size: 12px; min-width: 210px;">
           <strong style="font-size: 13px; color: ${candColor};">${c.candidate_nama || "Tanpa Nama"}</strong><br/>
@@ -221,7 +254,7 @@ export default function CandidatesPage() {
     if (bounds.length > 0) {
       map.fitBounds(bounds, { padding: [40, 40], maxZoom: 18 });
     }
-  }, [candidates, statusFilter, colorFilter, distanceThresholdFilter, layananFilter]);
+  }, [candidates]);
 
   // Track & FlyTo Koordinat saat Baris Tabel di-klik
   const handleSelectRow = (candidate: Candidate) => {
@@ -255,10 +288,10 @@ export default function CandidatesPage() {
   };
 
   const handleBulkDecision = async () => {
-    const candidateIds = filteredCandidates.map((candidate) => candidate.id);
+    const candidateIds = candidates.map((candidate) => candidate.id);
     if (candidateIds.length === 0) return;
-    const decision = bulkAccepted ? 0 : 1;
-    setBulkUpdating(true);
+    const allAccepted = candidates.every((candidate) => candidate.is_accepted === 1);
+    const decision = allAccepted ? 0 : 1;
     setError(null);
     try {
       await api.post("/process/candidates/bulk-decision", {
@@ -270,52 +303,13 @@ export default function CandidatesPage() {
       ));
     } catch (err: any) {
       setError(err.message || "Gagal memperbarui keputusan kandidat.");
-    } finally {
-      setBulkUpdating(false);
     }
   };
 
-  // Helper Pemilahan Data (Filter Client-Side)
-  const getFilteredCandidates = () => {
-    return candidates.filter((c) => {
-      const isOutOfRadius = c.validity_status === "DILUAR_RADIUS" || c.candidate_idpel.startsWith("DILUAR_RADIUS") || c.candidate_idpel === "TIDAK_DITEMUKAN";
-      const hasRealIdpel = !isOutOfRadius && !c.candidate_idpel.startsWith("UNASSIGNED-") && c.candidate_idpel !== "";
-      const isUnder5m = !isOutOfRadius && c.distance_meters < 5.0 && c.distance_meters > 0;
-
-      // Color card interactive filter
-      if (colorFilter === "valid" && (!hasRealIdpel || isOutOfRadius)) return false;
-      if (colorFilter === "unassigned" && (hasRealIdpel || isOutOfRadius)) return false;
-      if (colorFilter === "luar_jangkauan" && !isOutOfRadius) return false;
-      if (colorFilter === "under5m" && !isUnder5m) return false;
-
-      // Jarak Threshold Filter
-      if (distanceThresholdFilter === "under_5m" && !isUnder5m) return false;
-      if (distanceThresholdFilter === "above_5m" && isUnder5m) return false;
-
-      // Layanan Filter
-      const layanan = (c.jenis_layanan || "PASCABAYAR").toUpperCase();
-      if (layananFilter === "prabayar" && !layanan.includes("PRABAYAR")) return false;
-      if (layananFilter === "pascabayar" && !layanan.includes("PASCABAYAR")) return false;
-
-      return true;
-    });
-  };
-
-  const filteredCandidates = getFilteredCandidates();
-  const bulkAccepted = filteredCandidates.length > 0 && filteredCandidates.every((candidate) => candidate.is_accepted === 1);
-
   // Summary Counts
-  const totalCount = candidates.length;
-  const luarJangkauanCount = candidates.filter((c) => c.validity_status === "DILUAR_RADIUS" || c.candidate_idpel.startsWith("DILUAR_RADIUS") || c.candidate_idpel === "TIDAK_DITEMUKAN").length;
-  const validIdpelCount = candidates.filter((c) => {
-    const isOOR = c.validity_status === "DILUAR_RADIUS" || c.candidate_idpel.startsWith("DILUAR_RADIUS") || c.candidate_idpel === "TIDAK_DITEMUKAN";
-    return !isOOR && !c.candidate_idpel.startsWith("UNASSIGNED-") && c.candidate_idpel !== "";
-  }).length;
-  const unassignedIdpelCount = totalCount - validIdpelCount - luarJangkauanCount;
-  const under5mCount = candidates.filter((c) => {
-    const isOOR = c.validity_status === "DILUAR_RADIUS" || c.candidate_idpel.startsWith("DILUAR_RADIUS") || c.candidate_idpel === "TIDAK_DITEMUKAN";
-    return !isOOR && c.distance_meters < 5.0 && c.distance_meters > 0;
-  }).length;
+  const totalCount = totalCandidates;
+
+  const totalPages = Math.ceil(totalCandidates / rowsPerPage);
 
   return (
     <div className="space-y-6">
@@ -346,6 +340,15 @@ export default function CandidatesPage() {
             🔄 Refresh
           </button>
 
+          <button
+            onClick={handleReset}
+            disabled={loading}
+            className="px-3 py-1.5 border border-[#dc2626] bg-[#fee2e2] hover:bg-[#fef2f2] text-[#dc2626] text-xs font-semibold rounded-sm shadow-[0_2px_0_#0a0a0a] disabled:opacity-50"
+            title="Hapus semua data dan mulai dari awal"
+          >
+            🗑️ Reset Data
+          </button>
+
           {/* Tombol Konfirmasi Selesai -> Langsung ke Hasil */}
           <button
             onClick={handleFinishReview}
@@ -359,111 +362,33 @@ export default function CandidatesPage() {
         </div>
       </div>
 
-      {/* Interactive Color Filter Cards (Bisa di-klik langsung) */}
-      <div>
-        <div className="text-xs font-bold text-neo-black mb-2 flex items-center gap-2">
-          <span>Pilih Kategori Visual (Klik Kartu untuk Menyaring Peta & Tabel):</span>
-          {colorFilter !== "all" && (
-            <button
-              onClick={() => setColorFilter("all")}
-              className="text-[10px] text-[#2563eb] underline font-semibold"
-            >
-              Reset Filter
-            </button>
-          )}
+      {/* SUMMARY STATS BOX */}
+      {candidates.length > 0 && (
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+          <div className="p-4 border border-neo-border rounded-sm bg-white shadow-[0_4px_0_#0a0a0a]">
+            <p className="text-xs font-semibold text-neo-border">TOTAL KANDIDAT</p>
+            <p className="text-3xl font-extrabold mt-1 text-neo-black">{totalCount}</p>
+          </div>
+          <div className="p-4 border border-[#16a34a] rounded-sm bg-[#dcfce7] shadow-[0_4px_0_#0a0a0a]">
+            <p className="text-xs font-semibold text-[#16a34a]">VALID</p>
+            <p className="text-3xl font-extrabold mt-1 text-[#16a34a]">
+              {candidates.filter(c => c.is_accepted === 1).length}
+            </p>
+          </div>
+          <div className="p-4 border border-[#dc2626] rounded-sm bg-[#fee2e2] shadow-[0_4px_0_#0a0a0a]">
+            <p className="text-xs font-semibold text-[#dc2626]">DITOLAK</p>
+            <p className="text-3xl font-extrabold mt-1 text-[#dc2626]">
+              {candidates.filter(c => c.is_accepted === -1).length}
+            </p>
+          </div>
+          <div className="p-4 border border-[#d97706] rounded-sm bg-[#fef3c7] shadow-[0_4px_0_#0a0a0a]">
+            <p className="text-xs font-semibold text-[#d97706]">PENDING</p>
+            <p className="text-3xl font-extrabold mt-1 text-[#d97706]">
+              {candidates.filter(c => c.is_accepted === 0).length}
+            </p>
+          </div>
         </div>
-        <div className="grid grid-cols-2 sm:grid-cols-5 gap-3">
-          {/* Card 1: Semua */}
-          <button
-            type="button"
-            onClick={() => setColorFilter("all")}
-            className={`p-3 text-left border rounded-sm transition ${
-              colorFilter === "all"
-                ? "border-neo-black bg-white shadow-[0_4px_0_#0a0a0a] ring-2 ring-[#0a0a0a]"
-                : "border-neo-border bg-white shadow-[0_2px_0_#0a0a0a] hover:bg-[#f5f5f5]"
-            }`}
-          >
-            <div className="flex items-center justify-between">
-              <span className="text-[11px] font-bold text-neo-border">SEMUA DATA</span>
-              <span className="w-3 h-3 bg-neo-black rounded-xs"></span>
-            </div>
-            <div className="text-xl font-black mt-1 text-neo-black">{totalCount}</div>
-            <div className="text-[10px] text-neo-border">Seluruh titik koordinat</div>
-          </button>
-
-          {/* Card 2: Hijau - Valid */}
-          <button
-            type="button"
-            onClick={() => setColorFilter("valid")}
-            className={`p-3 text-left border rounded-sm transition ${
-              colorFilter === "valid"
-                ? "border-[#16a34a] bg-[#dcfce7] shadow-[0_4px_0_#16a34a] ring-2 ring-[#16a34a]"
-                : "border-[#16a34a] bg-[#f0fdf4] shadow-[0_2px_0_#16a34a] hover:bg-[#dcfce7]"
-            }`}
-          >
-            <div className="flex items-center justify-between">
-              <span className="text-[11px] font-bold text-[#16a34a]">🟢 VALID</span>
-              <span className="w-3 h-3 bg-[#16a34a] rounded-full"></span>
-            </div>
-            <div className="text-xl font-black mt-1 text-[#16a34a]">{validIdpelCount}</div>
-            <div className="text-[10px] text-[#16a34a]">Dalam radius & ber-IDPEL</div>
-          </button>
-
-          {/* Card 3: Oranye - Perlu Konfirmasi */}
-          <button
-            type="button"
-            onClick={() => setColorFilter("unassigned")}
-            className={`p-3 text-left border rounded-sm transition ${
-              colorFilter === "unassigned"
-                ? "border-[#ea580c] bg-[#ffedd5] shadow-[0_4px_0_#ea580c] ring-2 ring-[#ea580c]"
-                : "border-[#ea580c] bg-[#fff7ed] shadow-[0_2px_0_#ea580c] hover:bg-[#ffedd5]"
-            }`}
-          >
-            <div className="flex items-center justify-between">
-              <span className="text-[11px] font-bold text-[#ea580c]">🟠 KONFIRMASI</span>
-              <span className="w-3 h-3 bg-[#ea580c] rounded-full"></span>
-            </div>
-            <div className="text-xl font-black mt-1 text-[#ea580c]">{unassignedIdpelCount}</div>
-            <div className="text-[10px] text-[#ea580c]">Ada koordinat, tanpa IDPEL</div>
-          </button>
-
-          {/* Card 4: Merah - Luar Jangkauan */}
-          <button
-            type="button"
-            onClick={() => setColorFilter("luar_jangkauan")}
-            className={`p-3 text-left border rounded-sm transition ${
-              colorFilter === "luar_jangkauan"
-                ? "border-[#dc2626] bg-[#fee2e2] shadow-[0_4px_0_#dc2626] ring-2 ring-[#dc2626]"
-                : "border-[#dc2626] bg-[#fef2f2] shadow-[0_2px_0_#dc2626] hover:bg-[#fee2e2]"
-            }`}
-          >
-            <div className="flex items-center justify-between">
-              <span className="text-[11px] font-bold text-[#dc2626]">🔴 LUAR JANGKAUAN</span>
-              <span className="w-3 h-3 bg-[#dc2626] rounded-full"></span>
-            </div>
-            <div className="text-xl font-black mt-1 text-[#dc2626]">{luarJangkauanCount}</div>
-            <div className="text-[10px] text-[#dc2626]">Di luar radius / tidak ditemukan</div>
-          </button>
-
-          {/* Card 5: Ungu - Sangat Dekat <5m */}
-          <button
-            type="button"
-            onClick={() => setColorFilter("under5m")}
-            className={`p-3 text-left border rounded-sm transition ${
-              colorFilter === "under5m"
-                ? "border-[#7c3aed] bg-[#f3e8ff] shadow-[0_4px_0_#7c3aed] ring-2 ring-[#7c3aed]"
-                : "border-[#7c3aed] bg-[#faf5ff] shadow-[0_2px_0_#7c3aed] hover:bg-[#f3e8ff]"
-            }`}
-          >
-            <div className="flex items-center justify-between">
-              <span className="text-[11px] font-bold text-[#7c3aed]">🟣 &lt;5M</span>
-              <span className="w-3 h-3 bg-[#7c3aed] rounded-full"></span>
-            </div>
-            <div className="text-xl font-black mt-1 text-[#7c3aed]">{under5mCount}</div>
-            <div className="text-[10px] text-[#7c3aed]">Jarak &lt;5m (min normal 5m)</div>
-          </button>
-        </div>
-      </div>
+      )}
 
       {/* PETA INTERAKTIF */}
       <div className="p-4 border border-neo-border rounded-sm bg-white shadow-[0_4px_0_#0a0a0a] space-y-3">
@@ -489,6 +414,10 @@ export default function CandidatesPage() {
               <span className="w-3 h-3 bg-[#7c3aed] rounded-full inline-block"></span>
               <span>🟣 &lt; 5m</span>
             </span>
+            <span className="flex items-center gap-1">
+              <span className="w-3 h-3 bg-[#dc2626] rounded-xs inline-block"></span>
+              <span>🔴 Luar Jangkauan</span>
+            </span>
           </div>
         </div>
 
@@ -504,72 +433,155 @@ export default function CandidatesPage() {
         </p>
       </div>
 
-      {/* FILTER TAMBAHAN */}
-      <div className="p-3 border border-neo-border rounded-sm bg-white shadow-[0_2px_0_#0a0a0a] flex flex-wrap gap-4 text-xs items-center">
-        <div>
-          <label className="font-bold mr-2">Status Review:</label>
-          <select
-            value={statusFilter}
-            onChange={(e) => setStatusFilter(e.target.value)}
-            className="border border-neo-border p-1 rounded-sm bg-white"
-          >
-            <option value="all">Semua</option>
-            <option value="0">Menunggu (Pending)</option>
-            <option value="1">Valid (Disetujui)</option>
-            <option value="-1">Ditolak</option>
-          </select>
+      {/* MULTI-FILTER CHECKBOX PANEL */}
+      <div className="p-4 border border-neo-border rounded-sm bg-white shadow-[0_4px_0_#0a0a0a] space-y-4">
+        <h3 className="text-sm font-bold flex items-center gap-2">
+          🔍 Filter Multi-Kriteria (Bisa pilih lebih dari satu)
+        </h3>
+
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+          {/* KELAYAKAN DATA */}
+          <div>
+            <h4 className="text-xs font-bold mb-2 flex items-center gap-1">
+              <span className="w-2 h-2 bg-[#16a34a] rounded-full"></span>
+              Kelayakan Data
+            </h4>
+            <div className="space-y-1.5">
+              {[
+                { value: "valid", label: "Valid (Ada IDPEL)", color: "#16a34a" },
+                { value: "no-idpel", label: "Tanpa IDPEL", color: "#ea580c" },
+                { value: "idpel-kosong", label: "IDPEL Kosong", color: "#f97316" },
+                { value: "luar-jangkauan", label: "Luar Jangkauan", color: "#dc2626" },
+                { value: "kurang-5m", label: "< 5m (Anomali Jarak)", color: "#7c3aed" },
+              ].map(({ value, label, color }) => (
+                <label key={value} className="flex items-center gap-2 text-xs cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={validityFilters.includes(value)}
+                    onChange={(e) => {
+                      if (e.target.checked) {
+                        setValidityFilters([...validityFilters, value]);
+                      } else {
+                        setValidityFilters(validityFilters.filter(v => v !== value));
+                      }
+                      setCurrentPage(1);
+                    }}
+                    className="border border-neo-border rounded-sm"
+                  />
+                  <span className="w-2 h-2 rounded-full" style={{ backgroundColor: color }}></span>
+                  <span>{label}</span>
+                </label>
+              ))}
+            </div>
+          </div>
+
+          {/* LAYANAN */}
+          <div>
+            <h4 className="text-xs font-bold mb-2 flex items-center gap-1">
+              <span className="w-2 h-2 bg-[#2563eb] rounded-full"></span>
+              Jenis Layanan
+            </h4>
+            <div className="space-y-1.5">
+              {["PASCABAYAR", "PRABAYAR"].map((layanan) => (
+                <label key={layanan} className="flex items-center gap-2 text-xs cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={layananFilters.includes(layanan)}
+                    onChange={(e) => {
+                      if (e.target.checked) {
+                        setLayananFilters([...layananFilters, layanan]);
+                      } else {
+                        setLayananFilters(layananFilters.filter(v => v !== layanan));
+                      }
+                      setCurrentPage(1);
+                    }}
+                    className="border border-neo-border rounded-sm"
+                  />
+                  <span className={`px-2 py-0.5 text-[10px] rounded ${layanan === "PRABAYAR" ? "bg-blue-100 text-blue-800" : "bg-gray-100 text-gray-800"}`}>
+                    {layanan}
+                  </span>
+                </label>
+              ))}
+            </div>
+          </div>
+
+          {/* IDPEL STATUS */}
+          <div>
+            <h4 className="text-xs font-bold mb-2 flex items-center gap-1">
+              <span className="w-2 h-2 bg-[#ff6b35] rounded-full"></span>
+              Status IDPEL
+            </h4>
+            <div className="space-y-1.5">
+              {[
+                { value: "ada", label: "IDPEL Valid (Ada)" },
+                { value: "kosong", label: "IDPEL Kosong" },
+                { value: "tidak-ditemukan", label: "IDPEL Tidak Ditemukan" },
+                { value: "unassigned", label: "IDPEL UNASSIGNED-*" },
+              ].map(({ value, label }) => (
+                <label key={value} className="flex items-center gap-2 text-xs cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={idpelFilters.includes(value)}
+                    onChange={(e) => {
+                      if (e.target.checked) {
+                        setIdpelFilters([...idpelFilters, value]);
+                      } else {
+                        setIdpelFilters(idpelFilters.filter(v => v !== value));
+                      }
+                      setCurrentPage(1);
+                    }}
+                    className="border border-neo-border rounded-sm"
+                  />
+                  <span>{label}</span>
+                </label>
+              ))}
+            </div>
+          </div>
         </div>
 
-        <div>
-          <label className="font-bold mr-2">Jarak Antar Rumah (Min 5m):</label>
-          <select
-            value={distanceThresholdFilter}
-            onChange={(e) => setDistanceThresholdFilter(e.target.value)}
-            className="border border-neo-border p-1 rounded-sm bg-white"
-          >
-            <option value="all">Semua Jarak (5m - 50m+)</option>
-            <option value="under_5m">&lt; 5m (Potensi Tetangga Dekat)</option>
-            <option value="above_5m">&ge; 5m (Jarak Normal Antar Rumah)</option>
-          </select>
-        </div>
+        {/* STATUS REVIEW (existing) */}
+        <div className="pt-2 border-t border-neo-border">
+          <div className="flex flex-wrap items-center gap-3">
+            <div>
+              <label className="font-bold mr-2 text-xs">Status Review:</label>
+              <select
+                value={statusFilter}
+                onChange={(e) => {
+                  setStatusFilter(e.target.value);
+                  setCurrentPage(1);
+                }}
+                className="border border-neo-border p-1.5 rounded-sm bg-white text-xs"
+              >
+                <option value="all">Semua</option>
+                <option value="0">Menunggu (Pending)</option>
+                <option value="1">Valid (Disetujui)</option>
+                <option value="-1">Ditolak</option>
+              </select>
+            </div>
 
-        <div>
-          <label className="font-bold mr-2">Layanan:</label>
-          <select
-            value={layananFilter}
-            onChange={(e) => setLayananFilter(e.target.value)}
-            className="border border-neo-border p-1 rounded-sm bg-white"
-          >
-            <option value="all">Semua</option>
-            <option value="prabayar">Prabayar</option>
-            <option value="pascabayar">Pascabayar</option>
-          </select>
-        </div>
-
-        <div className="ml-auto text-[11px] text-neo-border">
-          Menampilkan <strong>{filteredCandidates.length}</strong> dari {candidates.length} data
+            <div className="ml-auto text-[11px] text-neo-border">
+              Total data: <strong>{totalCount}</strong> | Menampilkan halaman <strong>{currentPage}</strong> dari <strong>{totalPages}</strong>
+            </div>
+          </div>
         </div>
       </div>
 
       {/* BULK ACTION BUTTON */}
-      {filteredCandidates.length > 0 && (
+      {candidates.length > 0 && (
         <div className="flex justify-end">
           <button
             type="button"
             onClick={handleBulkDecision}
-            disabled={bulkUpdating}
             className={`px-4 py-2 text-xs font-bold border rounded-sm transition ${
-              bulkAccepted
+              candidates.every((c) => c.is_accepted === 1)
                 ? "border-[#dc2626] bg-[#fee2e2] text-[#dc2626] shadow-[0_2px_0_#dc2626] hover:bg-[#fef2f2]"
                 : "border-[#16a34a] bg-[#dcfce7] text-[#16a34a] shadow-[0_2px_0_#16a34a] hover:bg-[#f0fdf4]"
-            } disabled:opacity-50 disabled:cursor-not-allowed`}
+            }`}
           >
-            {bulkUpdating ? (
-              "Memproses..."
-            ) : bulkAccepted ? (
-              "✕ Hapus Semua"
+            {candidates.every((c) => c.is_accepted === 1) ? (
+              "✕ Hapus Semua (Halaman Ini)"
             ) : (
-              "✓ Validasi Semua"
+              "✓ Validasi Semua (Halaman Ini)"
             )}
           </button>
         </div>
@@ -584,7 +596,7 @@ export default function CandidatesPage() {
       {/* TABEL HASIL */}
       {loading ? (
         <div className="p-8 text-center text-sm text-neo-border">Memuat data kandidat...</div>
-      ) : filteredCandidates.length === 0 ? (
+      ) : candidates.length === 0 ? (
         <div className="p-8 border border-dashed border-neo-border rounded-sm text-center bg-white space-y-3 shadow-[0_2px_0_#0a0a0a]">
           <p className="text-sm font-semibold text-neo-black">Belum Ada Data Kandidat untuk Proses #{processId}</p>
           <p className="text-xs text-neo-border max-w-md mx-auto">
@@ -624,7 +636,7 @@ export default function CandidatesPage() {
               </tr>
             </thead>
             <tbody>
-              {filteredCandidates.map((c) => {
+              {candidates.map((c, index) => {
                 const isOutOfRadius = c.validity_status === "DILUAR_RADIUS" || c.candidate_idpel.startsWith("DILUAR_RADIUS") || c.candidate_idpel === "TIDAK_DITEMUKAN";
                 const hasRealIdpel = !isOutOfRadius && !c.candidate_idpel.startsWith("UNASSIGNED-") && c.candidate_idpel !== "";
                 const isUnder5m = !isOutOfRadius && c.distance_meters < 5.0 && c.distance_meters > 0;
@@ -636,11 +648,11 @@ export default function CandidatesPage() {
                     key={c.id}
                     onClick={() => handleSelectRow(c)}
                     className={`border-b border-neo-border cursor-pointer transition ${
-                      isSelected ? "bg-[#fef9c3] font-semibold neo-highlight" : "hover:bg-[#f5f5f5]"
+                      isSelected ? "bg-[#fef9c3] font-semibold" : "hover:bg-[#f5f5f5]"
                     }`}
                   >
                     <td className="p-3 border-r border-neo-border font-bold text-center">
-                      #{c.rank}
+                      #{(currentPage - 1) * rowsPerPage + index + 1}
                     </td>
                     <td className="p-3 border-r border-neo-border">
                       <div className="font-semibold text-neo-black">{c.target_ref}</div>
@@ -649,19 +661,28 @@ export default function CandidatesPage() {
                       </div>
                     </td>
                     <td className="p-3 border-r border-neo-border font-semibold">
-                      {isOutOfRadius ? (
+                      {c.validity_status === "DILUAR_RADIUS" ? (
                         <span className="text-[#dc2626] font-bold">🔴 Di Luar Radius</span>
-                      ) : hasRealIdpel ? (
-                        <span className="text-neo-black">{c.candidate_idpel}</span>
+                      ) : c.validity_status === "IDPEL_KOSONG" ? (
+                        <span className="text-[#ea580c] font-bold">IDPEL KOSONG</span>
+                      ) : c.validity_status === "TIDAK_DITEMUKAN" ? (
+                        <span className="text-[#f97316]">TIDAK DITEMUKAN</span>
+                      ) : c.validity_status === "VALID" && c.candidate_idpel && !c.candidate_idpel.startsWith("UNASSIGNED-") && c.candidate_idpel !== "IDPEL_KOSONG" ? (
+                        <div>
+                          <span className="text-[#16a34a] font-bold">✓ VALID</span>
+                          <div className="text-[10px] font-mono text-gray-500">{c.candidate_idpel}</div>
+                        </div>
+                      ) : c.validity_status === "VALID" ? (
+                        <span className="text-[#16a34a] font-bold">✓ VALID</span>
+                      ) : c.validity_status === "PERLU_KONFIRMASI_IDPEL" ? (
+                        <span className="text-[#ca8a04]">PERLU KONFIRMASI</span>
                       ) : (
-                        <span className="text-[#ea580c] italic font-normal">
-                          Belum Ada IDPEL
-                        </span>
+                        <span className="text-gray-500">-</span>
                       )}
                     </td>
                     <td className="p-3 border-r border-neo-border">{c.candidate_nama || "-"}</td>
                     <td className="p-3 border-r border-neo-border">
-                      <span className={`px-1.5 py-0.5 rounded text-[10px] font-bold ${
+                      <span className={`px-1.5 py-1 rounded text-[10px] font-bold ${
                         (c.jenis_layanan || "PASCABAYAR") === "PRABAYAR"
                           ? "bg-blue-100 text-blue-800"
                           : "bg-gray-100 text-gray-800"
@@ -679,15 +700,15 @@ export default function CandidatesPage() {
                     </td>
                     <td className="p-3 border-r border-neo-border">
                       {isOutOfRadius ? (
-                        <span className="px-2 py-0.5 border border-[#dc2626] bg-[#fee2e2] text-[#dc2626] rounded text-[10px] font-bold">
+                        <span className="px-2 py-1 border border-[#dc2626] bg-[#fee2e2] text-[#dc2626] rounded text-[10px] font-bold">
                           🔴 LUAR JANGKAUAN
                         </span>
                       ) : hasRealIdpel ? (
-                        <span className="px-2 py-0.5 border border-[#16a34a] bg-[#dcfce7] text-[#16a34a] rounded text-[10px] font-bold">
+                        <span className="px-2 py-1 border border-[#16a34a] bg-[#dcfce7] text-[#16a34a] rounded text-[10px] font-bold">
                           ✓ VALID (ASLI)
                         </span>
                       ) : (
-                        <span className="px-2 py-0.5 border border-[#ea580c] bg-[#ffedd5] text-[#ea580c] rounded text-[10px] font-bold">
+                        <span className="px-2 py-1 border border-[#ea580c] bg-[#ffedd5] text-[#ea580c] rounded text-[10px] font-bold">
                           ⚠️ KONFIRMASI ULANG
                         </span>
                       )}
@@ -704,17 +725,17 @@ export default function CandidatesPage() {
                     </td>
                     <td className="p-3 border-r border-neo-border">
                       {c.is_accepted === 1 && (
-                        <span className="px-2 py-0.5 border border-[#16a34a] bg-[#dcfce7] text-[#16a34a] rounded text-[10px] font-bold">
+                        <span className="px-2 py-1 border border-[#16a34a] bg-[#dcfce7] text-[#16a34a] rounded text-[10px] font-bold">
                           VALID
                         </span>
                       )}
                       {c.is_accepted === -1 && (
-                        <span className="px-2 py-0.5 border border-[#dc2626] bg-[#fee2e2] text-[#dc2626] rounded text-[10px] font-bold">
+                        <span className="px-2 py-1 border border-[#dc2626] bg-[#fee2e2] text-[#dc2626] rounded text-[10px] font-bold">
                           DITOLAK
                         </span>
                       )}
                       {c.is_accepted === 0 && (
-                        <span className="px-2 py-0.5 border border-[#d97706] bg-[#fef3c7] text-[#d97706] rounded text-[10px] font-bold">
+                        <span className="px-2 py-1 border border-[#d97706] bg-[#fef3c7] text-[#d97706] rounded text-[10px] font-bold">
                           PENDING
                         </span>
                       )}
@@ -748,6 +769,49 @@ export default function CandidatesPage() {
               })}
             </tbody>
           </table>
+        </div>
+      )}
+
+      {/* PAGINATION CONTROLS */}
+      {totalCandidates > rowsPerPage && (
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 p-4 border border-neo-border rounded-sm bg-white shadow-[0_2px_0_#0a0a0a]">
+          <div className="flex items-center gap-3">
+            <label className="text-xs font-semibold text-neo-black">Baris per halaman:</label>
+            <select
+              value={rowsPerPage}
+              onChange={(e) => {
+                setRowsPerPage(Number(e.target.value));
+                setCurrentPage(1);
+              }}
+              className="border border-neo-border p-1.5 rounded-sm text-xs bg-white font-semibold"
+            >
+              <option value={25}>25</option>
+              <option value={50}>50</option>
+              <option value={100}>100</option>
+              <option value={250}>250</option>
+            </select>
+          </div>
+
+          <div className="text-xs font-semibold text-neo-black">
+            Halaman <strong>{currentPage}</strong> dari <strong>{totalPages}</strong> ({totalCandidates} total)
+          </div>
+
+          <div className="flex items-center gap-2">
+            <button
+              onClick={() => setCurrentPage(Math.max(1, currentPage - 1))}
+              disabled={currentPage === 1}
+              className="px-3 py-1.5 border border-neo-border bg-white hover:bg-[#e5e4e7] text-xs font-semibold rounded-sm shadow-[0_1px_0_#0a0a0a] disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              ← Sebelumnya
+            </button>
+            <button
+              onClick={() => setCurrentPage(Math.min(totalPages, currentPage + 1))}
+              disabled={currentPage === totalPages}
+              className="px-3 py-1.5 border border-neo-border bg-white hover:bg-[#e5e4e7] text-xs font-semibold rounded-sm shadow-[0_1px_0_#0a0a0a] disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              Selanjutnya →
+            </button>
+          </div>
         </div>
       )}
 

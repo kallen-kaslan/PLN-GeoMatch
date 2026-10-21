@@ -12,6 +12,7 @@ interface RequiredField {
   aliases: string[];
 }
 
+
 const DATASET_CONFIG: Record<DatasetType, { title: string; desc: string; fields: RequiredField[] }> = {
   pascabayar: {
     title: "1. Data Pascabayar (ACMT / RBM)",
@@ -76,18 +77,37 @@ const DUMMY_SAMPLES: Record<DatasetType, Record<string, string | number>[]> = {
   ],
 };
 
+interface DatasetUploadState {
+  status: "empty" | "uploaded" | "reviewing" | "locked" | "rejected";
+  file?: File;
+  headers: string[];
+  previewRows: Record<string, any>[];
+  mapping: Record<string, string>;
+  batchId?: number;
+  totalRows?: number;
+  validRows?: number;
+}
+
 export default function UploadPage() {
   const navigate = useNavigate();
-  const [datasetType, setDatasetType] = useState<DatasetType>("pascabayar");
-  const [file, setFile] = useState<File | null>(null);
-  const [headers, setHeaders] = useState<string[]>([]);
-  const [previewRows, setPreviewRows] = useState<Record<string, any>[]>([]);
-  const [mapping, setMapping] = useState<Record<string, string>>({});
 
-  // State status
+  // Multi-dataset state untuk 4 jenis dataset
+  const [datasetStates, setDatasetStates] = useState<Record<DatasetType, DatasetUploadState>>({
+    pascabayar: { status: "empty", headers: [], previewRows: [], mapping: {} },
+    prabayar: { status: "empty", headers: [], previewRows: [], mapping: {} },
+    pdpj: { status: "empty", headers: [], previewRows: [], mapping: {} },
+    koordinat_kosong: { status: "empty", headers: [], previewRows: [], mapping: {} },
+  });
+
+  const [currentDataset, setCurrentDataset] = useState<DatasetType>("pascabayar");
+  const [loading, setLoading] = useState(false);
   const [resetting, setResetting] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [successInfo, setSuccessInfo] = useState<string | null>(null);
+
+  // Batch processing state
+  const [batchProcessing, setBatchProcessing] = useState(false);
+  const [batchProgress, setBatchProgress] = useState("");
 
   // Lazy Loading Animation Pipeline State
   const [pipelineActive, setPipelineActive] = useState(false);
@@ -101,90 +121,160 @@ export default function UploadPage() {
     { title: "5. Menyiapkan Peta Spasial & GMaps", desc: "Mengalihkan ke halaman Review & Peta Interaktif..." },
   ];
 
-  // Auto filter kolom sendiri (User-Oriented)
   const autoFilterColumns = (fileHeaders: string[], type: DatasetType) => {
-    const config = DATASET_CONFIG[type];
     const initialMapping: Record<string, string> = {};
-
-    config.fields.forEach((field) => {
-      const match = fileHeaders.find((h) => {
-        const clean = h.trim().toLowerCase().replace(/[_\s-]/g, "");
+    DATASET_CONFIG[type].fields.forEach((field) => {
+      const match = fileHeaders.find((header) => {
+        const clean = header.trim().toLowerCase().replace(/[_\s-]/g, "");
         return field.aliases.some((alias) => clean === alias || clean.includes(alias));
       });
-      if (match) {
-        initialMapping[field.key] = match;
-      }
+      if (match) initialMapping[field.key] = match;
     });
+    return initialMapping;
+  };
 
-    setMapping(initialMapping);
+  const updateDataset = (type: DatasetType, update: Partial<DatasetUploadState>) => {
+    setDatasetStates((current) => ({
+      ...current,
+      [type]: { ...current[type], ...update },
+    }));
   };
 
   const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const selectedFile = e.target.files?.[0];
     if (!selectedFile) return;
-
-    setFile(selectedFile);
-    setUploadSuccess(false);
+    const type = currentDataset;
+    if (datasetStates[type].status === "locked") return;
     setErrorMessage(null);
     setSuccessInfo(null);
 
-    const ext = selectedFile.name.split(".").pop()?.toLowerCase();
+    const onParsed = (fileHeaders: string[], rows: Record<string, any>[]) => {
+      updateDataset(type, {
+        status: "reviewing",
+        file: selectedFile,
+        headers: fileHeaders,
+        previewRows: rows,
+        mapping: autoFilterColumns(fileHeaders, type),
+        batchId: undefined,
+      });
+    };
 
+    const ext = selectedFile.name.split(".").pop()?.toLowerCase();
     if (ext === "csv") {
       Papa.parse(selectedFile, {
         header: true,
         preview: 5,
         complete: (results) => {
-          if (results.meta.fields) {
-            setHeaders(results.meta.fields);
-            setPreviewRows(results.data as Record<string, any>[]);
-            autoFilterColumns(results.meta.fields, datasetType);
-          }
+          if (results.meta.fields) onParsed(results.meta.fields, results.data as Record<string, any>[]);
+          else setErrorMessage("Header CSV tidak ditemukan.");
         },
+        error: (error) => setErrorMessage(error.message),
       });
     } else if (ext === "xlsx" || ext === "xls") {
       const reader = new FileReader();
+      reader.onerror = () => setErrorMessage("Gagal membaca file Excel.");
       reader.onload = (evt) => {
-        const bstr = evt.target?.result;
-        const wb = XLSX.read(bstr, { type: "binary" });
-        const wsName = wb.SheetNames[0];
-        const ws = wb.Sheets[wsName];
-        const data = XLSX.utils.sheet_to_json<Record<string, any>>(ws, { header: 1 });
-
-        if (data.length > 0) {
-          const fileHeaders = (data[0] as unknown[]).map(String);
+        try {
+          const wb = XLSX.read(evt.target?.result, { type: "binary" });
+          const ws = wb.Sheets[wb.SheetNames[0]];
+          const data = XLSX.utils.sheet_to_json<unknown[]>(ws, { header: 1 });
+          if (!data.length) throw new Error("File Excel kosong.");
+          const fileHeaders = data[0].map(String);
           const rows = data.slice(1, 6).map((row) => {
             const obj: Record<string, any> = {};
-            fileHeaders.forEach((h, i) => {
-              obj[h] = (row as any[])[i];
-            });
+            fileHeaders.forEach((header, index) => { obj[header] = row[index]; });
             return obj;
           });
-
-          setHeaders(fileHeaders);
-          setPreviewRows(rows);
-          autoFilterColumns(fileHeaders, datasetType);
+          onParsed(fileHeaders, rows);
+        } catch (error: any) {
+          setErrorMessage(error.message || "Gagal membaca file Excel.");
         }
       };
       reader.readAsBinaryString(selectedFile);
+    } else {
+      setErrorMessage("Format file harus CSV atau Excel.");
+    }
+    e.target.value = "";
+  };
+
+  const handleLoadDummyToForm = () => {
+    const sample = DUMMY_SAMPLES[currentDataset];
+    const dummyHeaders = Object.keys(sample[0]);
+    updateDataset(currentDataset, {
+      status: "reviewing",
+      file: new File([Papa.unparse(sample)], `${currentDataset}_sample.csv`, { type: "text/csv" }),
+      headers: dummyHeaders,
+      previewRows: sample,
+      mapping: autoFilterColumns(dummyHeaders, currentDataset),
+      batchId: undefined,
+    });
+    setErrorMessage(null);
+    setSuccessInfo(`Data contoh [${DATASET_CONFIG[currentDataset].title}] dimuat.`);
+  };
+
+  const handleLockDataset = async () => {
+    const state = datasetStates[currentDataset];
+    if (!state.file || !state.headers.length) return;
+    const missingFields = DATASET_CONFIG[currentDataset].fields.filter((field) => !state.mapping[field.key]);
+    if (missingFields.length) {
+      setErrorMessage(`Pemetaan kolom belum lengkap: ${missingFields.map((field) => field.label).join(", ")}`);
+      return;
+    }
+
+    setLoading(true);
+    setErrorMessage(null);
+    try {
+      const formData = new FormData();
+      formData.append("file", state.file);
+      formData.append("dataset_type", currentDataset);
+      const uploadRes = await api.post("/upload/", formData, {
+        headers: { "Content-Type": "multipart/form-data" },
+      });
+      const batchId = Number(uploadRes.data.id);
+      if (!Number.isFinite(batchId)) throw new Error("ID batch upload tidak valid.");
+      await api.post("/upload/confirm-mapping", {
+        batch_id: batchId,
+        column_mapping: state.mapping,
+      });
+      updateDataset(currentDataset, { status: "locked", batchId });
+      setSuccessInfo(`${DATASET_CONFIG[currentDataset].title} berhasil di-keep dan dikunci.`);
+    } catch (error: any) {
+      setErrorMessage(error.response?.data?.detail || error.message || "Gagal upload dan mengunci dataset.");
+    } finally {
+      setLoading(false);
     }
   };
 
-  // Muat dummy ke form per jenis dataset
-  const handleLoadDummyToForm = () => {
-    const sample = DUMMY_SAMPLES[datasetType];
-    const dummyHeaders = Object.keys(sample[0]);
-    const csvContent = Papa.unparse(sample);
-    const dummyBlob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" });
-    const dummyFile = new File([dummyBlob], `${datasetType}_sample.csv`, { type: "text/csv" });
+  const handleBatchProcess = async () => {
+    const locked = datasetStates;
+    const hasSources = locked.pascabayar.status === "locked" || locked.prabayar.status === "locked";
+    if (!hasSources) {
+      setErrorMessage("Kunci minimal satu dataset sumber: Pascabayar atau Prabayar.");
+      return;
+    }
+    if (locked.koordinat_kosong.status !== "locked") {
+      setErrorMessage("Kunci dataset Koordinat Kosong sebelum memulai matching.");
+      return;
+    }
 
-    setFile(dummyFile);
-    setHeaders(dummyHeaders);
-    setPreviewRows(sample);
-    autoFilterColumns(dummyHeaders, datasetType);
-    setUploadSuccess(false);
+    setBatchProcessing(true);
+    setBatchProgress("Membentuk master dan memproses dataset terkunci...");
     setErrorMessage(null);
-    setSuccessInfo(`Data contoh [${DATASET_CONFIG[datasetType].title}] dimuat otomatis ke formulir.`);
+    try {
+      const response = await api.post("/upload/batch-process", {
+        pascabayar_batch_id: locked.pascabayar.batchId ?? null,
+        prabayar_batch_id: locked.prabayar.batchId ?? null,
+        pdpj_batch_id: locked.pdpj.batchId ?? null,
+        target_batch_id: locked.koordinat_kosong.batchId,
+      });
+      const id = Number(response.data.process_id);
+      if (!Number.isFinite(id)) throw new Error("Server tidak mengembalikan process_id yang valid.");
+      setBatchProgress("Pemrosesan selesai. Membuka halaman review...");
+      setTimeout(() => navigate(`/candidates?process_id=${id}`), 500);
+    } catch (error: any) {
+      setErrorMessage(error.response?.data?.detail || error.message || "Gagal memproses dataset.");
+      setBatchProcessing(false);
+    }
   };
 
   // Helper fungsi untuk animasi langkah lazy loading
@@ -229,73 +319,27 @@ export default function UploadPage() {
 
   const handleResetDatabase = async () => {
     if (!window.confirm("Kosongkan semua data di database?")) return;
-
     setResetting(true);
     setErrorMessage(null);
     try {
       const res = await api.post("/upload/reset");
-      setFile(null);
-      setHeaders([]);
-      setPreviewRows([]);
-      setMapping({});
+      setDatasetStates({
+        pascabayar: { status: "empty", headers: [], previewRows: [], mapping: {} },
+        prabayar: { status: "empty", headers: [], previewRows: [], mapping: {} },
+        pdpj: { status: "empty", headers: [], previewRows: [], mapping: {} },
+        koordinat_kosong: { status: "empty", headers: [], previewRows: [], mapping: {} },
+      });
       setSuccessInfo(res.data.message);
-    } catch (err: any) {
-      setErrorMessage(err.message || "Gagal reset.");
+    } catch (error: any) {
+      setErrorMessage(error.response?.data?.detail || error.message || "Gagal reset.");
     } finally {
       setResetting(false);
     }
   };
 
-  const handleSubmit = async () => {
-    if (!file) return;
-
-    setPipelineActive(true);
-    setPipelineTitle(`Mengunggah & Memproses [${DATASET_CONFIG[datasetType].title}]...`);
-    setPipelineStepIndex(0);
-    setErrorMessage(null);
-
-    try {
-      // Langkah 1: Upload file mentah
-      setPipelineStepIndex(0);
-      const formData = new FormData();
-      formData.append("file", file);
-      formData.append("dataset_type", datasetType);
-
-      const uploadRes = await api.post("/upload/", formData, {
-        headers: { "Content-Type": "multipart/form-data" },
-      });
-
-      const batchId = uploadRes.data.id;
-
-      // Langkah 2: Konfirmasi kolom mapping
-      setPipelineStepIndex(1);
-      await api.post("/upload/confirm-mapping", {
-        batch_id: batchId,
-        column_mapping: mapping,
-      });
-
-      // Langkah 3 & 4: Jalankan Auto Pipeline (Matching / Master update)
-      setPipelineStepIndex(2);
-      await new Promise((r) => setTimeout(r, 350));
-      setPipelineStepIndex(3);
-
-      const pipelineRes = await api.post(`/upload/auto-pipeline?batch_id=${batchId}`);
-      const targetProcessId = pipelineRes.data.process_id || 1;
-
-      // Langkah 5: Selesai & Langsung navigasi ke Review
-      setPipelineStepIndex(4);
-      setSuccessInfo(pipelineRes.data.message || "Pemrosesan & pencocokan berhasil!");
-
-      setTimeout(() => {
-        navigate(`/candidates?process_id=${targetProcessId}`);
-      }, 700);
-    } catch (err: any) {
-      setErrorMessage(err.message || "Gagal memproses dan mencocokkan data.");
-      setPipelineActive(false);
-    }
-  };
-
-  const currentConfig = DATASET_CONFIG[datasetType];
+  const currentState = datasetStates[currentDataset];
+  const currentConfig = DATASET_CONFIG[currentDataset];
+  const lockedCount = Object.values(datasetStates).filter((state) => state.status === "locked").length;
 
   return (
     <div className="space-y-6 relative">
@@ -438,25 +482,31 @@ export default function UploadPage() {
       <div className="p-4 border border-neo-border rounded-sm bg-white shadow-[0_4px_0_#0a0a0a]">
         <h2 className="text-sm font-bold mb-2">1. Pilih Data yang Ingin Diunggah</h2>
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-2">
-          {(["pascabayar", "prabayar", "pdpj", "koordinat_kosong"] as DatasetType[]).map((type) => (
-            <button
-              key={type}
-              type="button"
-              disabled={pipelineActive}
-              onClick={() => {
-                setDatasetType(type);
-                if (headers.length > 0) autoFilterColumns(headers, type);
-              }}
-              className={`p-3 text-left border border-neo-border rounded-sm transition ${
-                datasetType === type
-                  ? "bg-neo-black text-white shadow-[0_2px_0_#0a0a0a]"
-                  : "bg-white text-neo-black hover:bg-[#e5e4e7]"
-              }`}
-            >
-              <div className="font-bold text-xs">{DATASET_CONFIG[type].title}</div>
-              <div className="text-[10px] opacity-80 mt-1 line-clamp-2">{DATASET_CONFIG[type].desc}</div>
-            </button>
-          ))}
+          {(["pascabayar", "prabayar", "pdpj", "koordinat_kosong"] as DatasetType[]).map((type) => {
+            const state = datasetStates[type];
+            const locked = state.status === "locked";
+            return (
+              <button
+                key={type}
+                type="button"
+                disabled={pipelineActive || batchProcessing}
+                onClick={() => setCurrentDataset(type)}
+                className={`p-3 text-left border border-neo-border rounded-sm transition ${
+                  currentDataset === type
+                    ? "bg-neo-black text-white shadow-[0_2px_0_#0a0a0a]"
+                    : "bg-white text-neo-black hover:bg-[#e5e4e7]"
+                }`}
+              >
+                <div className="flex items-center justify-between gap-2">
+                  <div className="font-bold text-xs">{DATASET_CONFIG[type].title}</div>
+                  <span className={`text-[10px] font-bold ${locked ? "text-[#16a34a]" : "opacity-70"}`}>
+                    {locked ? "LOCKED" : state.status === "reviewing" ? "REVIEW" : "BELUM"}
+                  </span>
+                </div>
+                <div className="text-[10px] opacity-80 mt-1 line-clamp-2">{DATASET_CONFIG[type].desc}</div>
+              </button>
+            );
+          })}
         </div>
       </div>
 
@@ -466,39 +516,40 @@ export default function UploadPage() {
           <h2 className="text-sm font-bold">2. Upload File (XLSX / CSV) - {currentConfig.title}</h2>
           <button
             type="button"
-            disabled={pipelineActive}
+            disabled={pipelineActive || batchProcessing || currentState.status === "locked"}
             onClick={handleLoadDummyToForm}
             className="px-3 py-1.5 border border-neo-border bg-[#e5e4e7] hover:bg-[#d4d3d6] text-xs font-bold rounded-sm text-neo-black shadow-[0_2px_0_#0a0a0a]"
           >
-            📋 Muat Contoh Data [{datasetType.toUpperCase()}]
+            📋 Muat Contoh Data [{currentDataset.toUpperCase()}]
           </button>
         </div>
 
         <input
           type="file"
           accept=".csv, .xlsx, .xls"
-          disabled={pipelineActive}
+          disabled={pipelineActive || batchProcessing || currentState.status === "locked"}
           onChange={handleFileUpload}
-          className="block w-full text-sm text-neo-black file:mr-4 file:py-2 file:px-4 file:rounded-sm file:border file:border-neo-border file:text-sm file:font-semibold file:bg-neo-white file:text-neo-black hover:file:bg-[#e5e4e7] cursor-pointer"
+          className="block w-full text-sm text-neo-black file:mr-4 file:py-2 file:px-4 file:rounded-sm file:border file:border-neo-border file:text-sm file:font-semibold file:bg-neo-white file:text-neo-black hover:file:bg-[#e5e4e7] cursor-pointer disabled:opacity-50"
         />
-        {file && (
+        {currentState.file && (
           <p className="text-xs text-[#16a34a] font-medium">
-            File terpilih: <strong>{file.name}</strong> ({Math.round(file.size / 1024)} KB)
+            File terpilih: <strong>{currentState.file.name}</strong> ({Math.round(currentState.file.size / 1024)} KB)
           </p>
+        )}
+        {currentState.status === "locked" && (
+          <p className="text-xs text-[#16a34a] font-bold">✓ Dataset terkunci. Pilih dataset lain untuk melanjutkan.</p>
         )}
       </div>
 
-      {/* 3. Auto-Filter Kolom Sendiri (User-Oriented) */}
-      {headers.length > 0 && (
+      {/* 3. Auto-Filter Kolom */}
+      {currentState.headers.length > 0 && (
         <div className="p-4 border border-neo-border rounded-sm bg-white shadow-[0_4px_0_#0a0a0a]">
           <div className="flex items-center justify-between mb-2">
             <div>
-              <h2 className="text-sm font-bold">3. Penyaringan Kolom Otomatis (User-Oriented)</h2>
-              <p className="text-xs text-neo-border">
-                Sistem otomatis mendeteksi kolom yang relevan dari file Anda.
-              </p>
+              <h2 className="text-sm font-bold">3. Penyaringan Kolom Otomatis</h2>
+              <p className="text-xs text-neo-border">Sistem otomatis mendeteksi kolom yang relevan dari file Anda.</p>
             </div>
-            <span className="px-2 py-0.5 border border-[#16a34a] bg-[#dcfce7] text-[#16a34a] text-[10px] font-bold rounded-xs">
+            <span className="px-2 py-1 neo-highlight border border-[#16a34a] bg-[#dcfce7] text-[#16a34a] text-[10px] font-bold rounded-xs">
               ✓ Auto-Filtered
             </span>
           </div>
@@ -510,16 +561,14 @@ export default function UploadPage() {
                   {field.label} <span className="text-[#dc2626]">*</span>
                 </label>
                 <select
-                  disabled={pipelineActive}
-                  value={mapping[field.key] || ""}
-                  onChange={(e) => setMapping({ ...mapping, [field.key]: e.target.value })}
-                  className="border border-neo-border p-1.5 rounded-sm text-xs bg-white"
+                  disabled={pipelineActive || batchProcessing || currentState.status === "locked"}
+                  value={currentState.mapping[field.key] || ""}
+                  onChange={(e) => updateDataset(currentDataset, { mapping: { ...currentState.mapping, [field.key]: e.target.value } })}
+                  className="border border-neo-border p-1.5 rounded-sm text-xs bg-white disabled:opacity-50"
                 >
                   <option value="">-- Pilih Kolom File --</option>
-                  {headers.map((h) => (
-                    <option key={h} value={h}>
-                      {h}
-                    </option>
+                  {currentState.headers.map((h) => (
+                    <option key={h} value={h}>{h}</option>
                   ))}
                 </select>
               </div>
@@ -529,23 +578,21 @@ export default function UploadPage() {
       )}
 
       {/* 4. Pratinjau 5 Baris Data */}
-      {previewRows.length > 0 && (
+      {currentState.previewRows.length > 0 && (
         <div className="p-4 border border-neo-border rounded-sm bg-white shadow-[0_4px_0_#0a0a0a] overflow-x-auto">
           <h2 className="text-sm font-bold mb-2">4. Pratinjau Data (5 Baris Pertama)</h2>
           <table className="w-full text-left text-xs border border-neo-border">
             <thead className="bg-[#e5e4e7] border-b border-neo-border">
               <tr>
-                {headers.map((h) => (
-                  <th key={h} className="p-2 border-r border-neo-border">
-                    {h}
-                  </th>
+                {currentState.headers.map((h) => (
+                  <th key={h} className="p-2 border-r border-neo-border">{h}</th>
                 ))}
               </tr>
             </thead>
             <tbody>
-              {previewRows.map((row, idx) => (
+              {currentState.previewRows.map((row, idx) => (
                 <tr key={idx} className="border-b border-neo-border hover:bg-neo-white">
-                  {headers.map((h) => (
+                  {currentState.headers.map((h) => (
                     <td key={h} className="p-2 border-r border-neo-border">
                       {row[h] !== undefined ? String(row[h]) : "-"}
                     </td>
@@ -557,26 +604,43 @@ export default function UploadPage() {
         </div>
       )}
 
-      {/* 5. Submit Button */}
-      {headers.length > 0 && (
+      {/* 5. Lock/Keep Button per Dataset */}
+      {currentState.status === "reviewing" && (
         <div className="flex flex-col sm:flex-row items-center justify-between p-4 border border-neo-border rounded-sm bg-white shadow-[0_4px_0_#0a0a0a] gap-3">
           <div>
-            <span className="text-xs text-[#16a34a] font-bold block">
-              ✓ Kolom Terpetakan & Data Siap Diproses
-            </span>
-            <p className="text-[11px] text-neo-border">
-              Sistem akan otomatis menyimpan, menjalankan alur rekonsiliasi, dan langsung mengalihkan ke Peta Spasial Review.
-            </p>
+            <span className="text-xs text-[#16a34a] font-bold block">✓ Kolom Terpetakan & Data Siap Di-Keep</span>
+            <p className="text-[11px] text-neo-border">Kunci dataset ini, lalu lanjut upload dataset berikutnya.</p>
           </div>
           <button
             type="button"
-            disabled={loading || pipelineActive}
-            onClick={handleSubmit}
-            className="w-full sm:w-auto px-6 py-2.5 border border-neo-border bg-neo-black text-white text-xs font-bold rounded-sm shadow-[0_2px_0_#0a0a0a] disabled:opacity-50 hover:bg-[#1a1a1a] flex items-center justify-center gap-2"
+            disabled={loading || pipelineActive || batchProcessing}
+            onClick={handleLockDataset}
+            className="w-full sm:w-auto px-6 py-2.5 border border-neo-border bg-[#16a34a] text-white text-xs font-bold rounded-sm shadow-[0_2px_0_#0a0a0a] disabled:opacity-50 hover:bg-[#15803d] flex items-center justify-center gap-2"
           >
-            <span>🚀 Konfirmasi, Cocokkan Spasial & Buka Review</span>
-            <span>→</span>
+            <span>🔒 Keep & Lock Dataset</span>
           </button>
+        </div>
+      )}
+
+      {/* 6. Batch Process - Process All Locked Datasets */}
+      {lockedCount >= 2 && datasetStates.koordinat_kosong.status === "locked" && (
+        <div className="p-4 border-2 border-[#16a34a] bg-[#dcfce7] rounded-sm shadow-[0_4px_0_#16a34a] space-y-3">
+          <div className="flex items-center justify-between">
+            <div>
+              <h3 className="text-sm font-bold text-[#16a34a]">✓ {lockedCount} Dataset Terkunci - Siap Diproses</h3>
+              <p className="text-xs text-neo-border mt-1">
+                Sistem akan membentuk master, exclude PDPJ, dan mencocokkan koordinat kosong.
+              </p>
+            </div>
+            <button
+              type="button"
+              disabled={loading || pipelineActive || batchProcessing}
+              onClick={handleBatchProcess}
+              className="px-6 py-2.5 border border-neo-border bg-neo-black text-white text-xs font-bold rounded-sm shadow-[0_2px_0_#0a0a0a] disabled:opacity-50 hover:bg-[#1a1a1a]"
+            >
+              {batchProcessing ? batchProgress : "🚀 Proses Semua Dataset"}
+            </button>
+          </div>
         </div>
       )}
     </div>

@@ -11,7 +11,7 @@ from ...database import get_db
 from ...models.upload import UploadBatch, SourceRecord, BatchStatus, DatasetType
 from ...models.master_sisa import CleanedMasterRecord, MasterSisaRecord
 from ...models.matching import ReconciliationProcess, MatchCandidate
-from ...schemas.upload import UploadBatchResponse, MappingRequest
+from ...schemas.upload import UploadBatchResponse, MappingRequest, BatchProcessRequest
 from ..spatial.master_builder import build_combined_master, extract_standard_fields
 from ..spatial.preparation import process_master_sisa_exclusion
 from ..spatial.engine import run_spatial_matching_job
@@ -179,6 +179,85 @@ async def seed_dummy_data(db: Session = Depends(get_db)):
     except Exception as e:
         db.rollback()
         raise HTTPException(status_code=500, detail=f"Gagal memuat data dummy: {str(e)}")
+
+@router.post("/batch-process")
+async def batch_process_endpoint(req: BatchProcessRequest, db: Session = Depends(get_db)):
+    """
+    Menjalankan alur pemrosesan bertahap setelah user mengunggah dan melock ke-4 dataset:
+    1. Build Master dari Pascabayar & Prabayar batches.
+    2. Exclude PDPJ jika ada, menghasilkan Master Sisa.
+    3. Jalankan Spasial Matching antara Koordinat Kosong (Target) vs Master Sisa.
+    """
+    try:
+        paska_ids = [req.pascabayar_batch_id] if req.pascabayar_batch_id else []
+        pra_ids = [req.prabayar_batch_id] if req.prabayar_batch_id else []
+
+        if not paska_ids and not pra_ids:
+            # Fallback cari batch di DB jika tidak dikirim eksplisit
+            paska_ids = [b.id for b in db.query(UploadBatch).filter(UploadBatch.dataset_type == DatasetType.PASCABAYAR).all()]
+            pra_ids = [b.id for b in db.query(UploadBatch).filter(UploadBatch.dataset_type == DatasetType.PRABAYAR).all()]
+
+        # 1. Build Combined Master
+        res_master = build_combined_master(db=db, pascabayar_batch_ids=paska_ids, prabayar_batch_ids=pra_ids)
+        master_batch_id = res_master["master_batch_id"]
+
+        # 2. Exclude PDPJ
+        pdpj_id = req.pdpj_batch_id
+        if not pdpj_id:
+            pdpj_batch = db.query(UploadBatch).filter(UploadBatch.dataset_type == DatasetType.PDPJ).first()
+            if pdpj_batch:
+                pdpj_id = pdpj_batch.id
+
+        if pdpj_id:
+            process_master_sisa_exclusion(db, master_batch_id, pdpj_id)
+        else:
+            # Tanpa PDPJ, semua master jadi master sisa
+            m_records = db.query(SourceRecord).filter(SourceRecord.batch_id == master_batch_id).all()
+            new_sisa = []
+            for mr in m_records:
+                mdata = mr.data or {}
+                new_sisa.append(MasterSisaRecord(
+                    idpel=mr.idpel or f"UNASSIGNED-{mr.id}",
+                    nama=mdata.get("nama", "-"),
+                    latitude=float(mdata.get("koordinat_y") or mdata.get("latitude") or 0),
+                    longitude=float(mdata.get("koordinat_x") or mdata.get("longitude") or 0),
+                    tarif=mdata.get("tarif", "-"),
+                    daya=int(mdata.get("daya", 0)) if mdata.get("daya") else None,
+                    jenis_layanan=mdata.get("jenis_pel", "PASCABAYAR")
+                ))
+            if new_sisa:
+                db.bulk_save_objects(new_sisa)
+                db.commit()
+
+        # 3. Target / Koordinat Kosong Matching
+        target_id = req.target_batch_id
+        if not target_id:
+            target_batch = db.query(UploadBatch).filter(
+                UploadBatch.dataset_type.in_([DatasetType.KOORDINAT_KOSONG, DatasetType.TARGET])
+            ).order_by(UploadBatch.id.desc()).first()
+            if target_batch:
+                target_id = target_batch.id
+
+        if not target_id:
+            raise HTTPException(status_code=400, detail="Data Koordinat Kosong (Target) belum diunggah atau dilock.")
+
+        match_res = run_spatial_matching_job(
+            db=db,
+            process_name="Proses Rekonsiliasi Staged (Multi-Dataset)",
+            target_batch_id=target_id,
+            radius_meters=req.radius_meters,
+            max_candidates_per_target=5
+        )
+
+        return {
+            "status": "completed",
+            "process_id": match_res["process_id"],
+            "message": "Alur multi-dataset staged berhasil diproses!",
+            "matching_summary": match_res
+        }
+    except Exception as e:
+        db.rollback()
+        raise HTTPException(status_code=500, detail=f"Gagal memproses batch staged: {str(e)}")
 
 @router.post("/auto-pipeline")
 async def auto_pipeline_endpoint(batch_id: int, db: Session = Depends(get_db)):

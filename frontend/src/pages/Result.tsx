@@ -55,6 +55,21 @@ export default function ResultPage() {
     window.open(`${API_BASE_URL}/process/${processId}/export`, "_blank");
   };
 
+  const handleReset = async () => {
+    if (!confirm("Yakin ingin mereset semua data? Tindakan ini tidak bisa diurungkan.")) return;
+    setLoading(true);
+    try {
+      await api.post("/upload/reset");
+      setSummary(null);
+      setProcessId("");
+      setError(null);
+    } catch (err: any) {
+      setError(err.message || "Gagal mereset data.");
+    } finally {
+      setLoading(false);
+    }
+  };
+
   return (
     <div className="space-y-6">
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
@@ -72,6 +87,14 @@ export default function ResultPage() {
             onChange={(e) => setProcessId(e.target.value)}
             className="w-20 border border-[#333333] p-1.5 rounded-sm text-sm bg-white"
           />
+          <button
+            onClick={handleReset}
+            disabled={loading}
+            className="px-3 py-1.5 border border-[#dc2626] bg-[#fee2e2] hover:bg-[#fef2f2] text-[#dc2626] text-xs font-semibold rounded-sm shadow-[0_2px_0_#0a0a0a] disabled:opacity-50"
+            title="Hapus semua data dan mulai dari awal"
+          >
+            🗑️ Reset
+          </button>
         </div>
       </div>
 

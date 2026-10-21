@@ -1,7 +1,57 @@
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
+from sqlalchemy import or_
 from pydantic import BaseModel
 from typing import List, Optional
+
+
+def apply_candidate_filters(query, validity_filters: Optional[str], layanan_filters: Optional[str], idpel_filters: Optional[str]):
+    """Apply OR within each filter group and AND between groups."""
+    validity_values = {value.strip().lower() for value in (validity_filters or "").split(",") if value.strip()}
+    if validity_values:
+        validity_clauses = []
+        status_values = {
+            "valid": "VALID",
+            "no-idpel": "PERLU_KONFIRMASI_IDPEL",
+            "luar-jangkauan": "DILUAR_RADIUS",
+            "idpel-kosong": "IDPEL_KOSONG",
+        }
+        selected_statuses = [status_values[value] for value in validity_values if value in status_values]
+        if selected_statuses:
+            validity_clauses.append(MatchCandidate.validity_status.in_(selected_statuses))
+        if "kurang-5m" in validity_values:
+            validity_clauses.append(MatchCandidate.is_under_5m == 1)
+        if validity_clauses:
+            query = query.filter(or_(*validity_clauses))
+
+    layanan_values = {value.strip().upper() for value in (layanan_filters or "").split(",") if value.strip()}
+    if layanan_values:
+        query = query.filter(MatchCandidate.jenis_layanan.in_(layanan_values))
+
+    idpel_values = {value.strip().lower() for value in (idpel_filters or "").split(",") if value.strip()}
+    if idpel_values:
+        idpel_clauses = []
+        if "ada" in idpel_values:
+            idpel_clauses.append(
+                (MatchCandidate.candidate_idpel != "")
+                & ~MatchCandidate.candidate_idpel.like("UNASSIGNED-%")
+                & ~MatchCandidate.candidate_idpel.like("DILUAR_RADIUS%")
+                & (MatchCandidate.candidate_idpel != "TIDAK_DITEMUKAN")
+                & (MatchCandidate.candidate_idpel != "IDPEL_KOSONG")
+            )
+        if "kosong" in idpel_values:
+            idpel_clauses.append(
+                (MatchCandidate.candidate_idpel == "")
+                | (MatchCandidate.candidate_idpel == "IDPEL_KOSONG")
+            )
+        if "tidak-ditemukan" in idpel_values:
+            idpel_clauses.append(MatchCandidate.candidate_idpel == "TIDAK_DITEMUKAN")
+        if "unassigned" in idpel_values:
+            idpel_clauses.append(MatchCandidate.candidate_idpel.like("UNASSIGNED-%"))
+        if idpel_clauses:
+            query = query.filter(or_(*idpel_clauses))
+
+    return query
 
 from app.database import get_db
 from app.modules.spatial.master_builder import build_combined_master
@@ -83,16 +133,27 @@ async def run_matching(req: RunMatchingRequest, db: Session = Depends(get_db)):
 async def get_candidates(
     process_id: int,
     db: Session = Depends(get_db),
-    status_filter: Optional[int] = Query(None)
+    status_filter: Optional[int] = Query(None),
+    validity_filters: Optional[str] = Query(None),
+    layanan_filters: Optional[str] = Query(None),
+    idpel_filters: Optional[str] = Query(None),
+    skip: int = Query(0, ge=0),
+    limit: int = Query(50, ge=1, le=1000)
 ):
     query = db.query(MatchCandidate).filter(MatchCandidate.process_id == process_id)
+
+    # Multi-select data-eligibility filters
+    query = apply_candidate_filters(query, validity_filters, layanan_filters, idpel_filters)
+
+    # Existing single-select review status filter
     if status_filter is not None:
         query = query.filter(MatchCandidate.is_accepted == status_filter)
 
-    candidates = query.order_by(MatchCandidate.target_ref, MatchCandidate.rank).all()
+    total_count = query.count()
+    candidates = query.order_by(MatchCandidate.target_ref, MatchCandidate.rank).offset(skip).limit(limit).all()
 
     # Fallback: jika process_id spesifik tidak ada kandidat, cari proses yang ada datanya
-    if not candidates:
+    if not candidates and skip == 0:
         latest_with_data = (
             db.query(ReconciliationProcess)
             .join(MatchCandidate, MatchCandidate.process_id == ReconciliationProcess.id)
@@ -101,11 +162,19 @@ async def get_candidates(
         )
         if latest_with_data and latest_with_data.id != process_id:
             query = db.query(MatchCandidate).filter(MatchCandidate.process_id == latest_with_data.id)
+            query = apply_candidate_filters(query, validity_filters, layanan_filters, idpel_filters)
             if status_filter is not None:
                 query = query.filter(MatchCandidate.is_accepted == status_filter)
-            candidates = query.order_by(MatchCandidate.target_ref, MatchCandidate.rank).all()
 
-    return candidates
+            total_count = query.count()
+            candidates = query.order_by(MatchCandidate.target_ref, MatchCandidate.rank).offset(skip).limit(limit).all()
+
+    return {
+        "total": total_count,
+        "items": candidates,
+        "skip": skip,
+        "limit": limit
+    }
 
 @router.post("/candidates/bulk-decision")
 async def submit_bulk_candidate_decision(

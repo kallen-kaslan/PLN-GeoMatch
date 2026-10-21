@@ -97,15 +97,25 @@ def run_spatial_matching_job(
                 closest_any = m
 
             if dist <= radius_meters:
-                has_real_idpel = not (m.idpel.startswith("UNASSIGNED-") or not m.idpel)
+                has_real_idpel = not (m.idpel.startswith("UNASSIGNED-") or not m.idpel or m.idpel.strip() == "")
+                # IDPEL_KOSONG = IDPEL kosong/tidak ada (prioritas utama)
+                is_idpel_kosong = not m.idpel or m.idpel.strip() == ""
+
+                if is_idpel_kosong:
+                    validity = "IDPEL_KOSONG"
+                elif has_real_idpel:
+                    validity = "VALID"
+                else:
+                    validity = "PERLU_KONFIRMASI_IDPEL"
+
                 candidates_found.append({
-                    "idpel": m.idpel,
+                    "idpel": m.idpel if m.idpel and m.idpel.strip() else "IDPEL_KOSONG",
                     "nama": m.nama,
                     "lat": m.latitude,
                     "lon": m.longitude,
                     "dist": round(dist, 2),
                     "jenis_layanan": getattr(m, "jenis_layanan", "PASCABAYAR"),
-                    "validity_status": "VALID" if has_real_idpel else "PERLU_KONFIRMASI_IDPEL",
+                    "validity_status": validity,
                     "is_under_5m": 1 if dist < 5.0 else 0
                 })
 
