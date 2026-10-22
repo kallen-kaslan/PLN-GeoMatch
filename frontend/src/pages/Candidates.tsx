@@ -46,6 +46,7 @@ export default function CandidatesPage() {
   // Pagination States
   const [currentPage, setCurrentPage] = useState<number>(1);
   const [rowsPerPage, setRowsPerPage] = useState<number>(50);
+  const [processStatus, setProcessStatus] = useState<string>("none");
 
   // Map references
   const mapContainerRef = useRef<HTMLDivElement>(null);
@@ -87,6 +88,15 @@ export default function CandidatesPage() {
 
   const fetchCandidates = useCallback(() => {
     if (!processId) return;
+
+    // Cek status proses rekonsiliasi
+    api.get(`/history/process/${processId}/summary`)
+      .then((sRes) => {
+        const st = String(sRes.data.matching_status || "").toLowerCase();
+        setProcessStatus(st);
+      })
+      .catch(() => {});
+
     const skip = (currentPage - 1) * rowsPerPage;
     let url = `/process/${processId}/candidates?skip=${skip}&limit=${rowsPerPage}`;
     if (statusFilter !== "all") {
@@ -118,6 +128,16 @@ export default function CandidatesPage() {
         setLoading(false);
       });
   }, [processId, currentPage, rowsPerPage, statusFilter, validityFilters, layananFilters, idpelFilters, setSearchParams]);
+
+  // Polling otomatis jika worker masih memproses di background
+  useEffect(() => {
+    if (processStatus === "queued" || processStatus === "running") {
+      const timer = setTimeout(() => {
+        fetchCandidates();
+      }, 2500);
+      return () => clearTimeout(timer);
+    }
+  }, [processStatus, fetchCandidates]);
 
   const handleQuickDemoHere = async () => {
     setSeedingQuick(true);
@@ -374,6 +394,30 @@ export default function CandidatesPage() {
           </button>
         </div>
       </div>
+
+      {/* Banner Celery Worker Background Processing */}
+      {(processStatus === "queued" || processStatus === "running") && (
+        <div className="p-3.5 sm:p-4 border-2 border-neo-black bg-[#fef9c3] rounded-sm shadow-[3px_3px_0_#0a0a0a] flex items-center justify-between gap-3">
+          <div className="flex items-center gap-3">
+            <div className="w-5 h-5 border-3 border-neo-black border-t-transparent rounded-full animate-spin shrink-0"></div>
+            <div>
+              <p className="text-xs sm:text-sm font-black text-neo-black">
+                {processStatus === "queued" ? "⏳ Proses Masuk Antrean (QUEUED)" : "⚙️ Celery Worker Sedang Memproses Matching (RUNNING)..."}
+              </p>
+              <p className="text-[11px] text-neo-border">
+                Halaman ini otomatis me-refresh data begitu worker menyelesaikan perhitungan spasial.
+              </p>
+            </div>
+          </div>
+          <button
+            type="button"
+            onClick={fetchCandidates}
+            className="px-3 py-1.5 border border-neo-black bg-white text-xs font-bold rounded-xs shadow-[1px_1px_0_#0a0a0a] hover:bg-neo-white shrink-0"
+          >
+            🔄 Refresh Manual
+          </button>
+        </div>
+      )}
 
       {/* SUMMARY STATS BOX */}
       {candidates.length > 0 && (

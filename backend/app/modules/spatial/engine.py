@@ -26,17 +26,37 @@ def run_spatial_matching_job(
     process_name: str,
     target_batch_id: int,
     radius_meters: float = 100.0,
-    max_candidates_per_target: int = 5
+    max_candidates_per_target: int = 5,
+    process_id: int = None
 ) -> Dict[str, Any]:
-    process = ReconciliationProcess(
-        process_name=process_name,
-        radius_meters=radius_meters,
-        matching_status=ProcessStatus.RUNNING,
-        review_status=ReviewStatus.NOT_STARTED,
-    )
-    db.add(process)
+    if process_id:
+        process = db.query(ReconciliationProcess).filter(ReconciliationProcess.id == process_id).first()
+        if not process:
+            process = ReconciliationProcess(
+                id=process_id,
+                process_name=process_name,
+                radius_meters=radius_meters,
+                matching_status=ProcessStatus.RUNNING,
+                review_status=ReviewStatus.NOT_STARTED,
+            )
+            db.add(process)
+        else:
+            process.matching_status = ProcessStatus.RUNNING
+            process.radius_meters = radius_meters
+    else:
+        process = ReconciliationProcess(
+            process_name=process_name,
+            radius_meters=radius_meters,
+            matching_status=ProcessStatus.RUNNING,
+            review_status=ReviewStatus.NOT_STARTED,
+        )
+        db.add(process)
     db.commit()
     db.refresh(process)
+
+    # Idempotensi: bersihkan kandidat lama dari proses ini jika ada (misal re-run atau retry)
+    db.query(MatchCandidate).filter(MatchCandidate.process_id == process.id).delete()
+    db.commit()
 
     target_records = db.query(SourceRecord).filter(SourceRecord.batch_id == target_batch_id).all()
     master_sisa = db.query(MasterSisaRecord).all()

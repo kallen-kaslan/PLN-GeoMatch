@@ -42,4 +42,15 @@ async def root():
 
 @app.get("/health")
 async def health_check():
-    return {"status": "ok"}
+    redis_connected = False
+    try:
+        import redis
+        r = redis.from_url(settings.REDIS_URL, socket_timeout=1)
+        redis_connected = r.ping()
+    except Exception:
+        redis_connected = False
+
+    return {
+        "status": "ok",
+        "redis_broker": "connected" if redis_connected else "offline"
+    }

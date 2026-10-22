@@ -8,13 +8,15 @@ import os
 import csv
 
 from ...database import get_db
+from ...config import settings
 from ...models.upload import UploadBatch, SourceRecord, BatchStatus, DatasetType
 from ...models.master_sisa import CleanedMasterRecord, MasterSisaRecord
-from ...models.matching import ReconciliationProcess, MatchCandidate
+from ...models.matching import ReconciliationProcess, MatchCandidate, ProcessStatus, ReviewStatus
 from ...schemas.upload import UploadBatchResponse, MappingRequest, BatchProcessRequest
 from ..spatial.master_builder import build_combined_master, extract_standard_fields
 from ..spatial.preparation import process_master_sisa_exclusion
 from ..spatial.engine import run_spatial_matching_job
+from ...tasks.spatial_tasks import execute_batch_reconciliation_pipeline
 
 router = APIRouter(prefix="/upload", tags=["Upload"])
 
@@ -188,7 +190,50 @@ async def batch_process_endpoint(req: BatchProcessRequest, db: Session = Depends
     2. Exclude PDPJ jika ada, menghasilkan Master Sisa.
     3. Jalankan Spasial Matching antara Koordinat Kosong (Target) vs Master Sisa.
     """
+    # 1. Buat record process tunggal terlebih dahulu dengan status QUEUED
+    process = ReconciliationProcess(
+        process_name="Proses Rekonsiliasi Staged (Multi-Dataset)",
+        radius_meters=req.radius_meters,
+        matching_status=ProcessStatus.QUEUED,
+        review_status=ReviewStatus.NOT_STARTED,
+    )
+    db.add(process)
+    db.commit()
+    db.refresh(process)
+
+    # 2. Coba dispatch seluruh pipeline berat ke Celery background worker
     try:
+        execute_batch_reconciliation_pipeline.delay(
+            process_id=process.id,
+            pascabayar_batch_id=req.pascabayar_batch_id,
+            prabayar_batch_id=req.prabayar_batch_id,
+            pdpj_batch_id=req.pdpj_batch_id,
+            target_batch_id=req.target_batch_id,
+            radius_meters=req.radius_meters
+        )
+        return {
+            "status": "queued",
+            "process_id": process.id,
+            "execution_mode": "async_celery",
+            "message": "Seluruh alur batch rekonsiliasi sedang diproses di background oleh Celery worker.",
+            "matching_summary": {"process_id": process.id, "status": "queued"}
+        }
+    except Exception as exc:
+        # Jika dispatch gagal:
+        if not settings.ALLOW_SYNC_FALLBACK:
+            process.matching_status = ProcessStatus.FAILED
+            db.commit()
+            raise HTTPException(
+                status_code=503,
+                detail=f"Celery worker/Redis broker tidak tersedia ({str(exc)}). "
+                       f"Nyalakan Redis atau set ALLOW_SYNC_FALLBACK=True untuk mode development."
+            )
+
+    # 3. Fallback sinkron jika Celery broker offline (terproteksi ALLOW_SYNC_FALLBACK)
+    try:
+        process.matching_status = ProcessStatus.RUNNING
+        db.commit()
+
         paska_ids = [req.pascabayar_batch_id] if req.pascabayar_batch_id else []
         pra_ids = [req.prabayar_batch_id] if req.prabayar_batch_id else []
 
@@ -239,10 +284,14 @@ async def batch_process_endpoint(req: BatchProcessRequest, db: Session = Depends
                 target_id = target_batch.id
 
         if not target_id:
-            # Jika hanya upload source, kembalikan dummy process_id atau message sukses build master
+            process.matching_status = ProcessStatus.COMPLETED
+            process.total_targets = 0
+            process.matched_targets = 0
+            process.unmatched_targets = 0
+            db.commit()
             return {
                 "status": "completed",
-                "process_id": 1, # Minimal ID untuk navigasi frontend
+                "process_id": process.id,
                 "message": "Master data berhasil dibentuk. Koordinat Kosong belum ada untuk dicocokkan.",
                 "matching_summary": {"total_targets": 0, "matched_targets": 0}
             }
@@ -252,17 +301,25 @@ async def batch_process_endpoint(req: BatchProcessRequest, db: Session = Depends
             process_name="Proses Rekonsiliasi Staged (Multi-Dataset)",
             target_batch_id=target_id,
             radius_meters=req.radius_meters,
-            max_candidates_per_target=5
+            max_candidates_per_target=5,
+            process_id=process.id
         )
 
         return {
             "status": "completed",
-            "process_id": match_res["process_id"],
+            "process_id": process.id,
             "message": "Alur multi-dataset staged berhasil diproses!",
             "matching_summary": match_res
         }
     except Exception as e:
         db.rollback()
+        try:
+            p = db.query(ReconciliationProcess).filter(ReconciliationProcess.id == process.id).first()
+            if p:
+                p.matching_status = ProcessStatus.FAILED
+                db.commit()
+        except Exception:
+            pass
         raise HTTPException(status_code=500, detail=f"Gagal memproses batch staged: {str(e)}")
 
 @router.post("/auto-pipeline")

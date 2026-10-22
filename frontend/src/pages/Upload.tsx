@@ -107,7 +107,6 @@ export default function UploadPage() {
 
   // Batch processing state
   const [batchProcessing, setBatchProcessing] = useState(false);
-  const [batchProgress, setBatchProgress] = useState("");
 
   // Lazy Loading Animation Pipeline State
   const [pipelineActive, setPipelineActive] = useState(false);
@@ -263,7 +262,6 @@ export default function UploadPage() {
     }
 
     setBatchProcessing(true);
-    setBatchProgress("Membentuk master dan memproses dataset terkunci...");
     setPipelineActive(true);
     setPipelineTitle("Membentuk master dan memproses dataset...");
     setPipelineStepIndex(0);
@@ -273,7 +271,6 @@ export default function UploadPage() {
       const batchIds = { ...locked };
       for (const type of Object.keys(locked) as DatasetType[]) {
         if (locked[type].status === "reviewing") {
-          setBatchProgress(`Menyimpan ${DATASET_CONFIG[type].title}...`);
           batchIds[type] = { ...locked[type], batchId: await uploadDataset(type) };
         }
       }
@@ -297,7 +294,6 @@ export default function UploadPage() {
       const id = Number(response.data.process_id);
       if (!Number.isFinite(id)) throw new Error("Server tidak mengembalikan process_id yang valid.");
       setPipelineStepIndex(pipelineSteps.length - 1);
-      setBatchProgress("Pemrosesan selesai. Membuka halaman review...");
       setTimeout(() => navigate(`/candidates?process_id=${id}`), 500);
     } catch (error: any) {
       setErrorMessage(error.response?.data?.detail || error.message || "Gagal memproses dataset.");
@@ -671,7 +667,7 @@ export default function UploadPage() {
               onClick={handleBatchProcess}
               className="touch-min px-5 py-2.5 border-2 border-neo-border bg-neo-black text-white text-xs font-bold rounded-sm shadow-[2px_2px_0_#0a0a0a] disabled:opacity-50 hover:bg-[#1a1a1a] transition active:translate-y-0.5 flex items-center justify-center gap-1.5"
             >
-              <span>{batchProcessing ? batchProgress : "🔐 Konfirmasi & Lanjut ke Review"}</span>
+              <span>{batchProcessing ? "Memproses..." : "🔐 Konfirmasi & Lanjut ke Review"}</span>
             </button>
           </div>
         </div>
@@ -693,7 +689,7 @@ export default function UploadPage() {
               onClick={handleBatchProcess}
               className="touch-min px-6 py-2.5 border-2 border-neo-border bg-neo-black text-white text-xs sm:text-sm font-bold rounded-sm shadow-[2px_2px_0_#0a0a0a] disabled:opacity-50 hover:bg-[#1a1a1a] transition active:translate-y-0.5 shrink-0 text-center"
             >
-              <span>{batchProcessing ? batchProgress : "🔐 Konfirmasi Semua Dataset & Lanjut ke Review"}</span>
+              <span>{batchProcessing ? "Memproses..." : "🚀 Konfirmasi Dataset & Lanjut ke Review"}</span>
             </button>
           </div>
         </div>

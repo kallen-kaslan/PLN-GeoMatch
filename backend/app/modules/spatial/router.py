@@ -53,11 +53,13 @@ def apply_candidate_filters(query, validity_filters: Optional[str], layanan_filt
 
     return query
 
+from app.config import settings
 from app.database import get_db
 from app.modules.spatial.master_builder import build_combined_master
 from app.modules.spatial.preparation import process_master_sisa_exclusion
 from app.modules.spatial.engine import run_spatial_matching_job
-from app.models.matching import MatchCandidate, ReconciliationProcess, ReviewStatus
+from app.models.matching import MatchCandidate, ReconciliationProcess, ProcessStatus, ReviewStatus
+from app.tasks.spatial_tasks import execute_matching_task
 
 router = APIRouter(prefix="/process", tags=["Process & Matching"])
 
@@ -117,17 +119,64 @@ async def run_matching(req: RunMatchingRequest, db: Session = Depends(get_db)):
     """
     Step 3: Mencocokkan data Koordinat Kosong (IDPEL kosong/tidak ditemukan)
     dengan Master Sisa berdasarkan radius geografis.
+    Membuat record dengan status QUEUED, lalu mendispatch ke Celery background worker.
+    Jika broker tidak tersedia, fallback transparan ke eksekusi sinkron langsung.
     """
+    process = ReconciliationProcess(
+        process_name=req.process_name,
+        radius_meters=req.radius_meters,
+        matching_status=ProcessStatus.QUEUED,
+        review_status=ReviewStatus.NOT_STARTED,
+    )
+    db.add(process)
+    db.commit()
+    db.refresh(process)
+
+    # Coba dispatch ke Celery worker
     try:
-        return run_spatial_matching_job(
-            db=db,
+        execute_matching_task.delay(
+            process_id=process.id,
             process_name=req.process_name,
             target_batch_id=req.target_batch_id,
             radius_meters=req.radius_meters,
             max_candidates_per_target=req.max_candidates
         )
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        return {
+            "process_id": process.id,
+            "process_name": process.process_name,
+            "status": "queued",
+            "execution_mode": "async_celery",
+            "message": "Pencocokan spasial berhasil diantrekan ke Celery background worker."
+        }
+    except Exception as exc:
+        # Jika dispatch gagal:
+        if not settings.ALLOW_SYNC_FALLBACK:
+            process.matching_status = ProcessStatus.FAILED
+            db.commit()
+            raise HTTPException(
+                status_code=503,
+                detail=f"Celery worker/Redis broker tidak tersedia ({str(exc)}). "
+                       f"Nyalakan Redis atau set ALLOW_SYNC_FALLBACK=True untuk mode development."
+            )
+
+        # Fallback sync eksplisit terproteksi ALLOW_SYNC_FALLBACK
+        try:
+            process.matching_status = ProcessStatus.RUNNING
+            db.commit()
+            res = run_spatial_matching_job(
+                db=db,
+                process_name=req.process_name,
+                target_batch_id=req.target_batch_id,
+                radius_meters=req.radius_meters,
+                max_candidates_per_target=req.max_candidates,
+                process_id=process.id
+            )
+            res["execution_mode"] = "sync_fallback"
+            return res
+        except Exception as e:
+            process.matching_status = ProcessStatus.FAILED
+            db.commit()
+            raise HTTPException(status_code=500, detail=str(e))
 
 @router.get("/{process_id}/candidates")
 async def get_candidates(
