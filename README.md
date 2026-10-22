@@ -99,7 +99,7 @@ npm run build
 
 Edit file `backend/.env`:
 
-```env
+```env.example
 DATABASE_URL=postgresql://postgres:postgres@localhost:5432/pln_geomatch
 SECRET_KEY=your-secret-key-here
 ALGORITHM=HS256
