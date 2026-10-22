@@ -46,7 +46,8 @@ html, body, #root {
 /* Badge yang membungkus teks menjadi satu kesatuan, bukan terpecah per baris */
 .neo-highlight {
   display: inline-block;
+  max-width: 100%;
+  box-sizing: border-box;
   white-space: normal;
-  word-wrap: break-word;
-  overflow-wrap: break-word;
+  overflow-wrap: anywhere;
 }

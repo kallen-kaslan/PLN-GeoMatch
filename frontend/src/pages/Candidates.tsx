@@ -506,7 +506,7 @@ export default function CandidatesPage() {
                     }}
                     className="border border-neo-border rounded-sm"
                   />
-                  <span className={`px-2 py-0.5 text-[10px] rounded ${layanan === "PRABAYAR" ? "bg-blue-100 text-blue-800" : "bg-gray-100 text-gray-800"}`}>
+                  <span className={`neo-highlight px-2 py-0.5 text-[10px] rounded ${layanan === "PRABAYAR" ? "bg-blue-100 text-blue-800" : "bg-gray-100 text-gray-800"}`}>
                     {layanan}
                   </span>
                 </label>
@@ -691,7 +691,7 @@ export default function CandidatesPage() {
                     </td>
                     <td className="p-3 border-r border-neo-border">{c.candidate_nama || "-"}</td>
                     <td className="p-3 border-r border-neo-border">
-                      <span className={`px-1.5 py-1 rounded text-[10px] font-bold ${
+                      <span className={`neo-highlight px-1.5 py-1 rounded text-[10px] font-bold ${
                         (c.jenis_layanan || "PASCABAYAR") === "PRABAYAR"
                           ? "bg-blue-100 text-blue-800"
                           : "bg-gray-100 text-gray-800"
@@ -709,15 +709,15 @@ export default function CandidatesPage() {
                     </td>
                     <td className="p-3 border-r border-neo-border">
                       {isOutOfRadius ? (
-                        <span className="px-2 py-1 border border-[#dc2626] bg-[#fee2e2] text-[#dc2626] rounded text-[10px] font-bold">
+                        <span className="neo-highlight px-2 py-1 border border-[#dc2626] bg-[#fee2e2] text-[#dc2626] rounded text-[10px] font-bold">
                           🔴 LUAR JANGKAUAN
                         </span>
                       ) : hasRealIdpel ? (
-                        <span className="px-2 py-1 border border-[#16a34a] bg-[#dcfce7] text-[#16a34a] rounded text-[10px] font-bold">
+                        <span className="neo-highlight px-2 py-1 border border-[#16a34a] bg-[#dcfce7] text-[#16a34a] rounded text-[10px] font-bold">
                           ✓ VALID (ASLI)
                         </span>
                       ) : (
-                        <span className="px-2 py-1 border border-[#ea580c] bg-[#ffedd5] text-[#ea580c] rounded text-[10px] font-bold">
+                        <span className="neo-highlight px-2 py-1 border border-[#ea580c] bg-[#ffedd5] text-[#ea580c] rounded text-[10px] font-bold">
                           ⚠️ KONFIRMASI ULANG
                         </span>
                       )}
@@ -734,12 +734,12 @@ export default function CandidatesPage() {
                     </td>
                     <td className="p-3 border-r border-neo-border">
                       {c.is_accepted === 1 && (
-                        <span className="px-2 py-1 border border-[#16a34a] bg-[#dcfce7] text-[#16a34a] rounded text-[10px] font-bold">
+                        <span className="neo-highlight px-2 py-1 border border-[#16a34a] bg-[#dcfce7] text-[#16a34a] rounded text-[10px] font-bold">
                           VALID
                         </span>
                       )}
                       {c.is_accepted === -1 && (
-                        <span className="px-2 py-1 border border-[#dc2626] bg-[#fee2e2] text-[#dc2626] rounded text-[10px] font-bold">
+                        <span className="neo-highlight px-2 py-1 border border-[#dc2626] bg-[#fee2e2] text-[#dc2626] rounded text-[10px] font-bold">
                           DITOLAK
                         </span>
                       )}

@@ -117,11 +117,11 @@ export default function DashboardPage() {
                     <td className="py-3 font-mono">{p.total_targets} titik</td>
                     <td className="py-3">
                       {p.matching_status === "completed" && p.review_status === "finalized" ? (
-                        <span className="px-2 py-1 neo-highlight border border-[#16a34a] bg-[#dcfce7] text-[#16a34a] rounded text-[10px] font-bold">
+                        <span className="neo-highlight px-2 py-1 border border-[#16a34a] bg-[#dcfce7] text-[#16a34a] rounded text-[10px] font-bold">
                           ✓ SELESAI
                         </span>
                       ) : p.matching_status === "completed" ? (
-                        <span className="px-2 py-1 neo-highlight border border-[#2563eb] bg-[#dbeafe] text-[#1e40af] rounded text-[10px] font-bold">
+                        <span className="neo-highlight px-2 py-1 border border-[#2563eb] bg-[#dbeafe] text-[#1e40af] rounded text-[10px] font-bold">
                           PERLU REVIEW
                         </span>
                       ) : (

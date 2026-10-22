@@ -154,7 +154,7 @@ export default function HistoryPage() {
                     <span className="text-[#dc2626] font-bold">{p.unmatched_targets}</span>
                   </td>
                   <td className="p-3 border-r border-neo-border">
-                    <span className="px-2 py-1 neo-highlight border border-neo-border rounded text-[10px] uppercase font-bold bg-neo-white">
+                    <span className="neo-highlight px-2 py-1 border border-neo-border rounded text-[10px] uppercase font-bold bg-neo-white">
                       {p.review_status.replace("_", " ")}
                     </span>
                   </td>
