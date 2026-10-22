@@ -374,33 +374,33 @@ export default function UploadPage() {
     <div className="space-y-6 relative">
       {/* Overlay Animasi Lazy Loading Menyeluruh */}
       {pipelineActive && (
-        <div className="fixed inset-0 z-50 bg-neo-black/80 backdrop-blur-xs flex items-center justify-center p-4">
-          <div className="bg-white border-2 border-neo-black rounded-sm p-6 max-w-lg w-full shadow-[8px_8px_0_#ff6b35] space-y-5 animate-in fade-in zoom-in-95 duration-200">
+        <div className="fixed inset-0 z-50 bg-[#0a0a0a]/80 backdrop-blur-xs flex items-center justify-center p-3 sm:p-4">
+          <div className="bg-white border-2 border-neo-black rounded-sm p-4 sm:p-6 max-w-lg w-full max-h-[90vh] overflow-y-auto neo-scrollbar shadow-[8px_8px_0_#ff6b35] space-y-4 sm:space-y-5 animate-in fade-in zoom-in-95 duration-200">
             <div className="flex items-center gap-3 border-b-2 border-neo-black pb-3">
-              <div className="w-6 h-6 border-3 border-neo-accent border-t-transparent rounded-full animate-spin"></div>
+              <div className="w-6 h-6 border-3 border-neo-accent border-t-transparent rounded-full animate-spin shrink-0"></div>
               <div>
-                <h3 className="text-base font-black text-neo-black">{pipelineTitle}</h3>
-                <p className="text-xs text-neo-border">Otomatis memproses, mencocokkan, dan membuka Peta Spasial...</p>
+                <h3 className="text-sm sm:text-base font-black text-neo-black">{pipelineTitle}</h3>
+                <p className="text-[11px] sm:text-xs text-neo-border">Otomatis memproses, mencocokkan, dan membuka Peta Spasial...</p>
               </div>
             </div>
 
             {/* Stepper Progress Bar */}
-            <div className="space-y-3">
+            <div className="space-y-2.5">
               {pipelineSteps.map((step, idx) => {
                 const isDone = idx < pipelineStepIndex;
                 const isCurrent = idx === pipelineStepIndex;
                 return (
                   <div
                     key={step.title}
-                    className={`p-3 border rounded-sm transition-all duration-300 flex items-start gap-3 ${
+                    className={`p-3 border rounded-sm transition-all duration-300 flex items-start gap-2.5 sm:gap-3 ${
                       isDone
                         ? "border-[#16a34a] bg-[#dcfce7] shadow-[0_2px_0_#16a34a]"
                         : isCurrent
-                        ? "border-neo-black bg-[#fef9c3] shadow-[0_3px_0_#0a0a0a] scale-[1.01]"
+                        ? "border-neo-black bg-[#fef9c3] shadow-[0_3px_0_#0a0a0a]"
                         : "border-[#e5e4e7] bg-neo-white opacity-60"
                     }`}
                   >
-                    <div className="mt-0.5 font-bold text-sm">
+                    <div className="mt-0.5 font-bold text-sm shrink-0">
                       {isDone ? (
                         <span className="text-[#16a34a]">✓</span>
                       ) : isCurrent ? (
@@ -409,7 +409,7 @@ export default function UploadPage() {
                         <span className="text-gray-400">○</span>
                       )}
                     </div>
-                    <div className="flex-1">
+                    <div className="flex-1 min-w-0">
                       <div className={`text-xs font-bold ${isDone ? "text-[#16a34a]" : isCurrent ? "text-neo-black" : "text-gray-500"}`}>
                         {step.title}
                       </div>
@@ -428,72 +428,76 @@ export default function UploadPage() {
       )}
 
       {/* Header Utama & Shortcut Cepat */}
-      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+      <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4 border-b border-neo-border pb-3">
         <div>
-          <h1 className="text-2xl font-bold mb-1">Upload & Pembentukan Master Data PLN</h1>
-          <p className="text-sm text-neo-border">
+          <h1 className="fluid-h1 font-black tracking-tight text-neo-black">
+            Upload & Pembentukan Master Data PLN
+          </h1>
+          <p className="text-xs sm:text-sm text-neo-border mt-0.5">
             Bentuk master dari gabungan ACMT (Pascabayar) & LPB (Prabayar), exclude PDPJ, lalu cocokkan Koordinat Kosong.
           </p>
         </div>
 
-        <div className="flex items-center gap-2">
+        <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2 shrink-0">
           <button
             type="button"
             disabled={pipelineActive || resetting}
             onClick={handleAutoSeedPLN}
-            className="px-3.5 py-2 border border-neo-border bg-neo-accent text-white text-xs font-bold rounded-sm shadow-[0_2px_0_#0a0a0a] hover:bg-[#e85a26] disabled:opacity-50"
+            className="px-4 py-2.5 min-h-[44px] border-2 border-neo-border bg-neo-accent text-white text-xs sm:text-sm font-bold rounded-sm shadow-[2px_2px_0_#0a0a0a] hover:bg-[#e85a26] transition active:translate-y-0.5 disabled:opacity-50 flex items-center justify-center gap-1.5"
             title="Jalankan alur penuh PLN: Gabung ACMT+LPB -> Exclude PDPJ -> Cocokkan Koordinat Kosong"
           >
-            {pipelineActive ? "Memproses Alur PLN..." : "⚡ Quick Demo Alur Riil PLN"}
+            <span>{pipelineActive ? "Memproses Alur PLN..." : "⚡ Quick Demo Alur Riil PLN"}</span>
           </button>
 
           <button
             type="button"
             disabled={pipelineActive || resetting}
             onClick={handleResetDatabase}
-            className="px-3 py-2 border border-[#dc2626] bg-white text-[#dc2626] text-xs font-bold rounded-sm shadow-[0_2px_0_#dc2626] hover:bg-[#fee2e2] disabled:opacity-50"
+            className="px-4 py-2.5 min-h-[44px] border-2 border-[#dc2626] bg-white text-[#dc2626] text-xs sm:text-sm font-bold rounded-sm shadow-[2px_2px_0_#dc2626] hover:bg-[#fee2e2] transition active:translate-y-0.5 disabled:opacity-50 flex items-center justify-center gap-1.5"
           >
-            {resetting ? "Resetting..." : "🗑️ Reset Data"}
+            <span>{resetting ? "Resetting..." : "🗑️ Reset Data"}</span>
           </button>
         </div>
       </div>
 
       {/* Alur Kerja PLN Cards */}
-      <div className="p-4 border border-neo-border bg-neo-white rounded-sm shadow-[0_2px_0_#0a0a0a] text-xs">
-        <strong className="block mb-1 text-sm font-bold text-neo-black">Alur Pemrosesan PLN GeoMatch:</strong>
-        <div className="grid grid-cols-1 md:grid-cols-4 gap-2 text-neo-border">
-          <div className="p-2 border border-neo-border bg-white rounded-xs">
-            <strong>1. ACMT + LPB</strong>
-            <p className="text-[11px]">Cleaning data bertumpuk multi-bulan & gabung jadi Master.</p>
+      <div className="p-3.5 sm:p-4 border-2 border-neo-border bg-neo-white rounded-sm shadow-[2px_2px_0_#0a0a0a] text-xs">
+        <strong className="block mb-2 text-xs sm:text-sm font-black text-neo-black">
+          Alur Pemrosesan PLN GeoMatch:
+        </strong>
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-2 text-neo-border">
+          <div className="p-2.5 border border-neo-border bg-white rounded-xs">
+            <strong className="text-neo-black">1. ACMT + LPB</strong>
+            <p className="text-[11px] mt-0.5">Cleaning data bertumpuk multi-bulan & gabung jadi Master.</p>
           </div>
-          <div className="p-2 border border-neo-border bg-white rounded-xs">
-            <strong>2. Exclude PDPJ</strong>
-            <p className="text-[11px]">Keluarkan data yang sudah verif dari Master.</p>
+          <div className="p-2.5 border border-neo-border bg-white rounded-xs">
+            <strong className="text-neo-black">2. Exclude PDPJ</strong>
+            <p className="text-[11px] mt-0.5">Keluarkan data yang sudah verif dari Master.</p>
           </div>
-          <div className="p-2 border border-neo-border bg-white rounded-xs">
-            <strong>3. Master Sisa</strong>
-            <p className="text-[11px]">Menghasilkan daftar calon pelanggan yang belum valid.</p>
+          <div className="p-2.5 border border-neo-border bg-white rounded-xs">
+            <strong className="text-neo-black">3. Master Sisa</strong>
+            <p className="text-[11px] mt-0.5">Menghasilkan daftar calon pelanggan yang belum valid.</p>
           </div>
-          <div className="p-2 border border-neo-border bg-white rounded-xs">
-            <strong>4. Koordinat Kosong</strong>
-            <p className="text-[11px]">Titik tanpa IDPEL dicocokkan ke Master Sisa via Radius Spasial.</p>
+          <div className="p-2.5 border border-neo-border bg-white rounded-xs">
+            <strong className="text-neo-black">4. Koordinat Kosong</strong>
+            <p className="text-[11px] mt-0.5">Titik tanpa IDPEL dicocokkan ke Master Sisa via Radius Spasial.</p>
           </div>
         </div>
       </div>
 
       {successInfo && (
-        <div className="p-4 border border-[#16a34a] bg-[#dcfce7] rounded-sm text-sm font-medium shadow-[0_2px_0_#16a34a] space-y-2">
+        <div className="p-3.5 sm:p-4 border-2 border-[#16a34a] bg-[#dcfce7] rounded-sm text-xs sm:text-sm font-medium shadow-[2px_2px_0_#16a34a] space-y-2">
           <div className="text-[#16a34a] font-bold">✓ {successInfo}</div>
           <div className="flex flex-wrap gap-2 pt-1">
             <button
               onClick={() => navigate("/process")}
-              className="px-3 py-1.5 border border-neo-border bg-neo-black text-white text-xs font-semibold rounded-sm shadow-[0_1px_0_#0a0a0a] hover:bg-[#222]"
+              className="px-3.5 py-2 min-h-[40px] border border-neo-border bg-neo-black text-white text-xs font-bold rounded-sm shadow-[0_1px_0_#0a0a0a] hover:bg-[#222]"
             >
               ⚙️ Lanjut ke Input Manual & Matching →
             </button>
             <button
               onClick={() => navigate("/candidates")}
-              className="px-3 py-1.5 border border-neo-border bg-white text-neo-black text-xs font-semibold rounded-sm shadow-[0_1px_0_#0a0a0a] hover:bg-[#e5e4e7]"
+              className="px-3.5 py-2 min-h-[40px] border border-neo-border bg-white text-neo-black text-xs font-bold rounded-sm shadow-[0_1px_0_#0a0a0a] hover:bg-[#e5e4e7]"
             >
               🗺️ Langsung Buka Review & Peta Spasial →
             </button>
@@ -502,15 +506,15 @@ export default function UploadPage() {
       )}
 
       {errorMessage && (
-        <div className="p-4 border border-[#dc2626] bg-[#fee2e2] text-[#dc2626] rounded-sm text-sm font-medium">
+        <div className="p-3.5 sm:p-4 border-2 border-[#dc2626] bg-[#fee2e2] text-[#dc2626] rounded-sm text-xs sm:text-sm font-bold shadow-[2px_2px_0_#dc2626]">
           Error: {errorMessage}
         </div>
       )}
 
       {/* 1. Pilih Dataset yang akan diupload */}
-      <div className="p-4 border border-neo-border rounded-sm bg-white shadow-[0_4px_0_#0a0a0a]">
-        <h2 className="text-sm font-bold mb-2">1. Pilih Data yang Ingin Diunggah</h2>
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-2">
+      <div className="p-4 sm:p-5 border-2 border-neo-border rounded-sm bg-white shadow-[3px_3px_0_#0a0a0a]">
+        <h2 className="text-xs sm:text-sm font-black mb-2.5 text-neo-black">1. Pilih Data yang Ingin Diunggah</h2>
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-2.5">
           {(["pascabayar", "prabayar", "pdpj", "koordinat_kosong"] as DatasetType[]).map((type) => {
             const state = datasetStates[type];
             const locked = state.status === "locked";
@@ -520,15 +524,21 @@ export default function UploadPage() {
                 type="button"
                 disabled={pipelineActive || batchProcessing}
                 onClick={() => setCurrentDataset(type)}
-                className={`p-3 text-left border border-neo-border rounded-sm transition ${
+                className={`p-3 text-left border-2 rounded-sm transition active:translate-y-0.5 min-h-[70px] ${
                   currentDataset === type
-                    ? "bg-neo-black text-white shadow-[0_2px_0_#0a0a0a]"
-                    : "bg-white text-neo-black hover:bg-[#e5e4e7]"
+                    ? "border-neo-black bg-neo-black text-white shadow-[2px_2px_0_#ff6b35]"
+                    : "border-neo-border bg-white text-neo-black hover:bg-[#e5e4e7] shadow-[2px_2px_0_#0a0a0a]"
                 }`}
               >
                 <div className="flex items-center justify-between gap-2">
                   <div className="font-bold text-xs">{DATASET_CONFIG[type].title}</div>
-                  <span className={`text-[10px] font-bold ${locked ? "text-[#16a34a]" : "opacity-70"}`}>
+                  <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded-xs ${
+                    locked
+                      ? "bg-[#16a34a] text-white"
+                      : state.status === "reviewing"
+                      ? "bg-[#d97706] text-white"
+                      : "bg-gray-200 text-gray-800"
+                  }`}>
                     {locked ? "LOCKED" : state.status === "reviewing" ? "REVIEW" : "BELUM"}
                   </span>
                 </div>
@@ -540,14 +550,16 @@ export default function UploadPage() {
       </div>
 
       {/* 2. File Upload & Shortcut Muat Contoh */}
-      <div className="p-4 border border-neo-border rounded-sm bg-white shadow-[0_4px_0_#0a0a0a] space-y-3">
-        <div className="flex items-center justify-between">
-          <h2 className="text-sm font-bold">2. Upload File (XLSX / CSV) - {currentConfig.title}</h2>
+      <div className="p-4 sm:p-5 border-2 border-neo-border rounded-sm bg-white shadow-[3px_3px_0_#0a0a0a] space-y-3.5">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5">
+          <h2 className="text-xs sm:text-sm font-black text-neo-black">
+            2. Upload File (XLSX / CSV) — {currentConfig.title}
+          </h2>
           <button
             type="button"
             disabled={pipelineActive || batchProcessing || currentState.status === "locked"}
             onClick={handleLoadDummyToForm}
-            className="px-3 py-1.5 border border-neo-border bg-[#e5e4e7] hover:bg-[#d4d3d6] text-xs font-bold rounded-sm text-neo-black shadow-[0_2px_0_#0a0a0a]"
+            className="touch-min px-3.5 py-2 border-2 border-neo-border bg-[#e5e4e7] hover:bg-[#d4d3d6] text-xs font-bold rounded-sm text-neo-black shadow-[2px_2px_0_#0a0a0a] transition active:translate-y-0.5 self-start sm:self-auto"
           >
             📋 Muat Contoh Data [{currentDataset.toUpperCase()}]
           </button>
@@ -558,10 +570,10 @@ export default function UploadPage() {
           accept=".csv, .xlsx, .xls"
           disabled={pipelineActive || batchProcessing || currentState.status === "locked"}
           onChange={handleFileUpload}
-          className="block w-full text-sm text-neo-black file:mr-4 file:py-2 file:px-4 file:rounded-sm file:border file:border-neo-border file:text-sm file:font-semibold file:bg-neo-white file:text-neo-black hover:file:bg-[#e5e4e7] cursor-pointer disabled:opacity-50"
+          className="block w-full text-xs sm:text-sm text-neo-black file:mr-3 sm:file:mr-4 file:py-2.5 file:px-4 file:rounded-sm file:border-2 file:border-neo-border file:text-xs file:font-bold file:bg-neo-white file:text-neo-black hover:file:bg-[#e5e4e7] cursor-pointer disabled:opacity-50"
         />
         {currentState.file && (
-          <p className="text-xs text-[#16a34a] font-medium">
+          <p className="text-xs text-[#16a34a] font-bold">
             File terpilih: <strong>{currentState.file.name}</strong> ({Math.round(currentState.file.size / 1024)} KB)
           </p>
         )}
@@ -572,28 +584,28 @@ export default function UploadPage() {
 
       {/* 3. Auto-Filter Kolom */}
       {currentState.headers.length > 0 && (
-        <div className="p-4 border border-neo-border rounded-sm bg-white shadow-[0_4px_0_#0a0a0a]">
-          <div className="flex items-center justify-between mb-2">
+        <div className="p-4 sm:p-5 border-2 border-neo-border rounded-sm bg-white shadow-[3px_3px_0_#0a0a0a]">
+          <div className="flex items-center justify-between mb-3">
             <div>
-              <h2 className="text-sm font-bold">3. Penyaringan Kolom Otomatis</h2>
+              <h2 className="text-xs sm:text-sm font-black text-neo-black">3. Penyaringan Kolom Otomatis</h2>
               <p className="text-xs text-neo-border">Sistem otomatis mendeteksi kolom yang relevan dari file Anda.</p>
             </div>
-            <span className="px-2 py-1 neo-highlight border border-[#16a34a] bg-[#dcfce7] text-[#16a34a] text-[10px] font-bold rounded-xs">
+            <span className="px-2 py-1 neo-highlight border border-[#16a34a] bg-[#dcfce7] text-[#16a34a] text-[10px] font-bold rounded-xs shrink-0">
               ✓ Auto-Filtered
             </span>
           </div>
 
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-3 mt-3">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-3 mt-2">
             {currentConfig.fields.map((field) => (
               <div key={field.key} className="flex flex-col gap-1">
-                <label className="text-xs font-semibold text-neo-black">
+                <label className="text-xs font-bold text-neo-black">
                   {field.label} <span className="text-[#dc2626]">*</span>
                 </label>
                 <select
                   disabled={pipelineActive || batchProcessing || currentState.status === "locked"}
                   value={currentState.mapping[field.key] || ""}
                   onChange={(e) => updateDataset(currentDataset, { mapping: { ...currentState.mapping, [field.key]: e.target.value } })}
-                  className="border border-neo-border p-1.5 rounded-sm text-xs bg-white disabled:opacity-50"
+                  className="border-2 border-neo-border p-2 rounded-sm mobile-input bg-white disabled:opacity-50 font-medium"
                 >
                   <option value="">-- Pilih Kolom File --</option>
                   {currentState.headers.map((h) => (
@@ -608,46 +620,48 @@ export default function UploadPage() {
 
       {/* 4. Pratinjau 5 Baris Data */}
       {currentState.previewRows.length > 0 && (
-        <div className="p-4 border border-neo-border rounded-sm bg-white shadow-[0_4px_0_#0a0a0a] overflow-x-auto">
-          <h2 className="text-sm font-bold mb-2">4. Pratinjau Data (5 Baris Pertama)</h2>
-          <table className="w-full text-left text-xs border border-neo-border">
-            <thead className="bg-[#e5e4e7] border-b border-neo-border">
-              <tr>
-                {currentState.headers.map((h) => (
-                  <th key={h} className="p-2 border-r border-neo-border">{h}</th>
-                ))}
-              </tr>
-            </thead>
-            <tbody>
-              {currentState.previewRows.map((row, idx) => (
-                <tr key={idx} className="border-b border-neo-border hover:bg-neo-white">
+        <div className="p-4 sm:p-5 border-2 border-neo-border rounded-sm bg-white shadow-[3px_3px_0_#0a0a0a]">
+          <h2 className="text-xs sm:text-sm font-black mb-2.5 text-neo-black">4. Pratinjau Data (5 Baris Pertama)</h2>
+          <div className="overflow-x-auto neo-scrollbar border border-neo-border rounded-xs">
+            <table className="w-full text-left text-xs border-collapse whitespace-nowrap min-w-[500px]">
+              <thead className="bg-[#e5e4e7] border-b-2 border-neo-border">
+                <tr>
                   {currentState.headers.map((h) => (
-                    <td key={h} className="p-2 border-r border-neo-border">
-                      {row[h] !== undefined ? String(row[h]) : "-"}
-                    </td>
+                    <th key={h} className="p-2.5 border-r border-neo-border font-bold text-neo-black">{h}</th>
                   ))}
                 </tr>
-              ))}
-            </tbody>
-          </table>
+              </thead>
+              <tbody>
+                {currentState.previewRows.map((row, idx) => (
+                  <tr key={idx} className="border-b border-neo-border hover:bg-neo-white">
+                    {currentState.headers.map((h) => (
+                      <td key={h} className="p-2.5 border-r border-neo-border">
+                        {row[h] !== undefined ? String(row[h]) : "-"}
+                      </td>
+                    ))}
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
         </div>
       )}
 
       {/* 5. Lock/Keep Button per Dataset */}
       {currentState.status === "reviewing" && (
-        <div className="flex flex-col sm:flex-row items-center justify-between p-4 border border-neo-border rounded-sm bg-white shadow-[0_4px_0_#0a0a0a] gap-3">
+        <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between p-4 sm:p-5 border-2 border-neo-border rounded-sm bg-white shadow-[3px_3px_0_#0a0a0a] gap-3">
           <div>
-            <span className="text-xs text-[#16a34a] font-bold block">✓ Kolom Terpetakan & Data Siap Di-Keep</span>
-            <p className="text-[11px] text-neo-border">
+            <span className="text-xs sm:text-sm text-[#16a34a] font-bold block">✓ Kolom Terpetakan & Data Siap Di-Keep</span>
+            <p className="text-[11px] sm:text-xs text-neo-border mt-0.5">
               Kunci dataset ini, lalu lanjut upload dataset berikutnya. Atau konfirmasi langsung jika hanya satu dataset.
             </p>
           </div>
-          <div className="flex flex-col sm:flex-row gap-2 w-full sm:w-auto">
+          <div className="flex flex-col sm:flex-row gap-2 shrink-0">
             <button
               type="button"
               disabled={loading || pipelineActive || batchProcessing}
               onClick={handleLockDataset}
-              className="w-full sm:w-auto px-6 py-2.5 border border-neo-border bg-[#16a34a] text-white text-xs font-bold rounded-sm shadow-[0_2px_0_#0a0a0a] disabled:opacity-50 hover:bg-[#15803d] flex items-center justify-center gap-2"
+              className="touch-min px-5 py-2.5 border-2 border-neo-border bg-[#16a34a] text-white text-xs font-bold rounded-sm shadow-[2px_2px_0_#0a0a0a] disabled:opacity-50 hover:bg-[#15803d] transition active:translate-y-0.5 flex items-center justify-center gap-1.5"
             >
               <span>🔒 {loading ? "Menyimpan dataset..." : "Keep & Lock Dataset"}</span>
             </button>
@@ -655,9 +669,9 @@ export default function UploadPage() {
               type="button"
               disabled={loading || pipelineActive || batchProcessing}
               onClick={handleBatchProcess}
-              className="w-full sm:w-auto px-6 py-2.5 border border-neo-border bg-neo-black text-white text-xs font-bold rounded-sm shadow-[0_2px_0_#0a0a0a] disabled:opacity-50 hover:bg-[#1a1a1a] flex items-center justify-center gap-2"
+              className="touch-min px-5 py-2.5 border-2 border-neo-border bg-neo-black text-white text-xs font-bold rounded-sm shadow-[2px_2px_0_#0a0a0a] disabled:opacity-50 hover:bg-[#1a1a1a] transition active:translate-y-0.5 flex items-center justify-center gap-1.5"
             >
-              {batchProcessing ? batchProgress : "🔐 Konfirmasi & Lanjut ke Review"}
+              <span>{batchProcessing ? batchProgress : "🔐 Konfirmasi & Lanjut ke Review"}</span>
             </button>
           </div>
         </div>
@@ -665,11 +679,11 @@ export default function UploadPage() {
 
       {/* 6. Batch Process - Process All Locked Datasets */}
       {lockedCount >= 1 && (
-        <div className="p-4 border-2 border-[#16a34a] bg-[#dcfce7] rounded-sm shadow-[0_4px_0_#16a34a] space-y-3">
-          <div className="flex items-center justify-between">
+        <div className="p-4 sm:p-5 border-2 border-[#16a34a] bg-[#dcfce7] rounded-sm shadow-[3px_3px_0_#16a34a] space-y-3">
+          <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3">
             <div>
-              <h3 className="text-sm font-bold text-[#16a34a]">✓ {lockedCount} Dataset Terkunci - Siap Diproses</h3>
-              <p className="text-xs text-neo-border mt-1">
+              <h3 className="text-sm sm:text-base font-bold text-[#16a34a]">✓ {lockedCount} Dataset Terkunci — Siap Diproses</h3>
+              <p className="text-xs text-neo-border mt-0.5">
                 Sistem akan membentuk master, exclude PDPJ (jika ada), dan mencocokkan koordinat kosong.
               </p>
             </div>
@@ -677,9 +691,9 @@ export default function UploadPage() {
               type="button"
               disabled={loading || pipelineActive || batchProcessing}
               onClick={handleBatchProcess}
-              className="px-6 py-2.5 border border-neo-border bg-neo-black text-white text-xs font-bold rounded-sm shadow-[0_2px_0_#0a0a0a] disabled:opacity-50 hover:bg-[#1a1a1a]"
+              className="touch-min px-6 py-2.5 border-2 border-neo-border bg-neo-black text-white text-xs sm:text-sm font-bold rounded-sm shadow-[2px_2px_0_#0a0a0a] disabled:opacity-50 hover:bg-[#1a1a1a] transition active:translate-y-0.5 shrink-0 text-center"
             >
-              {batchProcessing ? batchProgress : "🔐 Konfirmasi Semua Dataset & Lanjut ke Review"}
+              <span>{batchProcessing ? batchProgress : "🔐 Konfirmasi Semua Dataset & Lanjut ke Review"}</span>
             </button>
           </div>
         </div>

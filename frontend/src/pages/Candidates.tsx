@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, useCallback } from "react";
 import { useSearchParams, useNavigate } from "react-router-dom";
 import { api } from "@/lib/api";
 
@@ -28,22 +28,12 @@ interface Candidate {
 
 export default function CandidatesPage() {
   const navigate = useNavigate();
-  const [searchParams] = useSearchParams();
-  const initialProcessId = searchParams.get("process_id") || "1";
-
-  const [processId, setProcessId] = useState<string>(initialProcessId);
-
-  // Sync processId with URL search params
-  useEffect(() => {
-    const pid = searchParams.get("process_id");
-    if (pid && pid !== processId) {
-      setProcessId(pid);
-    }
-  }, [searchParams]);
+  const [searchParams, setSearchParams] = useSearchParams();
+  const processId = searchParams.get("process_id") || "1";
 
   const [candidates, setCandidates] = useState<Candidate[]>([]);
   const [totalCandidates, setTotalCandidates] = useState<number>(0);
-  const [loading, setLoading] = useState(false);
+  const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [selectedCandidateId, setSelectedCandidateId] = useState<number | null>(null);
 
@@ -86,7 +76,7 @@ export default function CandidatesPage() {
       await api.post("/upload/reset");
       setCandidates([]);
       setTotalCandidates(0);
-      setProcessId("");
+      setSearchParams({ process_id: "" });
       setError(null);
     } catch (err: any) {
       setError(err.message || "Gagal mereset data.");
@@ -95,37 +85,39 @@ export default function CandidatesPage() {
     }
   };
 
-  const fetchCandidates = async () => {
+  const fetchCandidates = useCallback(() => {
     if (!processId) return;
-    setLoading(true);
-    setError(null);
-    try {
-      const skip = (currentPage - 1) * rowsPerPage;
-      let url = `/process/${processId}/candidates?skip=${skip}&limit=${rowsPerPage}`;
-      if (statusFilter !== "all") {
-        url += `&status_filter=${statusFilter}`;
-      }
-      if (validityFilters.length > 0) {
-        url += `&validity_filters=${validityFilters.join(",")}`;
-      }
-      if (layananFilters.length > 0) {
-        url += `&layanan_filters=${layananFilters.join(",")}`;
-      }
-      if (idpelFilters.length > 0) {
-        url += `&idpel_filters=${idpelFilters.join(",")}`;
-      }
-      const res = await api.get(url);
-      setCandidates(res.data.items);
-      setTotalCandidates(res.data.total);
-      if (res.data.items.length > 0 && res.data.items[0].process_id && String(res.data.items[0].process_id) !== processId) {
-        setProcessId(String(res.data.items[0].process_id));
-      }
-    } catch (err: any) {
-      setError(err.message || "Gagal memuat kandidat.");
-    } finally {
-      setLoading(false);
+    const skip = (currentPage - 1) * rowsPerPage;
+    let url = `/process/${processId}/candidates?skip=${skip}&limit=${rowsPerPage}`;
+    if (statusFilter !== "all") {
+      url += `&status_filter=${statusFilter}`;
     }
-  };
+    if (validityFilters.length > 0) {
+      url += `&validity_filters=${validityFilters.join(",")}`;
+    }
+    if (layananFilters.length > 0) {
+      url += `&layanan_filters=${layananFilters.join(",")}`;
+    }
+    if (idpelFilters.length > 0) {
+      url += `&idpel_filters=${idpelFilters.join(",")}`;
+    }
+
+    api.get(url)
+      .then((res) => {
+        setCandidates(res.data.items);
+        setTotalCandidates(res.data.total);
+        setError(null);
+        if (res.data.items.length > 0 && res.data.items[0].process_id && String(res.data.items[0].process_id) !== processId) {
+          setSearchParams({ process_id: String(res.data.items[0].process_id) });
+        }
+      })
+      .catch((err: any) => {
+        setError(err.message || "Gagal memuat kandidat.");
+      })
+      .finally(() => {
+        setLoading(false);
+      });
+  }, [processId, currentPage, rowsPerPage, statusFilter, validityFilters, layananFilters, idpelFilters, setSearchParams]);
 
   const handleQuickDemoHere = async () => {
     setSeedingQuick(true);
@@ -133,7 +125,7 @@ export default function CandidatesPage() {
     try {
       const res = await api.post("/upload/seed-dummy");
       const pid = res.data.process_id || 1;
-      setProcessId(String(pid));
+      setSearchParams({ process_id: String(pid) });
       const candRes = await api.get(`/process/${pid}/candidates`);
       setCandidates(candRes.data.items);
       setTotalCandidates(candRes.data.total);
@@ -146,14 +138,16 @@ export default function CandidatesPage() {
 
   useEffect(() => {
     fetchCandidates();
-  }, [processId, statusFilter, validityFilters, layananFilters, idpelFilters, currentPage, rowsPerPage]);
+  }, [fetchCandidates]);
 
-  // Inisialisasi Peta Leaflet
+  // Inisialisasi Peta Leaflet dengan proteksi scroll-trapping & resize observer
   useEffect(() => {
     if (!mapContainerRef.current) return;
 
     if (!mapInstanceRef.current && window.L) {
-      const map = window.L.map(mapContainerRef.current).setView([-6.2088, 106.8456], 16);
+      const map = window.L.map(mapContainerRef.current, {
+        scrollWheelZoom: false, // Menghindari trapping saat scrolling layar mobile
+      }).setView([-6.2088, 106.8456], 16);
 
       window.L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
         attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
@@ -163,6 +157,15 @@ export default function CandidatesPage() {
       markersLayerRef.current = window.L.layerGroup().addTo(map);
       mapInstanceRef.current = map;
     }
+
+    const handleResize = () => {
+      mapInstanceRef.current?.invalidateSize();
+    };
+
+    window.addEventListener("resize", handleResize);
+    return () => {
+      window.removeEventListener("resize", handleResize);
+    };
   }, []);
 
   // Update Markers di Peta saat data atau halaman berubah
@@ -323,28 +326,30 @@ export default function CandidatesPage() {
   return (
     <div className="space-y-6">
       {/* Top Header & Finish Button */}
-      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+      <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-3 sm:gap-4 border-b border-neo-border pb-3">
         <div>
-          <h1 className="text-2xl font-bold mb-1">Review & Peta Spasial Koordinat</h1>
-          <p className="text-sm text-neo-border">
+          <h1 className="fluid-h1 font-black tracking-tight text-neo-black">
+            Review & Peta Spasial Koordinat
+          </h1>
+          <p className="text-xs sm:text-sm text-neo-border mt-0.5">
             Klik baris pada tabel untuk melacak langsung (auto-track) lokasi di peta dan periksa kelayakan IDPEL.
           </p>
         </div>
 
-        <div className="flex flex-wrap items-center gap-3">
-          <div className="flex items-center gap-2">
-            <label className="text-xs font-semibold text-neo-black">ID Proses:</label>
+        <div className="flex flex-wrap items-center gap-2 sm:gap-2.5">
+          <div className="flex items-center gap-1.5 border-2 border-neo-border px-2.5 py-1.5 rounded-sm bg-white shadow-[2px_2px_0_#0a0a0a]">
+            <label className="text-xs font-bold text-neo-black">ID:</label>
             <input
               type="number"
               value={processId}
-              onChange={(e) => setProcessId(e.target.value)}
-              className="w-16 border border-neo-border p-1.5 rounded-sm text-xs bg-white font-bold"
+              onChange={(e) => setSearchParams({ process_id: e.target.value })}
+              className="w-14 text-xs font-bold text-neo-black focus:outline-none"
             />
           </div>
 
           <button
             onClick={fetchCandidates}
-            className="px-3 py-1.5 border border-neo-border bg-neo-white hover:bg-[#e5e4e7] text-xs font-semibold rounded-sm shadow-[0_2px_0_#0a0a0a]"
+            className="touch-min px-3 py-1.5 min-h-[38px] border-2 border-neo-border bg-neo-white hover:bg-[#e5e4e7] text-xs font-bold rounded-sm shadow-[2px_2px_0_#0a0a0a] transition active:translate-y-0.5"
           >
             🔄 Refresh
           </button>
@@ -352,20 +357,19 @@ export default function CandidatesPage() {
           <button
             onClick={handleReset}
             disabled={loading}
-            className="px-3 py-1.5 border border-[#dc2626] bg-[#fee2e2] hover:bg-[#fef2f2] text-[#dc2626] text-xs font-semibold rounded-sm shadow-[0_2px_0_#0a0a0a] disabled:opacity-50"
+            className="touch-min px-3 py-1.5 min-h-[38px] border-2 border-[#dc2626] bg-[#fee2e2] hover:bg-[#fef2f2] text-[#dc2626] text-xs font-bold rounded-sm shadow-[2px_2px_0_#dc2626] transition active:translate-y-0.5 disabled:opacity-50"
             title="Hapus semua data dan mulai dari awal"
           >
-            🗑️ Reset Data
+            🗑️ Reset
           </button>
 
-          {/* Tombol Konfirmasi Selesai -> Langsung ke Hasil */}
           <button
             onClick={handleFinishReview}
             disabled={loading}
-            className="px-4 py-2 border border-neo-border bg-neo-accent hover:bg-[#e85a26] text-white text-xs font-bold rounded-sm shadow-[0_2px_0_#0a0a0a] flex items-center gap-1.5 disabled:opacity-50"
+            className="touch-min px-4 py-2 min-h-[38px] border-2 border-neo-border bg-neo-accent hover:bg-[#e85a26] text-white text-xs font-bold rounded-sm shadow-[2px_2px_0_#0a0a0a] flex items-center gap-1.5 transition active:translate-y-0.5 disabled:opacity-50"
             title="Selesaikan verifikasi dan lihat rekapitulasi serta download CSV"
           >
-            <span>✅ Selesai & Buka Hasil Rekonsiliasi</span>
+            <span>✅ Selesai & Buka Hasil</span>
             <span>→</span>
           </button>
         </div>
@@ -373,26 +377,26 @@ export default function CandidatesPage() {
 
       {/* SUMMARY STATS BOX */}
       {candidates.length > 0 && (
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-          <div className="p-4 border border-neo-border rounded-sm bg-white shadow-[0_4px_0_#0a0a0a]">
-            <p className="text-xs font-semibold text-neo-border">TOTAL KANDIDAT</p>
-            <p className="text-3xl font-extrabold mt-1 text-neo-black">{totalCount}</p>
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-2.5 sm:gap-4">
+          <div className="p-3.5 sm:p-4 border-2 border-neo-border rounded-sm bg-white shadow-[3px_3px_0_#0a0a0a]">
+            <p className="text-[11px] sm:text-xs font-bold text-neo-border uppercase">TOTAL KANDIDAT</p>
+            <p className="text-2xl sm:text-3xl font-black mt-1 text-neo-black">{totalCount}</p>
           </div>
-          <div className="p-4 border border-[#16a34a] rounded-sm bg-[#dcfce7] shadow-[0_4px_0_#0a0a0a]">
-            <p className="text-xs font-semibold text-[#16a34a]">VALID</p>
-            <p className="text-3xl font-extrabold mt-1 text-[#16a34a]">
+          <div className="p-3.5 sm:p-4 border-2 border-[#16a34a] rounded-sm bg-[#dcfce7] shadow-[3px_3px_0_#16a34a]">
+            <p className="text-[11px] sm:text-xs font-bold text-[#16a34a] uppercase">VALID</p>
+            <p className="text-2xl sm:text-3xl font-black mt-1 text-[#16a34a]">
               {candidates.filter(c => c.is_accepted === 1).length}
             </p>
           </div>
-          <div className="p-4 border border-[#dc2626] rounded-sm bg-[#fee2e2] shadow-[0_4px_0_#0a0a0a]">
-            <p className="text-xs font-semibold text-[#dc2626]">DITOLAK</p>
-            <p className="text-3xl font-extrabold mt-1 text-[#dc2626]">
+          <div className="p-3.5 sm:p-4 border-2 border-[#dc2626] rounded-sm bg-[#fee2e2] shadow-[3px_3px_0_#dc2626]">
+            <p className="text-[11px] sm:text-xs font-bold text-[#dc2626] uppercase">DITOLAK</p>
+            <p className="text-2xl sm:text-3xl font-black mt-1 text-[#dc2626]">
               {candidates.filter(c => c.is_accepted === -1).length}
             </p>
           </div>
-          <div className="p-4 border border-[#d97706] rounded-sm bg-[#fef3c7] shadow-[0_4px_0_#0a0a0a]">
-            <p className="text-xs font-semibold text-[#d97706]">PENDING</p>
-            <p className="text-3xl font-extrabold mt-1 text-[#d97706]">
+          <div className="p-3.5 sm:p-4 border-2 border-[#d97706] rounded-sm bg-[#fef3c7] shadow-[3px_3px_0_#d97706]">
+            <p className="text-[11px] sm:text-xs font-bold text-[#d97706] uppercase">PENDING</p>
+            <p className="text-2xl sm:text-3xl font-black mt-1 text-[#d97706]">
               {candidates.filter(c => c.is_accepted === 0).length}
             </p>
           </div>
@@ -400,44 +404,45 @@ export default function CandidatesPage() {
       )}
 
       {/* PETA INTERAKTIF */}
-      <div className="p-4 border border-neo-border rounded-sm bg-white shadow-[0_4px_0_#0a0a0a] space-y-3">
+      <div className="p-3.5 sm:p-4 border-2 border-neo-border rounded-sm bg-white shadow-[3px_3px_0_#0a0a0a] space-y-3">
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
           <div className="flex items-center gap-2">
-            <h2 className="text-sm font-bold">📍 Peta Geografis Spasial (Tracking Interaktif)</h2>
+            <h2 className="text-xs sm:text-sm font-black text-neo-black">
+              📍 Peta Geografis Spasial (Tracking Interaktif)
+            </h2>
           </div>
 
-          <div className="flex flex-wrap items-center gap-3 text-[11px]">
+          <div className="flex flex-wrap items-center gap-2 sm:gap-3 text-[10px] sm:text-[11px] font-bold">
             <span className="flex items-center gap-1">
-              <span className="w-3 h-3 bg-[#2563eb] rounded-xs inline-block"></span>
-              <span>🟦 Target</span>
+              <span className="w-2.5 h-2.5 bg-[#2563eb] rounded-xs inline-block"></span>
+              <span>Target</span>
             </span>
             <span className="flex items-center gap-1">
-              <span className="w-3 h-3 bg-[#16a34a] rounded-full inline-block"></span>
-              <span>🟢 Valid</span>
+              <span className="w-2.5 h-2.5 bg-[#16a34a] rounded-full inline-block"></span>
+              <span>Valid</span>
             </span>
             <span className="flex items-center gap-1">
-              <span className="w-3 h-3 bg-[#ea580c] rounded-full inline-block"></span>
-              <span>🟠 Tanpa IDPEL</span>
+              <span className="w-2.5 h-2.5 bg-[#ea580c] rounded-full inline-block"></span>
+              <span>Tanpa IDPEL</span>
             </span>
             <span className="flex items-center gap-1">
-              <span className="w-3 h-3 bg-[#7c3aed] rounded-full inline-block"></span>
-              <span>🟣 &lt; 5m</span>
+              <span className="w-2.5 h-2.5 bg-[#7c3aed] rounded-full inline-block"></span>
+              <span>&lt; 5m</span>
             </span>
             <span className="flex items-center gap-1">
-              <span className="w-3 h-3 bg-[#dc2626] rounded-xs inline-block"></span>
-              <span>🔴 Luar Jangkauan</span>
+              <span className="w-2.5 h-2.5 bg-[#dc2626] rounded-xs inline-block"></span>
+              <span>Luar Jangkauan</span>
             </span>
           </div>
         </div>
 
-        {/* Map Canvas */}
+        {/* Map Canvas dengan tinggi adaptif & perlindungan gesture */}
         <div
           ref={mapContainerRef}
-          style={{ height: "400px", width: "100%", zIndex: 10 }}
-          className="border border-neo-border rounded-sm bg-[#e5e4e7]"
+          className="border-2 border-neo-border rounded-sm bg-[#e5e4e7] w-full h-[270px] sm:h-[350px] md:h-[420px] relative z-10"
         ></div>
 
-        <p className="text-[11px] text-neo-border bg-neo-white p-2 border border-neo-border rounded-xs">
+        <p className="text-[11px] text-neo-border bg-neo-white p-2.5 border border-neo-border rounded-xs">
           💡 <strong>Interaktivitas Peta:</strong> Klik salah satu baris pada tabel di bawah untuk membuat peta langsung <strong>terbang (fly-to)</strong> dan fokus pada koordinat titik tersebut. Klik marker untuk membuka langsung di <strong>Google Maps</strong>.
         </p>
       </div>
@@ -628,9 +633,9 @@ export default function CandidatesPage() {
           </div>
         </div>
       ) : (
-        <div className="border border-neo-border rounded-sm bg-white shadow-[0_4px_0_#0a0a0a] overflow-x-auto">
-          <table className="w-full text-left text-xs border-collapse">
-            <thead className="bg-[#e5e4e7] border-b border-neo-border">
+        <div className="border-2 border-neo-border rounded-sm bg-white shadow-[3px_3px_0_#0a0a0a] overflow-x-auto neo-scrollbar">
+          <table className="w-full text-left text-xs border-collapse whitespace-nowrap min-w-[950px]">
+            <thead className="bg-[#e5e4e7] border-b-2 border-neo-border font-bold">
               <tr>
                 <th className="p-3 border-r border-neo-border">Rank</th>
                 <th className="p-3 border-r border-neo-border">Target Koordinat Kosong</th>
@@ -727,7 +732,7 @@ export default function CandidatesPage() {
                         href={gmapsUrl}
                         target="_blank"
                         rel="noreferrer"
-                        className="px-2 py-1 border border-neo-border bg-white hover:bg-[#e5e4e7] rounded text-[10px] font-bold inline-flex items-center gap-1 shadow-[0_1px_0_#0a0a0a]"
+                        className="touch-min px-2.5 py-1 border border-neo-border bg-white hover:bg-[#e5e4e7] rounded text-[10px] font-bold inline-flex items-center gap-1 shadow-[0_1px_0_#0a0a0a]"
                       >
                         📍 GMaps
                       </a>
@@ -750,10 +755,10 @@ export default function CandidatesPage() {
                       )}
                     </td>
                     <td className="p-3 text-center" onClick={(e) => e.stopPropagation()}>
-                      <div className="flex justify-center gap-1.5">
+                      <div className="flex justify-center items-center gap-1.5">
                         <button
                           onClick={(e) => handleDecision(c.id, 1, e)}
-                          className={`px-2.5 py-1 border border-neo-border rounded text-[11px] font-semibold shadow-[0_1px_0_#0a0a0a] ${
+                          className={`touch-min px-3 py-1.5 min-h-[36px] border-2 border-neo-border rounded text-xs font-bold shadow-[1px_1px_0_#0a0a0a] transition active:translate-y-0.5 ${
                             c.is_accepted === 1
                               ? "bg-[#16a34a] text-white"
                               : "bg-white text-[#16a34a] hover:bg-[#dcfce7]"
@@ -763,7 +768,7 @@ export default function CandidatesPage() {
                         </button>
                         <button
                           onClick={(e) => handleDecision(c.id, -1, e)}
-                          className={`px-2.5 py-1 border border-neo-border rounded text-[11px] font-semibold shadow-[0_1px_0_#0a0a0a] ${
+                          className={`touch-min px-3 py-1.5 min-h-[36px] border-2 border-neo-border rounded text-xs font-bold shadow-[1px_1px_0_#0a0a0a] transition active:translate-y-0.5 ${
                             c.is_accepted === -1
                               ? "bg-[#dc2626] text-white"
                               : "bg-white text-[#dc2626] hover:bg-[#fee2e2]"
@@ -783,16 +788,16 @@ export default function CandidatesPage() {
 
       {/* PAGINATION CONTROLS */}
       {totalCandidates > rowsPerPage && (
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 p-4 border border-neo-border rounded-sm bg-white shadow-[0_2px_0_#0a0a0a]">
-          <div className="flex items-center gap-3">
-            <label className="text-xs font-semibold text-neo-black">Baris per halaman:</label>
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 p-3.5 sm:p-4 border-2 border-neo-border rounded-sm bg-white shadow-[2px_2px_0_#0a0a0a]">
+          <div className="flex items-center gap-2">
+            <label className="text-xs font-bold text-neo-black">Baris per halaman:</label>
             <select
               value={rowsPerPage}
               onChange={(e) => {
                 setRowsPerPage(Number(e.target.value));
                 setCurrentPage(1);
               }}
-              className="border border-neo-border p-1.5 rounded-sm text-xs bg-white font-semibold"
+              className="border-2 border-neo-border p-1.5 rounded-sm text-xs bg-white font-bold"
             >
               <option value={25}>25</option>
               <option value={50}>50</option>
@@ -801,22 +806,22 @@ export default function CandidatesPage() {
             </select>
           </div>
 
-          <div className="text-xs font-semibold text-neo-black">
+          <div className="text-xs font-bold text-neo-black">
             Halaman <strong>{currentPage}</strong> dari <strong>{totalPages}</strong> ({totalCandidates} total)
           </div>
 
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2 w-full sm:w-auto justify-end">
             <button
               onClick={() => setCurrentPage(Math.max(1, currentPage - 1))}
               disabled={currentPage === 1}
-              className="px-3 py-1.5 border border-neo-border bg-white hover:bg-[#e5e4e7] text-xs font-semibold rounded-sm shadow-[0_1px_0_#0a0a0a] disabled:opacity-50 disabled:cursor-not-allowed"
+              className="touch-min px-4 py-2 min-h-[40px] border-2 border-neo-border bg-white hover:bg-[#e5e4e7] text-xs font-bold rounded-sm shadow-[1px_1px_0_#0a0a0a] transition active:translate-y-0.5 disabled:opacity-50 disabled:cursor-not-allowed flex-1 sm:flex-initial"
             >
               ← Sebelumnya
             </button>
             <button
               onClick={() => setCurrentPage(Math.min(totalPages, currentPage + 1))}
               disabled={currentPage === totalPages}
-              className="px-3 py-1.5 border border-neo-border bg-white hover:bg-[#e5e4e7] text-xs font-semibold rounded-sm shadow-[0_1px_0_#0a0a0a] disabled:opacity-50 disabled:cursor-not-allowed"
+              className="touch-min px-4 py-2 min-h-[40px] border-2 border-neo-border bg-white hover:bg-[#e5e4e7] text-xs font-bold rounded-sm shadow-[1px_1px_0_#0a0a0a] transition active:translate-y-0.5 disabled:opacity-50 disabled:cursor-not-allowed flex-1 sm:flex-initial"
             >
               Selanjutnya →
             </button>
@@ -826,15 +831,15 @@ export default function CandidatesPage() {
 
       {/* Bottom Action Finish */}
       {candidates.length > 0 && (
-        <div className="flex items-center justify-between p-4 border border-neo-border rounded-sm bg-white shadow-[0_4px_0_#0a0a0a]">
+        <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between p-4 sm:p-5 border-2 border-neo-border rounded-sm bg-white shadow-[3px_3px_0_#0a0a0a] gap-3">
           <div>
-            <span className="text-xs font-bold text-neo-black">Sudah selesai memverifikasi kandidat?</span>
-            <p className="text-[11px] text-neo-border">Lanjutkan untuk melihat statistik final dan mengunduh laporan CSV.</p>
+            <span className="text-xs sm:text-sm font-bold text-neo-black block">Sudah selesai memverifikasi kandidat?</span>
+            <p className="text-[11px] sm:text-xs text-neo-border mt-0.5">Lanjutkan untuk melihat statistik final dan mengunduh laporan CSV.</p>
           </div>
           <button
             onClick={handleFinishReview}
             disabled={loading}
-            className="px-5 py-2.5 border border-neo-border bg-neo-black text-white text-xs font-bold rounded-sm shadow-[0_2px_0_#0a0a0a] hover:bg-[#222] disabled:opacity-50"
+            className="touch-min px-5 py-3 min-h-[44px] border-2 border-neo-border bg-neo-black text-white text-xs sm:text-sm font-bold rounded-sm shadow-[2px_2px_0_#ff6b35] hover:bg-[#222] transition active:translate-y-0.5 disabled:opacity-50 shrink-0 text-center"
           >
             ✅ Selesaikan Review & Buka Hasil Rekonsiliasi →
           </button>

@@ -1,11 +1,15 @@
 import { useState, useEffect } from "react";
 import { api } from "@/lib/api";
 import { useNavigate } from "react-router-dom";
+import { Compass, FolderCheck, MapPin, Play, ArrowRight, CheckCircle2 } from "lucide-react";
 
 export default function ProcessPage() {
   const navigate = useNavigate();
 
-  const [processName, setProcessName] = useState("Pencocokan Koordinat PLN - " + new Date().toISOString().slice(0, 10));
+  // Lazy initializer to avoid impure Date call during render
+  const [processName, setProcessName] = useState(() => {
+    return "Pencocokan Koordinat PLN - " + new Date().toISOString().slice(0, 10);
+  });
   const [batches, setBatches] = useState<any[]>([]);
   const [targetBatchId, setTargetBatchId] = useState<string>("");
   const [radiusMeters, setRadiusMeters] = useState<number>(150);
@@ -22,11 +26,11 @@ export default function ProcessPage() {
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    // Ambil daftar batch yang tersedia
+    let isMounted = true;
     api.get("/upload/batches")
       .then((res) => {
+        if (!isMounted) return;
         setBatches(res.data);
-        // Default ke batch target / koordinat kosong jika ada
         const targetBatch = res.data.find(
           (b: any) => b.dataset_type === "koordinat_kosong" || b.dataset_type === "target"
         );
@@ -37,6 +41,9 @@ export default function ProcessPage() {
         }
       })
       .catch(() => {});
+    return () => {
+      isMounted = false;
+    };
   }, []);
 
   const handleStartMatching = async (e: React.FormEvent) => {
@@ -48,9 +55,7 @@ export default function ProcessPage() {
     try {
       let batchIdToUse = targetBatchId;
 
-      // Jika mode manual single koordinat, kita buat batch sementara atau gunakan batch aktif
       if (activeTab === "manual") {
-        // Upload batch koordinat manual
         const manualFormData = new FormData();
         const csvContent = `NOMOR_METER,LATITUDEY,LONGITUDEX,KETERANGAN\n${manualRef},${manualLat},${manualLon},Input Manual Petugas\n`;
         const blob = new Blob([csvContent], { type: "text/csv" });
@@ -83,76 +88,82 @@ export default function ProcessPage() {
   };
 
   return (
-    <div className="space-y-6">
-      <div>
-        <h1 className="text-2xl font-bold mb-1">Input Manual & Konfigurasi Pencocokan</h1>
-        <p className="text-sm text-[#333333]">
+    <div className="space-y-5 sm:space-y-6">
+      <div className="border-b border-neo-border pb-3">
+        <h1 className="fluid-h1 font-black tracking-tight text-neo-black">
+          Input Manual & Konfigurasi Pencocokan
+        </h1>
+        <p className="text-xs sm:text-sm text-neo-border mt-0.5">
           Tentukan parameter spasial, pilih batch koordinat kosong, atau input manual satu titik untuk dicari kandidat IDPEL-nya di Master Sisa.
         </p>
       </div>
 
       {error && (
-        <div className="p-4 border border-[#dc2626] bg-[#fee2e2] text-[#dc2626] rounded-sm text-sm font-medium">
+        <div className="p-3.5 sm:p-4 border-2 border-[#dc2626] bg-[#fee2e2] text-[#dc2626] rounded-sm text-xs sm:text-sm font-bold shadow-[2px_2px_0_#dc2626]">
           Error: {error}
         </div>
       )}
 
       {/* Tab Switcher: Batch vs Single Manual Coordinate */}
-      <div className="flex gap-2 border-b border-[#333333] pb-2">
+      <div className="flex flex-col sm:flex-row gap-2 border-b-2 border-neo-border pb-2.5">
         <button
           type="button"
           onClick={() => setActiveTab("batch")}
-          className={`px-4 py-2 border border-[#333333] rounded-sm text-xs font-bold transition ${
+          className={`flex items-center justify-center gap-2 px-4 py-2.5 touch-min border-2 rounded-sm text-xs sm:text-sm font-bold transition active:translate-y-0.5 ${
             activeTab === "batch"
-              ? "bg-[#0a0a0a] text-white shadow-[0_2px_0_#0a0a0a]"
-              : "bg-white text-[#0a0a0a] hover:bg-[#e5e4e7]"
+              ? "border-neo-black bg-neo-black text-white shadow-[2px_2px_0_#ff6b35]"
+              : "border-neo-border bg-white text-neo-black hover:bg-[#e5e4e7] shadow-[2px_2px_0_#0a0a0a]"
           }`}
         >
-          📂 Pencocokan Berdasarkan Batch Data
+          <FolderCheck size={16} />
+          <span>Pencocokan Berdasarkan Batch Data</span>
         </button>
         <button
           type="button"
           onClick={() => setActiveTab("manual")}
-          className={`px-4 py-2 border border-[#333333] rounded-sm text-xs font-bold transition ${
+          className={`flex items-center justify-center gap-2 px-4 py-2.5 touch-min border-2 rounded-sm text-xs sm:text-sm font-bold transition active:translate-y-0.5 ${
             activeTab === "manual"
-              ? "bg-[#0a0a0a] text-white shadow-[0_2px_0_#0a0a0a]"
-              : "bg-white text-[#0a0a0a] hover:bg-[#e5e4e7]"
+              ? "border-neo-black bg-neo-black text-white shadow-[2px_2px_0_#ff6b35]"
+              : "border-neo-border bg-white text-neo-black hover:bg-[#e5e4e7] shadow-[2px_2px_0_#0a0a0a]"
           }`}
         >
-          📍 Input Manual 1 Titik Koordinat Lapangan
+          <MapPin size={16} />
+          <span>Input Manual 1 Titik Koordinat</span>
         </button>
       </div>
 
-      <div className="p-6 border border-[#333333] rounded-sm bg-white shadow-[0_4px_0_#0a0a0a] max-w-xl">
-        <form onSubmit={handleStartMatching} className="space-y-4">
+      {/* Main Form Container */}
+      <div className="p-4 sm:p-6 border-2 border-neo-border rounded-sm bg-white shadow-[4px_4px_0_#0a0a0a] max-w-2xl w-full">
+        <form onSubmit={handleStartMatching} className="space-y-4 sm:space-y-5">
           <div>
-            <label className="block text-xs font-semibold text-[#0a0a0a] mb-1">
-              Nama Sesi Pencocokan
+            <label className="block text-xs sm:text-sm font-bold text-neo-black mb-1.5">
+              Nama Sesi Pencocokan <span className="text-[#dc2626]">*</span>
             </label>
             <input
               type="text"
               required
               value={processName}
               onChange={(e) => setProcessName(e.target.value)}
-              className="w-full border border-[#333333] p-2 rounded-sm text-xs bg-white"
+              className="w-full border-2 border-neo-border p-2.5 rounded-sm mobile-input bg-white text-neo-black focus:outline-none focus:ring-2 focus:ring-neo-accent"
+              placeholder="Contoh: Pencocokan Koordinat PLN Gardu A"
             />
           </div>
 
           {activeTab === "batch" ? (
             <div>
-              <label className="block text-xs font-semibold text-[#0a0a0a] mb-1">
-                Pilih Batch Koordinat Kosong / Target
+              <label className="block text-xs sm:text-sm font-bold text-neo-black mb-1.5">
+                Pilih Batch Koordinat Kosong / Target <span className="text-[#dc2626]">*</span>
               </label>
               {batches.length === 0 ? (
-                <div className="p-3 border border-dashed border-[#333333] text-xs text-[#333333]">
-                  Belum ada batch terupload. Silakan unggah data di menu <strong>Upload & Bentuk Master</strong> atau gunakan Quick Demo.
+                <div className="p-3.5 border-2 border-dashed border-neo-border rounded-sm text-xs text-neo-border bg-neo-white">
+                  Belum ada batch terupload. Silakan unggah data di menu <strong>Upload & Bentuk Master</strong> atau jalankan Quick Demo.
                 </div>
               ) : (
                 <select
                   required
                   value={targetBatchId}
                   onChange={(e) => setTargetBatchId(e.target.value)}
-                  className="w-full border border-[#333333] p-2 rounded-sm text-xs bg-white"
+                  className="w-full border-2 border-neo-border p-2.5 rounded-sm mobile-input bg-white text-neo-black focus:outline-none focus:ring-2 focus:ring-neo-accent"
                 >
                   <option value="">-- Pilih Batch Target --</option>
                   {batches.map((b) => (
@@ -164,46 +175,55 @@ export default function ProcessPage() {
               )}
             </div>
           ) : (
-            <div className="p-4 border border-[#333333] bg-[#fafafa] rounded-sm space-y-3">
-              <h3 className="text-xs font-bold text-[#0a0a0a]">Data Titik Lapangan Manual:</h3>
+            <div className="p-3.5 sm:p-4 border-2 border-neo-border bg-[#fafafa] rounded-sm space-y-3.5">
+              <div className="flex items-center gap-1.5 text-xs font-black text-neo-black uppercase tracking-wide">
+                <Compass size={16} />
+                <span>Data Titik Lapangan Manual</span>
+              </div>
               <div>
-                <label className="block text-[11px] font-semibold text-[#333333] mb-1">Nama / ID Titik / No. Tiang</label>
+                <label className="block text-xs font-bold text-neo-black mb-1">
+                  Nama / ID Titik / No. Tiang <span className="text-[#dc2626]">*</span>
+                </label>
                 <input
                   type="text"
                   required
                   value={manualRef}
                   onChange={(e) => setManualRef(e.target.value)}
-                  className="w-full border border-[#333333] p-1.5 rounded-sm text-xs bg-white"
+                  className="w-full border-2 border-neo-border p-2 rounded-sm mobile-input bg-white text-neo-black"
                 />
               </div>
-              <div className="grid grid-cols-2 gap-2">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <div>
-                  <label className="block text-[11px] font-semibold text-[#333333] mb-1">Latitude (Y)</label>
+                  <label className="block text-xs font-bold text-neo-black mb-1">
+                    Latitude (Y) <span className="text-[#dc2626]">*</span>
+                  </label>
                   <input
                     type="text"
                     required
                     value={manualLat}
                     onChange={(e) => setManualLat(e.target.value)}
-                    className="w-full border border-[#333333] p-1.5 rounded-sm text-xs bg-white"
+                    className="w-full border-2 border-neo-border p-2 rounded-sm mobile-input bg-white text-neo-black font-mono"
                   />
                 </div>
                 <div>
-                  <label className="block text-[11px] font-semibold text-[#333333] mb-1">Longitude (X)</label>
+                  <label className="block text-xs font-bold text-neo-black mb-1">
+                    Longitude (X) <span className="text-[#dc2626]">*</span>
+                  </label>
                   <input
                     type="text"
                     required
                     value={manualLon}
                     onChange={(e) => setManualLon(e.target.value)}
-                    className="w-full border border-[#333333] p-1.5 rounded-sm text-xs bg-white"
+                    className="w-full border-2 border-neo-border p-2 rounded-sm mobile-input bg-white text-neo-black font-mono"
                   />
                 </div>
               </div>
             </div>
           )}
 
-          <div className="grid grid-cols-2 gap-3">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-4">
             <div>
-              <label className="block text-xs font-semibold text-[#0a0a0a] mb-1">
+              <label className="block text-xs sm:text-sm font-bold text-neo-black mb-1">
                 Radius Maksimal (Meter)
               </label>
               <input
@@ -212,13 +232,13 @@ export default function ProcessPage() {
                 max="1000"
                 value={radiusMeters}
                 onChange={(e) => setRadiusMeters(Number(e.target.value))}
-                className="w-full border border-[#333333] p-2 rounded-sm text-xs bg-white"
+                className="w-full border-2 border-neo-border p-2 rounded-sm mobile-input bg-white text-neo-black font-mono"
               />
-              <span className="text-[10px] text-[#333333]">Threshold default: 150 meter</span>
+              <span className="text-[11px] text-neo-border mt-0.5 block">Default rekomendasi: 150 meter</span>
             </div>
 
             <div>
-              <label className="block text-xs font-semibold text-[#0a0a0a] mb-1">
+              <label className="block text-xs sm:text-sm font-bold text-neo-black mb-1">
                 Max Kandidat / Titik
               </label>
               <input
@@ -227,40 +247,58 @@ export default function ProcessPage() {
                 max="10"
                 value={maxCandidates}
                 onChange={(e) => setMaxCandidates(Number(e.target.value))}
-                className="w-full border border-[#333333] p-2 rounded-sm text-xs bg-white"
+                className="w-full border-2 border-neo-border p-2 rounded-sm mobile-input bg-white text-neo-black font-mono"
               />
-              <span className="text-[10px] text-[#333333]">Urutan rank terdekat</span>
+              <span className="text-[11px] text-neo-border mt-0.5 block">Urutan ranking jarak terdekat</span>
             </div>
           </div>
 
           <button
             type="submit"
             disabled={loading}
-            className="w-full py-2.5 px-4 border border-[#333333] bg-[#0a0a0a] text-white text-xs font-bold rounded-sm shadow-[0_2px_0_#0a0a0a] hover:bg-[#1a1a1a] disabled:opacity-50"
+            className="w-full touch-min py-3 px-4 border-2 border-neo-black bg-neo-black text-white text-xs sm:text-sm font-bold rounded-sm shadow-[3px_3px_0_#ff6b35] hover:bg-[#1a1a1a] transition active:translate-y-0.5 disabled:opacity-50 flex items-center justify-center gap-2"
           >
-            {loading ? "Menjalankan Pencocokan Spasial..." : "🚀 Jalankan Pencocokan Koordinat"}
+            {loading ? (
+              <>
+                <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
+                <span>Menjalankan Pencocokan Spasial...</span>
+              </>
+            ) : (
+              <>
+                <Play size={16} />
+                <span>Jalankan Pencocokan Koordinat</span>
+              </>
+            )}
           </button>
         </form>
       </div>
 
+      {/* Matching Result Summary */}
       {result && (
-        <div className="p-6 border border-[#16a34a] bg-[#dcfce7] rounded-sm shadow-[0_4px_0_#0a0a0a] max-w-xl space-y-3">
-          <h2 className="text-base font-bold text-[#16a34a]">Pencocokan Spasial Selesai!</h2>
-          <div className="text-xs text-[#0a0a0a] space-y-1">
-            <p>ID Proses: <strong>#{result.process_id}</strong></p>
-            <p>Total Titik Koordinat: <strong>{result.total_targets}</strong></p>
-            <p>Titik Menemukan Kandidat IDPEL: <strong>{result.matched_targets}</strong></p>
-            <p>Titik Anomali (Di luar radius): <strong>{result.unmatched_targets}</strong></p>
-            <p>Total Pasangan Kandidat yang Terhubung: <strong>{result.total_candidates_found}</strong></p>
+        <div className="p-4 sm:p-6 border-2 border-[#16a34a] bg-[#dcfce7] rounded-sm shadow-[4px_4px_0_#16a34a] max-w-2xl w-full space-y-3.5">
+          <div className="flex items-center gap-2 text-[#16a34a]">
+            <CheckCircle2 size={22} />
+            <h2 className="text-base sm:text-lg font-black">Pencocokan Spasial Selesai!</h2>
           </div>
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-xs text-neo-black bg-white/70 p-3 rounded-sm border border-[#16a34a]/30">
+            <p>ID Sesi: <strong>#{result.process_id}</strong></p>
+            <p>Total Titik: <strong>{result.total_targets}</strong></p>
+            <p className="text-[#16a34a]">Menemukan Kandidat: <strong>{result.matched_targets}</strong></p>
+            <p className="text-[#dc2626]">Di Luar Radius: <strong>{result.unmatched_targets}</strong></p>
+            <p className="sm:col-span-2">Total Pasangan Terhubung: <strong>{result.total_candidates_found}</strong></p>
+          </div>
+
           <button
             onClick={() => navigate(`/candidates?process_id=${result.process_id}`)}
-            className="mt-2 w-full py-2 px-4 border border-[#333333] bg-[#0a0a0a] text-white text-xs font-bold rounded-sm shadow-[0_2px_0_#0a0a0a] hover:bg-[#222]"
+            className="w-full touch-min py-3 px-4 border-2 border-neo-border bg-neo-black text-white text-xs sm:text-sm font-bold rounded-sm shadow-[3px_3px_0_#0a0a0a] hover:bg-[#222] transition active:translate-y-0.5 flex items-center justify-center gap-2"
           >
-            🗺️ Buka Peta & Review Spasial Koordinat →
+            <span>Buka Peta & Review Spasial Koordinat</span>
+            <ArrowRight size={16} />
           </button>
         </div>
       )}
     </div>
   );
 }
+
