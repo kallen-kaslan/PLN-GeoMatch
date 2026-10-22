@@ -1,4 +1,5 @@
 {
+  "css.lint.unknownAtRules": "ignore",
   "tailwindCSS.lint.suggestCanonicalClasses": "ignore",
   "C_Cpp_Runner.cCompilerPath": "gcc",
   "C_Cpp_Runner.cppCompilerPath": "g++",
