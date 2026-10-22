@@ -97,10 +97,10 @@ npm run build
 
 ## Konfigurasi Environment
 
-Edit file `backend/.env`:
+Edit file `backend/.env_exmple`:
 
-```env
-DATABASE_URL=postgresql://postgres:postgres@localhost:5432/pln_geomatch
+```env_example
+DATABASE_URL=postgresql://postgres:pw@localhost:5432/pln_geomatch
 SECRET_KEY=your-secret-key-here
 ALGORITHM=HS256
 ACCESS_TOKEN_EXPIRE_MINUTES=480
