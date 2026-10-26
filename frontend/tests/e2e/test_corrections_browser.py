@@ -64,7 +64,7 @@ def test_not_found_import_conflicts_candidates_missing_coordinates_and_category_
         {
             "name": "tidak-ketemu.csv",
             "mimeType": "text/csv",
-            "buffer": b"IDPEL,NAMA,LAT,LON\n001,Bentrok,-6.2,106.8\n777,Perlu dicari,-6.2,106.8\n888,Tanpa koordinat,,\n",
+            "buffer": b"IDPEL,NAMA,NOAGENDA,LAT,LON\n001,Bentrok,A1,-6.2,106.8\n777,Perlu dicari,A1,-6.2,106.8\n888,Tanpa koordinat,A1,,\n",
         }
     )
     page.get_by_role(
@@ -128,8 +128,8 @@ def test_mobile_empty_idpel_import_pagination_summary_and_candidate_pages(
     page.set_viewport_size({"width": 390, "height": 844})
     page.goto("/koreksi/idpel-kosong")
     page.get_by_role("button", name="Unggah data koreksi", exact=True).click()
-    content = "ID_TITIK,NOMOR_METER,LAT,LON\nSURVEY-0,M1,-6.2,106.8\n"
-    content += "".join(f"SURVEY-{number},,-6.2,106.8\n" for number in range(1, 31))
+    content = "ID_TITIK,NOMOR_METER,NOAGENDA,LAT,LON\nSURVEY-0,M1,A1,-6.2,106.8\n"
+    content += "".join(f"SURVEY-{number},,A1,-6.2,106.8\n" for number in range(1, 31))
     page.locator("input[type=file]").set_input_files(
         {"name": "kosong.csv", "mimeType": "text/csv", "buffer": content.encode()}
     )

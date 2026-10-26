@@ -12,7 +12,7 @@ Sidebar memiliki submenu untuk kedua kategori. Tautan lama `/upload` diarahkan k
 1. Selesaikan validasi PDPJ melalui menu Data PDPJ.
 2. Buka kategori koreksi yang sesuai, unggah CSV/XLSX, pilih sheet bila perlu, lalu konfirmasi mapping. Unggahan yang terhenti pada mapping dapat dilanjutkan tanpa duplikasi berkas.
 3. Pada IDPEL Tidak Ketemu, kolom IDPEL wajib dipetakan. Pada IDPEL Kosong, kolom IDPEL boleh tidak tersedia. Koordinat boleh kosong pada kedua kategori agar semua baris tetap dapat diperiksa.
-4. Petakan **nomor meter**, **nomor agenda**, dan **referensi survei / ID titik** secara terpisah. Jenis referensi ini menentukan cara sistem memeriksa benturan dengan PDPJ.
+4. Petakan **nomor meter**, **nomor agenda**, dan **referensi survei / ID titik** secara terpisah. Nomor agenda tetap disimpan sebagai informasi dan boleh sama dengan PDPJ. Meter dan referensi survei tetap dipakai untuk memeriksa benturan.
 5. Pilih PDPJ selesai divalidasi, isi nama petugas, dan tentukan radius. Jalankan pemeriksaan.
 6. Tunggu sampai hasil tersimpan. Popup selesai mengikuti status backend, bukan penghitung waktu tampilan.
 7. Tinjau kartu ringkasan, pencarian, filter, dan tabel. Klik **Detail** pada baris untuk melihat data asli, hasil pemeriksaan, benturan, serta kandidat tersimpan di bawah tabel.
@@ -28,7 +28,7 @@ Pemeriksaan memakai nilai PDPJ **saat ini** dari versi validasi selesai yang dip
 | --- | --- |
 | IDPEL sama dengan PDPJ | Benturan; pencarian kandidat tidak dijalankan |
 | Nomor meter sama dengan nomor meter PDPJ | Benturan; pencarian tidak dijalankan |
-| Nomor agenda sama dengan nomor agenda PDPJ | Benturan; pencarian tidak dijalankan |
+| Nomor agenda sama dengan nomor agenda PDPJ | Diperbolehkan; pencarian kandidat tetap dijalankan |
 | Referensi survei sama dengan referensi survei PDPJ | Benturan; pencarian tidak dijalankan |
 | Nilai agenda kebetulan sama dengan nilai meter | Tidak dianggap benturan antartipe |
 | Koordinat sama, tetapi tidak ada benturan identitas | Peringatan; pencarian tetap berjalan |
@@ -37,6 +37,8 @@ Pemeriksaan memakai nilai PDPJ **saat ini** dari versi validasi selesai yang dip
 | IDPEL ternyata ditemukan dalam sumber master | Ditandai ditemukan; kategori asal tetap IDPEL Tidak Ketemu |
 
 Referensi dibandingkan setelah spasi tepi dibersihkan dan huruf diseragamkan. Nol di depan tetap dipertahankan: `000123` berbeda dari `123`. Nilai kosong dan referensi yang seluruhnya nol tidak dipakai sebagai bukti benturan. Nomor meter KWH dan prepaid turut diperiksa sebagai identitas meter.
+
+Kesamaan nomor agenda tidak menghalangi pencarian maupun pemilihan kandidat pada kedua kategori koreksi, termasuk bila kolom agenda dipetakan melalui referensi generik lama. Untuk hasil yang sebelumnya terhalang nomor agenda, gunakan **Periksa ulang** agar aturan baru diterapkan pada versi berikutnya. Hasil historis tetap dipertahankan, termasuk keterangan benturan yang berlaku saat hasil tersebut dibuat.
 
 Referensi generik yang jenisnya tidak dapat dipastikan tidak dipakai untuk menuduh benturan secara otomatis. Untuk kolom khusus pada berkas Anda, pilih mapping jenis referensi secara eksplisit. Pemeriksaan PDPJ lama tetap dapat memakai jenis referensi yang dikenali dari header asal; nilai yang sudah diganti melalui pelengkapan tidak dibangkitkan kembali dari sel lama.
 

@@ -1,6 +1,7 @@
 import os
+from typing import Any
 
-from sqlalchemy import create_engine
+from sqlalchemy import create_engine, event
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import DeclarativeBase, sessionmaker
 
@@ -47,6 +48,17 @@ except (SQLAlchemyError, ImportError):
     DATABASE_URL = f"sqlite:///{sqlite_path}"
     engine = create_engine(DATABASE_URL, connect_args={"check_same_thread": False})
     print(f"[DATABASE] Menggunakan SQLite fallback: {sqlite_path}")
+
+if engine.dialect.name == "sqlite":
+    @event.listens_for(engine, "connect")
+    def enable_sqlite_foreign_keys(connection: Any, _record: object) -> None:
+        """Enforce parent references on application connections, as PostgreSQL does."""
+        cursor = connection.cursor()
+        try:
+            cursor.execute("PRAGMA foreign_keys=ON")
+        finally:
+            cursor.close()
+
 
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 

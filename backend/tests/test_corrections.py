@@ -202,18 +202,138 @@ def test_empty_category_compares_typed_references_and_only_warns_on_same_coordin
     assert [row["search_status"] for row in rows] == [
         "pdpj_conflict",
         "matched",
-        "pdpj_conflict",
+        "matched",
         "pdpj_conflict",
         "matched",
         "incomplete_coordinates",
         "invalid_data",
     ]
     assert rows[0]["conflicts"][0]["code"] == "meter_sama_pdpj"
-    assert rows[2]["conflicts"][0]["code"] == "agenda_sama_pdpj"
+    assert not rows[2]["conflicts"] and rows[2]["candidate_count"] == 7
+    assert rows[2]["fields"]["agenda_ref"] == "A001"
     assert rows[3]["conflicts"][0]["code"] == "survey_sama_pdpj"
     assert rows[4]["warnings"][0]["code"] == "koordinat_sama_pdpj"
     assert not rows[4]["conflicts"] and rows[4]["candidate_count"] == 7
     assert rows[6]["errors"][0]["code"] == "kategori_idpel_harus_kosong"
+
+
+@pytest.mark.parametrize("kind", ["idpel_tidak_ketemu", "idpel_kosong"])
+@pytest.mark.parametrize("legacy_mapping", [False, True])
+def test_shared_agenda_does_not_block_candidate_search_or_selection(
+    client: TestClient, reference: int, kind: str, legacy_mapping: bool
+) -> None:
+    # Repeated agendas are allowed both across PDPJ and within the correction file.
+    ids = ("998", "997") if kind == "idpel_tidak_ketemu" else ("", "")
+    mapping = {"idpel": "IDPEL", "target_ref": "NOAGENDA"} if legacy_mapping else None
+    batch_id = upload(
+        client,
+        kind,
+        f"IDPEL,NOAGENDA,LAT,LON\n{ids[0]},A001,-6.2,106.8\n{ids[1]},A001,-6.2,106.8\n",
+        mapping=mapping,
+    )
+    checked = check(client, kind, batch_id, reference)
+    process = checked["process_id"]
+    summary = client.get(
+        f"/corrections/{kind}/summary", params={"process_id": process}
+    ).json()
+    assert summary["pdpj_conflicts"] == 0 and summary["matched"] == 2
+    rows = client.get(
+        f"/corrections/{kind}/records", params={"process_id": process}
+    ).json()["items"]
+    assert all(not row["conflicts"] and row["candidate_count"] == 7 for row in rows)
+    assert all(row["fields"]["agenda_ref"] == "A001" for row in rows)
+    detail = client.get(
+        f"/corrections/{kind}/records/{rows[0]['id']}", params={"process_id": process}
+    ).json()
+    assert all(
+        candidate["fields"]["idpel"] != "001" for candidate in detail["candidates"]
+    )
+    choice = client.post(
+        f"/corrections/{kind}/checks/{process}/records/{rows[0]['id']}/choice",
+        json={
+            "generation": 1,
+            "expected_revision": 0,
+            "candidate_id": detail["candidates"][0]["id"],
+            "actor": "Petugas Uji",
+            "reason": "",
+            "request_key": "shared_agenda_choice",
+        },
+    )
+    assert choice.status_code == 200, choice.text
+    assert choice.json()["current"]["target_fields"]["agenda_ref"] == "A001"
+
+
+def test_shared_agenda_does_not_waive_idpel_meter_survey_or_coordinate_validation(
+    client: TestClient, reference: int
+) -> None:
+    kind = "idpel_tidak_ketemu"
+    batch_id = upload(
+        client,
+        kind,
+        "IDPEL,NOAGENDA,NOMOR_METER,ID_TITIK,LAT,LON\n001,A001,,,-6.2,106.8\n998,A001,M001,,-6.2,106.8\n997,A001,,S001,-6.2,106.8\n996,A001,,,,\n995,A001,,,bad,106.8\n994,A001,,,-9,110\n",
+    )
+    checked = check(client, kind, batch_id, reference)
+    rows = client.get(
+        f"/corrections/{kind}/records", params={"process_id": checked["process_id"]}
+    ).json()["items"]
+    assert [row["search_status"] for row in rows] == [
+        "pdpj_conflict",
+        "pdpj_conflict",
+        "pdpj_conflict",
+        "incomplete_coordinates",
+        "invalid_data",
+        "no_candidates",
+    ]
+    assert [row["conflicts"][0]["code"] for row in rows[:3]] == [
+        "idpel_sama_pdpj",
+        "meter_sama_pdpj",
+        "survey_sama_pdpj",
+    ]
+    assert all(
+        conflict["code"] != "agenda_sama_pdpj"
+        for row in rows
+        for conflict in row["conflicts"]
+    )
+
+
+def test_retry_applies_new_agenda_policy_without_rewriting_previous_result(
+    client: TestClient, reference: int, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from app.modules.corrections.service import REFERENCE_FIELDS
+
+    kind = "idpel_kosong"
+    batch_id = upload(client, kind, "NOAGENDA,LAT,LON\nA001,-6.2,106.8\n")
+    monkeypatch.setitem(REFERENCE_FIELDS, "agenda", ("agenda_ref",))
+    previous = check(client, kind, batch_id, reference)
+    process = previous["process_id"]
+    record = client.get(
+        f"/corrections/{kind}/records", params={"process_id": process}
+    ).json()["items"][0]
+    assert record["search_status"] == "pdpj_conflict"
+    assert record["conflicts"][0]["code"] == "agenda_sama_pdpj"
+    monkeypatch.delitem(REFERENCE_FIELDS, "agenda")
+    retried = client.post(
+        f"/corrections/{kind}/checks/{process}/retry",
+        json={
+            "latest_run_id": previous["latest_run"]["id"],
+            "radius_meters": 10,
+            "actor": "Petugas Uji",
+            "request_key": "retry_without_agenda_block",
+        },
+    )
+    assert retried.status_code == 200 and retried.json()["current_generation"] == 2
+    path = f"/corrections/{kind}/records/{record['id']}"
+    latest = client.get(path, params={"process_id": process}).json()
+    assert latest["search_status"] == "matched" and latest["candidates_total"] == 7
+    assert latest["conflicts"] == [] and latest["fields"]["agenda_ref"] == "A001"
+    historical = client.get(
+        path, params={"process_id": process, "generation": 1}
+    ).json()
+    assert (
+        historical["search_status"] == "pdpj_conflict"
+        and historical["candidates_total"] == 0
+    )
+    assert historical["conflicts"] == record["conflicts"]
 
 
 def test_candidate_details_use_saved_evidence_and_keep_zero_candidate_rows(

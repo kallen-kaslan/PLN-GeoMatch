@@ -26,9 +26,9 @@ class CorrectionKind(str, enum.Enum):
 
 
 CORRECTION_TYPES = {DatasetType.IDPEL_TIDAK_KETEMU, DatasetType.IDPEL_KOSONG}
+# Agenda values remain in the source/evidence, but do not identify duplicate targets.
 REFERENCE_FIELDS = {
     "meter": ("meter_ref", "nomor_meter_kwh", "nomor_meter_prepaid"),
-    "agenda": ("agenda_ref",),
     "survey": ("survey_ref",),
 }
 
@@ -42,7 +42,7 @@ def reference_value(value: Any) -> str | None:
 def reference_tokens(
     fields: dict[str, Any], raw: dict[str, Any], mapping: dict[str, str] | None
 ) -> dict[str, set[str]]:
-    """Compare like identifiers; an agenda number must never collide with a meter number."""
+    """Only shared meters/survey references block correction; agendas are descriptive."""
     result = {
         kind: {value for key in keys if (value := reference_value(fields.get(key)))}
         for kind, keys in REFERENCE_FIELDS.items()
@@ -62,13 +62,11 @@ def reference_tokens(
     kind = (
         "meter"
         if column in {"nomormeter", "notmeter", "nomormeterkwh", "nomormeterprepaid"}
-        else "agenda"
-        if column in {"noagenda", "nomoragenda"}
         else "survey"
         if column in {"idtitik", "ref", "referensisurvei"}
         else None
     )
-    primary = {"meter": "meter_ref", "agenda": "agenda_ref", "survey": "survey_ref"}
+    primary = {"meter": "meter_ref", "survey": "survey_ref"}
     if (
         kind
         and primary[kind] not in fields

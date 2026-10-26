@@ -11,7 +11,11 @@ logger = logging.getLogger(__name__)
 
 
 def database_write_error(
-    db: Session, exc: SQLAlchemyError, operation: str
+    db: Session,
+    exc: SQLAlchemyError,
+    operation: str,
+    *,
+    busy_message: str | None = None,
 ) -> HTTPException:
     original = getattr(exc, "orig", None)
     code = getattr(original, "sqlite_errorcode", None)
@@ -50,6 +54,8 @@ def database_write_error(
         )
     if primary in {sqlite3.SQLITE_BUSY, sqlite3.SQLITE_LOCKED}:
         return HTTPException(
-            503, "Database sedang dipakai proses lain. Tunggu sebentar, lalu coba lagi."
+            503,
+            busy_message
+            or "Database sedang dipakai proses lain. Tunggu sebentar, lalu coba lagi.",
         )
     return HTTPException(500, f"Gagal menyimpan {operation}. Silakan coba lagi.")

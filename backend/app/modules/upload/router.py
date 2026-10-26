@@ -311,9 +311,10 @@ async def auto_pipeline_endpoint(batch_id: int, db: DbSession) -> dict:
 
 
 @router.post("/reset")
-async def reset_database(db: DbSession):
+def reset_database(db: DbSession) -> dict[str, str]:
     """Menghapus semua data upload, kandidat, dan riwayat untuk pengujian ulang."""
     try:
+        lock_review_session(db)
         archive_keys = [key for (key,) in db.query(UploadFileArchive.storage_key).all()]
         db.query(CoordinateRepair).delete()
         db.query(UploadSheetImport).delete()
@@ -342,9 +343,18 @@ async def reset_database(db: DbSession):
             except OSError:
                 pass  # Reference rows are already removed; do not undo a successful reset.
         return {"message": "Semua data berhasil direset. Database kembali bersih."}
-    except SQLAlchemyError as e:
-        db.rollback()
-        raise HTTPException(status_code=500, detail=f"Gagal reset database: {e!s}")
+    except SQLAlchemyError as exc:
+        error = database_write_error(
+            db, exc, "reset database",
+            busy_message=(
+                "Reset belum dapat dijalankan karena database masih dipakai proses lain. "
+                "Tunggu proses impor atau pemeriksaan selesai, atau hentikan pekerjaan "
+                "yang sedang berjalan terlebih dahulu, lalu coba reset lagi."
+            ),
+        )
+        if error.status_code == 500:
+            error.detail = "Reset database gagal. Silakan coba lagi."
+        raise error from exc
 
 
 @router.post("/preview")
