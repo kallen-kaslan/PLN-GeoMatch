@@ -11,6 +11,7 @@ from .models.matching import ReconciliationProcess, MatchCandidate
 from .models.pdpj import PdpjReview, PdpjRow, PdpjRecommendation, PdpjChange
 from .models.correction import CorrectionCheck, CorrectionAttempt, CorrectionTarget, CorrectionCandidateEvidence
 from .models.correction_decision import CorrectionDecision
+from .models.upload_file import UploadFileArchive, UploadSheetImport
 
 # Buat tabel otomatis jika belum ada
 Base.metadata.create_all(bind=engine)

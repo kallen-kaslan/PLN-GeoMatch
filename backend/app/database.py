@@ -14,6 +14,7 @@ def ensure_schema_compatibility() -> None:
     from app.correction_schema import upgrade_corrections
     from app.correction_map_schema import upgrade_correction_map
     from app.schema_compatibility import upgrade_foundations
+    from app.upload_file_schema import upgrade_upload_files
 
     with engine.begin() as connection:
         upgrade_foundations(connection)
@@ -21,6 +22,7 @@ def ensure_schema_compatibility() -> None:
         upgrade_pdpj_validation(connection)
         upgrade_corrections(connection)
         upgrade_correction_map(connection)
+        upgrade_upload_files(connection)
 
 
 # Coba sambung ke PostgreSQL, jika gagal gunakan SQLite lokal otomatis

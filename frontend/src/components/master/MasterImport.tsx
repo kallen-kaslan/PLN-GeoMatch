@@ -1,9 +1,10 @@
 import { useRef, useState, type ChangeEvent } from "react";
-import { useMutation } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import Papa from "papaparse";
 import * as XLSX from "xlsx";
 import { AlertCircle, ArrowRight, FileSpreadsheet, LoaderCircle, Upload, X } from "lucide-react";
 import { api, type ApiError } from "@/lib/api";
+import { uploadFilesApi, type UploadFileHistory } from "@/lib/upload-files";
 import { MASTER_TYPES, displayValue, guessMasterMapping, hasSourceHeaders, masterFields, normalizeSourceHeaders, type ImportResult, type MasterBatchPreview, type SourceKind } from "@/lib/master";
 
 const inputClass = "w-full rounded-sm border-2 border-neo-border bg-white px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-neo-accent disabled:opacity-60";
@@ -11,8 +12,9 @@ const MAX_UPLOAD_BYTES = 500 * 1024 * 1024;
 type ImportPreview = { headers: string[]; rows: Record<string, unknown>[]; headerRow?: number };
 const readError = (error: unknown) => error instanceof Error ? error.message : (error as ApiError)?.message ?? "Berkas tidak dapat dibaca.";
 
-async function previewExcelSheet(book: XLSX.WorkBook, name: string, file: File): Promise<ImportPreview> {
+async function previewExcelSheet(book: XLSX.WorkBook, name: string, file: File, archivedPreview?: () => Promise<ImportPreview>): Promise<ImportPreview> {
   try { return sheetPreview(book, name); } catch {
+    if (archivedPreview) return archivedPreview();
     // Incorrect sheet dimensions can hide all cells from the bounded browser
     // preview. The server streams the actual cells and never saves this preview.
     const body = new FormData();
@@ -130,6 +132,16 @@ export function MasterImport({ kind, saved, onSaved, onCancel }: {
   const [reading, setReading] = useState(false);
   const [parseError, setParseError] = useState<string | null>(null);
   const [uploadId, setUploadId] = useState<number | null>(saved?.id ?? null);
+  const [archiveId, setArchiveId] = useState<number | null>(null);
+  const queryClient = useQueryClient();
+  const history = useQuery({ queryKey: ["upload-files"], queryFn: uploadFilesApi.list });
+  const storeFile = useMutation({ mutationFn: uploadFilesApi.store });
+  const loadPreview = useMutation({ mutationFn: ({ id, name }: { id: number; name: string }) => uploadFilesApi.preview(id, name) });
+  const selectedArchive = history.data?.find((item) => item.id === archiveId) ?? (archiveId === null && saved ? history.data?.find((item) => item.imports.some((entry) => entry.batch_id === saved.id)) : undefined);
+  const activeArchiveId = archiveId ?? selectedArchive?.id;
+  const sheetNames = selectedArchive?.sheet_names ?? workbook?.SheetNames ?? [];
+  const sheetImport = (name: string) => selectedArchive?.imports.find((item) => item.dataset_type === kind && (item.period ?? "") === period && (item.source_sheet ?? "") === name);
+  const alreadySaved = sheetImport(sheet)?.status === "completed";
   const readVersion = useRef(0);
 
   const acceptPreview = (preview: ImportPreview) => {
@@ -147,19 +159,21 @@ export function MasterImport({ kind, saved, onSaved, onCancel }: {
       if (fields.some((field) => field.required && !mapping[field.key])) throw new Error("Pilih kolom wajib terlebih dahulu.");
       let batchId = uploadId;
       if (batchId === null) {
-        if (!file) throw new Error(`Pilih berkas ${noun} terlebih dahulu.`);
-        const body = new FormData();
-        body.append("file", file);
-        body.append("dataset_type", kind);
-        if (period) body.append("period", period);
-        if (sheet) body.append("sheet_name", sheet);
-        const uploaded = await api.post<{ id: number }>("/upload/", body, { headers: { "Content-Type": "multipart/form-data" } });
-        batchId = uploaded.data.id;
+        if (!activeArchiveId) throw new Error(`Pilih berkas ${noun} dari riwayat atau unggah terlebih dahulu.`);
+        const uploaded = await uploadFilesApi.importSheet(activeArchiveId, kind, sheet, period);
+        if (uploaded.status === "completed") {
+          await queryClient.invalidateQueries({ queryKey: ["upload-files"] });
+          throw new Error("Sheet ini sudah disimpan dan divalidasi. Pilih sheet lain.");
+        }
+        batchId = uploaded.id;
         setUploadId(batchId);
       }
       return (await api.post<ImportResult>("/upload/confirm-mapping", { batch_id: batchId, column_mapping: mapping })).data;
     },
-    onSuccess: (result) => onSaved(result, file?.name ?? saved?.filename ?? "Berkas master"),
+    onSuccess: async (result) => {
+      await queryClient.invalidateQueries({ queryKey: ["upload-files"] });
+      onSaved(result, selectedArchive?.filename ?? file?.name ?? saved?.filename ?? "Berkas master");
+    },
   });
 
   const chooseFile = async (event: ChangeEvent<HTMLInputElement>) => {
@@ -167,9 +181,14 @@ export function MasterImport({ kind, saved, onSaved, onCancel }: {
     if (!chosen) return;
     const version = ++readVersion.current;
     setFile(chosen); setHeaders([]); setRows([]); setMapping({}); setWorkbook(null); setSheet("");
-    setParseError(null); setReading(true); mutation.reset(); setUploadId(null);
+    setParseError(null); setReading(true); mutation.reset(); setUploadId(null); setArchiveId(null);
     try {
       if (chosen.size > MAX_UPLOAD_BYTES) throw new Error("Ukuran file maksimal 500 MB.");
+      const archived = await storeFile.mutateAsync(chosen);
+      await queryClient.cancelQueries({ queryKey: ["upload-files"] });
+      queryClient.setQueryData<UploadFileHistory[]>(["upload-files"], (previous) => [archived, ...(previous ?? []).filter((item) => item.id !== archived.id)]);
+      if (version !== readVersion.current) return;
+      setArchiveId(archived.id);
       if (chosen.name.toLowerCase().endsWith(".csv")) {
         const preview = await readCsv(chosen);
         if (version === readVersion.current) acceptPreview(preview);
@@ -190,7 +209,7 @@ export function MasterImport({ kind, saved, onSaved, onCancel }: {
         if (!first) throw new Error("Berkas Excel tidak memiliki sheet.");
         // Keep the selector available even when the selected sheet cannot be previewed.
         setWorkbook(book); setSheet(first);
-        const preview = detected?.preview ?? await previewExcelSheet(book, first, chosen);
+        const preview = detected?.preview ?? await previewExcelSheet(book, first, chosen, () => loadPreview.mutateAsync({ id: archived.id, name: first }));
         if (version === readVersion.current) acceptPreview(preview);
       }
     } catch (error) {
@@ -200,7 +219,18 @@ export function MasterImport({ kind, saved, onSaved, onCancel }: {
     }
   };
 
-  const lockedFile = mutation.isPending || uploadId !== null;
+  const selectArchivedSheet = async (name: string, id = activeArchiveId) => {
+    if (!id) return;
+    const version = ++readVersion.current;
+    setSheet(name); setUploadId(null); setParseError(null); setHeaders([]); setRows([]); setMapping({}); setReading(true); mutation.reset();
+    try {
+      const preview = await loadPreview.mutateAsync({ id, name });
+      if (version === readVersion.current) acceptPreview(preview);
+    } catch (error) {
+      if (version === readVersion.current) setParseError(readError(error));
+    } finally { if (version === readVersion.current) setReading(false); }
+  };
+  const lockedFile = mutation.isPending;
   return (
     <section aria-label={kind === "pdpj" ? "Impor PDPJ" : correction ? `Impor koreksi ${label}` : `Impor master ${label}`} className="space-y-5 rounded-sm border-2 border-neo-border bg-white p-4 shadow-[3px_3px_0_#0a0a0a] sm:p-6">
       <div className="flex items-start justify-between gap-3 border-b border-neo-border pb-3">
@@ -208,35 +238,40 @@ export function MasterImport({ kind, saved, onSaved, onCancel }: {
           <p className="mt-1 text-xs text-neo-border">{kind === "idpel_kosong" ? "IDPEL boleh kosong. Petakan referensi dan koordinat yang tersedia; semua baris tetap disimpan." : "IDPEL wajib dipetakan. Koordinat dan informasi lain dapat dilengkapi kemudian."}</p></div>
         <button type="button" onClick={onCancel} disabled={mutation.isPending} aria-label="Tutup formulir unggah" className="touch-min rounded-sm border border-neo-border hover:bg-neo-white disabled:opacity-40"><X size={18} /></button>
       </div>
+      <label className="block space-y-2 text-xs font-bold">Riwayat berkas unggahan
+        <select aria-label="Riwayat berkas unggahan" value={activeArchiveId ?? ""} disabled={lockedFile || reading || history.isPending} onChange={(event) => {
+          const archive = history.data?.find((item) => item.id === Number(event.target.value));
+          if (!archive) return;
+          setArchiveId(archive.id); setFile(null); setWorkbook(null);
+          void selectArchivedSheet(archive.sheet_names[0] ?? "", archive.id);
+        }} className={inputClass}>
+          <option value="" disabled>{history.isPending ? "Memuat riwayat berkas…" : "Pilih berkas yang pernah diunggah"}</option>
+          {history.data?.map((item) => <option key={item.id} value={item.id}>#{item.id} · {item.filename} · {item.sheet_names.length || 1} {item.sheet_names.length ? "sheet" : "tabel CSV"}</option>)}
+        </select>
+        <span className="block font-normal">Pilih file dari riwayat untuk menyimpan sheet lain tanpa mengunggah file yang sama. Tanda ✓ berlaku untuk kategori dan periode yang dipilih.</span>
+      </label>
+      {history.isError && <p role="alert" className="text-xs text-red-700">Riwayat berkas belum dapat dimuat. <button type="button" onClick={() => void history.refetch()} className="underline">Coba lagi</button></p>}
       {!saved && <div className="grid gap-4 sm:grid-cols-2">
         <label className="space-y-2 text-xs font-bold">Berkas CSV atau Excel
           <input type="file" accept=".csv,.xlsx" disabled={lockedFile || reading} onChange={chooseFile} className="block w-full text-xs file:mr-3 file:rounded-sm file:border-2 file:border-neo-border file:bg-neo-white file:px-3 file:py-2 file:font-bold" />
           <span className="block font-normal">Maksimal 500 MB per berkas.</span>
         </label>
         <label className="space-y-2 text-xs font-bold">Periode berkas (opsional)
-          <input type="month" value={period} onChange={(event) => setPeriod(event.target.value)} disabled={lockedFile} className={inputClass} />
+          <input type="month" value={period} onChange={(event) => { setPeriod(event.target.value); setUploadId(null); mutation.reset(); }} disabled={lockedFile || reading} className={inputClass} />
         </label>
       </div>}
-      {saved && <p className="flex items-center gap-2 text-sm font-semibold"><FileSpreadsheet size={17} />{saved.filename} · {saved.total_rows.toLocaleString("id-ID")} baris</p>}
-      {workbook && <label className="block max-w-md space-y-2 text-xs font-bold">Sheet yang diimpor
-        <select value={sheet} disabled={lockedFile || reading} onChange={async (event) => {
-          const name = event.target.value;
-          const version = ++readVersion.current;
-          setSheet(name); setParseError(null); setHeaders([]); setRows([]); setMapping({}); setReading(true);
-          try {
-            const preview = await previewExcelSheet(workbook, name, file!);
-            if (version === readVersion.current) acceptPreview(preview);
-          } catch (error) {
-            if (version === readVersion.current) setParseError(readError(error));
-          } finally {
-            if (version === readVersion.current) setReading(false);
-          }
-        }} className={inputClass}>{workbook.SheetNames.map((name) => <option key={name}>{name}</option>)}</select>
+      {saved && <p className="flex items-center gap-2 text-sm font-semibold"><FileSpreadsheet size={17} />{selectedArchive?.filename ?? saved.filename}</p>}
+      {sheetNames.length > 0 && <label className="block max-w-md space-y-2 text-xs font-bold">Sheet yang diimpor
+        <select aria-label="Sheet yang diimpor" value={sheet} disabled={lockedFile || reading} onChange={(event) => void selectArchivedSheet(event.target.value)} className={`${inputClass} ${alreadySaved ? "border-green-700 bg-green-50" : ""}`}>
+          {sheetNames.map((name) => <option key={name} value={name}>{sheetImport(name)?.status === "completed" ? "✓ " : sheetImport(name) ? "◷ " : ""}{name}{sheetImport(name)?.status === "completed" ? " — Sudah disimpan" : sheetImport(name) ? " — Belum divalidasi" : " — Belum disimpan"}</option>)}
+        </select>
       </label>}
+      {alreadySaved && <p role="status" className="rounded-sm border-2 border-green-700 bg-green-50 p-3 text-xs text-green-900">✓ Sheet ini sudah disimpan dan divalidasi untuk {label}{period ? ` periode ${period}` : " tanpa periode"}. Pilih sheet lain untuk menyimpan data berikutnya.</p>}
+      {activeArchiveId && !alreadySaved && <p className="text-xs text-neo-border">Pratinjau belum menjadi data acuan. Sheet hanya diaktifkan setelah Anda menekan Simpan dan validasi.</p>}
       {reading && <p role="status" className="flex items-center gap-2 text-sm"><LoaderCircle size={16} className="animate-spin" />Membaca pratinjau berkas…</p>}
       {(parseError || mutation.error) && <p role="alert" className="flex items-start gap-2 rounded-sm border-2 border-red-600 bg-red-50 p-3 text-sm text-red-700"><AlertCircle size={17} className="mt-0.5 shrink-0" />{parseError ?? mutation.error?.message}</p>}
       {headers.length > 0 && <>
-        {workbook && <p className="text-xs text-neo-border">Nama kolom dibaca dari baris {firstDataRow - 1}. Baris kosong di awal dilewati.</p>}
+        {sheetNames.length > 0 && <p className="text-xs text-neo-border">Nama kolom dibaca dari baris {firstDataRow - 1}. Baris kosong di awal dilewati.</p>}
         <div><h3 className="text-sm font-black">Pemetaan kolom</h3><p className="mt-1 text-xs text-neo-border">{correction || kind === "pdpj" ? "Petakan nomor meter, agenda, dan referensi survei secara terpisah agar pemeriksaan benturan membandingkan jenis referensi yang sama." : "Periksa hasil deteksi kolom. KODEDLPD, KDDK, kode gardu, dan kode lain disimpan terpisah. Kolom tanpa nama diberi label sesuai posisinya."}</p></div>
         <fieldset disabled={mutation.isPending} className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
           {fields.map((field) => <label key={field.key} className="space-y-1.5 text-xs font-bold">{field.label}{field.required && <span className="text-red-600"> *</span>}
@@ -249,13 +284,13 @@ export function MasterImport({ kind, saved, onSaved, onCancel }: {
         <div><h3 className="mb-2 text-sm font-black">Pratinjau lima baris pertama</h3>
           <div className="neo-scrollbar max-h-64 overflow-auto rounded-sm border border-neo-border"><table className="w-full whitespace-nowrap text-left text-xs">
             <thead className="sticky top-0 bg-gray-100"><tr><th className="border-b border-neo-border p-2">Baris</th>{headers.map((header) => <th key={header} className="border-b border-neo-border p-2">{header}</th>)}</tr></thead>
-            <tbody>{rows.map((row, index) => <tr key={index} className="border-b border-gray-200"><td className="p-2 font-mono">{saved?.row_numbers?.[index] ?? firstDataRow + index}</td>{headers.map((header) => <td key={header} className="max-w-64 truncate p-2">{displayValue(row[header])}</td>)}</tr>)}</tbody>
+            <tbody>{rows.map((row, index) => <tr key={index} className="border-b border-gray-200"><td className="p-2 font-mono">{(uploadId === saved?.id ? saved?.row_numbers?.[index] : undefined) ?? firstDataRow + index}</td>{headers.map((header) => <td key={header} className="max-w-64 truncate p-2">{displayValue(row[header])}</td>)}</tr>)}</tbody>
           </table></div>
         </div>
       </>}
       <div className="flex flex-col justify-between gap-3 border-t border-neo-border pt-4 sm:flex-row sm:items-center">
         <p className="max-w-xl text-xs text-neo-border">Simpan IDPEL sebagai teks agar nol di depan tetap utuh. Data asli tetap tersedia pada detail setiap baris.</p>
-        <button type="button" disabled={!headers.length || fields.some((field) => field.required && !mapping[field.key]) || reading || mutation.isPending || !!parseError} onClick={() => mutation.mutate()} className="touch-min shrink-0 gap-2 rounded-sm border-2 border-neo-border bg-neo-black px-4 py-2.5 text-xs font-bold text-white shadow-[2px_2px_0_#ff6b35] hover:bg-neutral-800 disabled:cursor-not-allowed disabled:opacity-40">
+        <button type="button" disabled={alreadySaved || !headers.length || fields.some((field) => field.required && !mapping[field.key]) || reading || mutation.isPending || !!parseError} onClick={() => mutation.mutate()} className="touch-min shrink-0 gap-2 rounded-sm border-2 border-neo-border bg-neo-black px-4 py-2.5 text-xs font-bold text-white shadow-[2px_2px_0_#ff6b35] hover:bg-neutral-800 disabled:cursor-not-allowed disabled:opacity-40">
           {mutation.isPending ? <LoaderCircle size={16} className="animate-spin" /> : <ArrowRight size={16} />}{mutation.isPending ? "Menyimpan dan memvalidasi…" : `Simpan dan validasi ${noun}`}
         </button>
       </div>

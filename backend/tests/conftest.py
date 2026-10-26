@@ -24,6 +24,13 @@ from app.models.upload import SourceRecord, UploadBatch  # noqa: F401
 from app.models.pdpj import PdpjReview, PdpjRow, PdpjRecommendation, PdpjChange  # noqa: F401
 from app.models.correction import CorrectionCheck, CorrectionAttempt, CorrectionTarget, CorrectionCandidateEvidence  # noqa: F401
 from app.models.correction_decision import CorrectionDecision  # noqa: F401
+from app.models.upload_file import UploadFileArchive, UploadSheetImport  # noqa: F401
+
+
+@pytest.fixture(autouse=True)
+def isolated_file_archives(tmp_path, monkeypatch):
+    from app.config import settings
+    monkeypatch.setattr(settings, "UPLOAD_STORAGE_DIR", str(tmp_path / "uploads"))
 
 
 @pytest.fixture(scope="function")

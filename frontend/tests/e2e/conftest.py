@@ -47,6 +47,7 @@ def servers(tmp_path_factory: pytest.TempPathFactory) -> Iterator[tuple[str, str
     environment = {
         **os.environ,
         "DATABASE_URL": f"sqlite:///{(folder / 'isolated.db').as_posix()}",
+        "UPLOAD_STORAGE_DIR": str(folder / "uploads"),
         "VITE_API_PROXY_TARGET": api_url,
         "VITE_API_BASE_URL": "/api",
         "ALLOW_SYNC_FALLBACK": "true",

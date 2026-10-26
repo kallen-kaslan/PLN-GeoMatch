@@ -182,7 +182,8 @@ def test_excel_bad_dimensions_preview_matches_import_and_empty_sheet_can_recover
     expect(preview.get_by_role("row")).to_have_count(6)
     assert httpx.get(f"{servers[1]}/master/dil/batches").json() == []
     if header_row > 64:
-        assert any(url.endswith("/upload/preview") for url in requests)
+        assert any("/upload/files/" in url and "/preview?" in url for url in requests)
+        assert not any(url.endswith("/upload/preview") for url in requests)
     page.get_by_label("Sheet yang diimpor").select_option("Kosong")
     expect(page.get_by_role("alert")).to_contain_text("Kosong")
     expect(

@@ -27,6 +27,7 @@ from ...models.matching import (
 )
 from ...models.pdpj import PdpjChange, PdpjRecommendation, PdpjReview, PdpjRow
 from ...models.upload import BatchStatus, DatasetType, SourceRecord, UploadBatch
+from ...models.upload_file import UploadFileArchive, UploadSheetImport
 from ...schemas.upload import BatchProcessRequest, MappingRequest, UploadBatchResponse
 from ...tasks.spatial_tasks import (
     execute_batch_reconciliation_pipeline,
@@ -44,6 +45,8 @@ from .normalization import (
 )
 from .reader import IMPORT_CHUNK_ROWS, check_file_size, read_upload
 from .storage import database_write_error
+from .ingestion import import_raw_sheet
+from .archive import router as archive_router, archive_path
 
 DbSession = Annotated[Session, Depends(get_db)]
 
@@ -310,6 +313,8 @@ async def auto_pipeline_endpoint(batch_id: int, db: DbSession) -> dict:
 async def reset_database(db: DbSession):
     """Menghapus semua data upload, kandidat, dan riwayat untuk pengujian ulang."""
     try:
+        archive_keys = [key for (key,) in db.query(UploadFileArchive.storage_key).all()]
+        db.query(UploadSheetImport).delete()
         db.query(CorrectionDecision).delete()
         db.query(CorrectionCandidateEvidence).delete()
         db.query(CorrectionTarget).delete()
@@ -327,7 +332,13 @@ async def reset_database(db: DbSession):
         db.query(CleanedMasterRecord).delete()
         db.query(SourceRecord).delete()
         db.query(UploadBatch).delete()
+        db.query(UploadFileArchive).delete()
         db.commit()
+        for key in archive_keys:
+            try:
+                archive_path(key).unlink(missing_ok=True)
+            except OSError:
+                pass  # Reference rows are already removed; do not undo a successful reset.
         return {"message": "Semua data berhasil direset. Database kembali bersih."}
     except SQLAlchemyError as e:
         db.rollback()
@@ -375,35 +386,10 @@ def upload_file(
 ):
     try:
         check_file_size(file.file)
-        with read_upload(file.file, file.filename or "", sheet_name) as (
-            selected_sheet,
-            rows,
-        ):
-            batch = UploadBatch(
-                filename=file.filename,
-                dataset_type=dataset_type,
-                status=BatchStatus.NEEDS_MAPPING,
-                total_rows=0,
-                period=period,
-                source_sheet=selected_sheet,
-            )
-            db.add(batch)
-            db.flush()
-            pending = []
-            total_rows = 0
-            for number, row in rows:
-                pending.append(
-                    {"batch_id": batch.id, "data": row, "row_number": number}
-                )
-                total_rows += 1
-                if len(pending) >= IMPORT_CHUNK_ROWS:
-                    db.bulk_insert_mappings(SourceRecord, pending)
-                    pending.clear()
-            if not total_rows:
-                raise ValueError("File kosong atau tidak memiliki baris data.")
-            if pending:
-                db.bulk_insert_mappings(SourceRecord, pending)
-            batch.total_rows = total_rows
+        batch = import_raw_sheet(
+            db, file.file, file.filename or "", dataset_type, sheet_name, period,
+            chunk_rows=IMPORT_CHUNK_ROWS,
+        )
         # A late parser/insert failure must leave no partial batch behind.
         db.commit()
         db.refresh(batch)
@@ -477,6 +463,14 @@ def apply_mapping(req: MappingRequest, db: Session) -> dict:
             status_code=409,
             detail="Dataset sudah digunakan proses; unggah batch baru untuk mengubah mapping",
         )
+    if (
+        batch.status == BatchStatus.COMPLETED
+        and db.query(UploadSheetImport).filter_by(batch_id=batch.id).first()
+        and (batch.column_mapping or {}) != req.column_mapping
+    ):
+        raise HTTPException(
+            409, "Sheet sudah disimpan dan divalidasi; pilih sheet lain atau unggah berkas yang diperbaiki"
+        )
     headers: set[str] = set()
     for (data,) in (
         db.query(SourceRecord.data)
@@ -544,3 +538,6 @@ def apply_mapping(req: MappingRequest, db: Session) -> dict:
         "error_rows": batch.error_rows,
         "errors": errors,
     }
+
+
+router.include_router(archive_router)

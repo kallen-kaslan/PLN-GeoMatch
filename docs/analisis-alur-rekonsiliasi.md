@@ -2,6 +2,8 @@
 
 Tanggal: 23 Oktober 2026.
 
+Pembaruan 26 Oktober 2026: formulir impor mendukung [riwayat file dan sheet](riwayat-file-sheet.md), tanda sheet yang sudah disimpan, dan pemisahan pratinjau dari data acuan.
+
 Catatan: dokumen ini merekam kondisi awal proyek. Lima perbaikan fondasi berikutnya dijelaskan pada [fondasi-data.md](fondasi-data.md). Implementasi tahap 1 (pemisahan Data Master dan dukungan DIL) dijelaskan pada [data-master.md](data-master.md), termasuk pengujian melalui browser terisolasi.
 
 Implementasi tahap 2 (pemeriksaan, pelengkapan, riwayat, dan penyelesaian PDPJ) dijelaskan pada [validasi-pdpj.md](validasi-pdpj.md).
