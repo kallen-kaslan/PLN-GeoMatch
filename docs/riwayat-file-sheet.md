@@ -10,9 +10,8 @@ Formulir impor bersama untuk Data Master, PDPJ, dan kedua kategori Data Koreksi 
 
 Status pada dropdown:
 
-- `✓ Sudah disimpan`: batch sheet sudah selesai dipetakan dan divalidasi. Sheet yang dipilih juga diberi latar hijau dan tombol penyimpanan dinonaktifkan.
-- `◷ Belum divalidasi`: terdapat batch sementara, misalnya konfirmasi mapping sebelumnya gagal. Batch yang sama dilanjutkan, bukan digandakan.
-- `Belum disimpan`: belum terdapat batch sheet untuk kategori dan periode yang dipilih.
+- Nama sheet diawali `✓` jika batch sheet sudah selesai dipetakan dan divalidasi. Sheet yang dipilih juga diberi latar hijau dan tombol penyimpanan dinonaktifkan.
+- Sheet lainnya hanya menampilkan nama, tanpa keterangan status. Jika terdapat batch sementara dari konfirmasi sebelumnya yang gagal, batch yang sama tetap dilanjutkan, bukan digandakan.
 
 Ceklis mengikuti **file, sheet, kategori, dan periode**. Sheet yang disimpan untuk DIL tidak ditandai sudah tersimpan untuk PDPJ. File berisi byte identik dikenali dengan SHA-256 sehingga unggah ulang tidak menciptakan salinan riwayat baru. Nama file sama dengan isi berbeda tetap merupakan riwayat berbeda.
 

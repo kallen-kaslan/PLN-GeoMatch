@@ -67,7 +67,7 @@ def test_sheet_history_checks_survive_reload_and_other_sheet_uses_same_original(
     selector = page.get_by_label("Sheet yang diimpor", exact=True)
     expect(selector).to_be_enabled()
     expect(selector.locator("option[value=Januari]")).to_have_text(
-        "✓ Januari — Sudah disimpan"
+        "✓ Januari"
     )
     expect(save).to_be_disabled()
     selector.select_option("Februari")
@@ -90,10 +90,10 @@ def test_sheet_history_checks_survive_reload_and_other_sheet_uses_same_original(
     page.get_by_label("Riwayat berkas unggahan", exact=True).select_option(index=1)
     selector = page.get_by_label("Sheet yang diimpor", exact=True)
     expect(selector.locator("option[value=Januari]")).to_have_text(
-        "✓ Januari — Sudah disimpan"
+        "✓ Januari"
     )
     expect(selector.locator("option[value=Februari]")).to_have_text(
-        "✓ Februari — Sudah disimpan"
+        "✓ Februari"
     )
     selector.select_option("Februari")
     expect(save).to_be_disabled()
@@ -117,11 +117,11 @@ def test_preview_empty_sheet_recovery_and_checkmarks_follow_period(
     selector = page.get_by_label("Sheet yang diimpor", exact=True)
     expect(selector).to_be_enabled()
     expect(selector.locator("option[value=Januari]")).to_have_text(
-        "Januari — Belum disimpan"
+        "Januari"
     )
     page.locator("input[type=month]").fill("2026-01")
     expect(selector.locator("option[value=Januari]")).to_have_text(
-        "✓ Januari — Sudah disimpan"
+        "✓ Januari"
     )
     expect(save).to_be_disabled()
     selector.select_option("Kosong")
@@ -149,7 +149,7 @@ def test_same_file_history_can_be_reused_in_pdpj_without_master_checkmarks(
     selector = page.get_by_label("Sheet yang diimpor", exact=True)
     expect(selector).to_be_enabled()
     expect(selector.locator("option[value=Januari]")).to_have_text(
-        "Januari — Belum disimpan"
+        "Januari"
     )
     save = page.get_by_role("button", name="Simpan dan validasi PDPJ", exact=True)
     expect(save).to_be_enabled()

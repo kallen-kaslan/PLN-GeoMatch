@@ -263,7 +263,7 @@ export function MasterImport({ kind, saved, onSaved, onCancel }: {
       {saved && <p className="flex items-center gap-2 text-sm font-semibold"><FileSpreadsheet size={17} />{selectedArchive?.filename ?? saved.filename}</p>}
       {sheetNames.length > 0 && <label className="block max-w-md space-y-2 text-xs font-bold">Sheet yang diimpor
         <select aria-label="Sheet yang diimpor" value={sheet} disabled={lockedFile || reading} onChange={(event) => void selectArchivedSheet(event.target.value)} className={`${inputClass} ${alreadySaved ? "border-green-700 bg-green-50" : ""}`}>
-          {sheetNames.map((name) => <option key={name} value={name}>{sheetImport(name)?.status === "completed" ? "✓ " : sheetImport(name) ? "◷ " : ""}{name}{sheetImport(name)?.status === "completed" ? " — Sudah disimpan" : sheetImport(name) ? " — Belum divalidasi" : " — Belum disimpan"}</option>)}
+          {sheetNames.map((name) => <option key={name} value={name}>{sheetImport(name)?.status === "completed" ? "✓ " : ""}{name}</option>)}
         </select>
       </label>}
       {alreadySaved && <p role="status" className="rounded-sm border-2 border-green-700 bg-green-50 p-3 text-xs text-green-900">✓ Sheet ini sudah disimpan dan divalidasi untuk {label}{period ? ` periode ${period}` : " tanpa periode"}. Pilih sheet lain untuk menyimpan data berikutnya.</p>}
