@@ -8,6 +8,9 @@ from .models.user import User
 from .models.upload import UploadBatch, SourceRecord
 from .models.master_sisa import CleanedMasterRecord, MasterSisaRecord
 from .models.matching import ReconciliationProcess, MatchCandidate
+from .models.pdpj import PdpjReview, PdpjRow, PdpjRecommendation, PdpjChange
+from .models.correction import CorrectionCheck, CorrectionAttempt, CorrectionTarget, CorrectionCandidateEvidence
+from .models.correction_decision import CorrectionDecision
 
 # Buat tabel otomatis jika belum ada
 Base.metadata.create_all(bind=engine)
@@ -20,6 +23,9 @@ from .modules.auth.router import router as auth_router
 from .modules.upload.router import router as upload_router
 from .modules.spatial.router import router as spatial_router
 from .modules.history.router import router as history_router
+from .modules.master.router import router as master_router
+from .modules.pdpj.router import router as pdpj_router
+from .modules.corrections.router import router as correction_router
 
 app = FastAPI(title="PLN GeoMatch API", version="1.0.0")
 
@@ -35,6 +41,9 @@ app.include_router(auth_router)
 app.include_router(upload_router)
 app.include_router(spatial_router)
 app.include_router(history_router)
+app.include_router(master_router)
+app.include_router(pdpj_router)
+app.include_router(correction_router)
 
 @app.get("/")
 async def root():

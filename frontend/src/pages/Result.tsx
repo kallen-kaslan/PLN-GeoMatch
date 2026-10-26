@@ -31,9 +31,6 @@ export default function ResultPage() {
       .then((res) => {
         setSummary(res.data);
         setError(null);
-        if (res.data?.process_id && String(res.data.process_id) !== processId && !res.data.is_empty) {
-          setProcessId(String(res.data.process_id));
-        }
       })
       .catch((err: any) => {
         if (err.status === 502) {

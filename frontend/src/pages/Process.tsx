@@ -66,6 +66,14 @@ export default function ProcessPage() {
           headers: { "Content-Type": "multipart/form-data" },
         });
         batchIdToUse = String(uploadRes.data.id);
+        await api.post("/upload/confirm-mapping", {
+          batch_id: Number(batchIdToUse),
+          column_mapping: {
+            nomor_meter: "NOMOR_METER",
+            lat: "LATITUDEY",
+            lon: "LONGITUDEX",
+          },
+        });
       }
 
       if (!batchIdToUse) {

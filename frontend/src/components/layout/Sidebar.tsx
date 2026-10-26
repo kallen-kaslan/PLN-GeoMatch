@@ -1,5 +1,5 @@
 import { Link, useLocation, useNavigate } from "react-router-dom";
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useAppStore } from "@/store/app";
 import {
   LayoutDashboard,
@@ -14,7 +14,25 @@ import {
   ChevronLeft,
   ChevronRight,
   User,
+  Database,
+  ChevronDown,
+  type LucideIcon,
 } from "lucide-react";
+
+type MenuItem = { to: string; label: string; icon: LucideIcon; children?: { to: string; label: string }[] };
+
+function MasterNavigation({ item, collapsed = false }: { item: MenuItem; collapsed?: boolean }) {
+  const location = useLocation();
+  const [expanded, setExpanded] = useState(true);
+  const active = location.pathname.startsWith(item.to);
+  const Icon = item.icon;
+  const classes = `flex w-full items-center gap-2.5 rounded-sm border px-3 py-2 text-xs font-bold transition ${active ? "border-neo-black bg-neo-black text-white shadow-[0_2px_0_#ff6b35]" : "border-neo-border bg-white text-neo-black shadow-[0_1px_0_#0a0a0a] hover:bg-gray-100"}`;
+  if (collapsed) return <Link to={item.children?.[0]?.to ?? item.to} title={item.label} className={`${classes} justify-center px-2`} aria-label={item.label}><Icon size={16} /></Link>;
+  return <div className="space-y-1.5">
+    <button type="button" onClick={() => setExpanded((previous) => !previous)} aria-expanded={expanded} className={classes}><Icon size={17} className="shrink-0" /><span className="flex-1 text-left">{item.label}</span><ChevronDown size={14} className={expanded ? "rotate-180" : ""} /></button>
+    {expanded && <div className="ml-3 space-y-1 border-l-2 border-neo-border pl-3">{item.children?.map((child) => <Link key={child.to} to={child.to} aria-current={location.pathname === child.to ? "page" : undefined} className={`block rounded-sm border px-3 py-2.5 text-xs font-semibold ${location.pathname === child.to ? "border-neo-black bg-amber-50 shadow-[2px_2px_0_#ff6b35]" : "border-transparent hover:border-neo-border hover:bg-gray-100"}`}>{child.label}</Link>)}</div>}
+  </div>;
+}
 
 export default function Sidebar() {
   const location = useLocation();
@@ -31,11 +49,20 @@ export default function Sidebar() {
   const closeButtonRef = useRef<HTMLButtonElement>(null);
   const previousActiveElementRef = useRef<HTMLElement | null>(null);
 
-  const menu = [
+  const menu: MenuItem[] = [
     { to: "/", label: "Dashboard", icon: LayoutDashboard },
-    { to: "/upload", label: "Upload & Bentuk Master", icon: FolderUp },
+    { to: "/master", label: "Data Master", icon: Database, children: [
+      { to: "/master/prabayar", label: "Prabayar" },
+      { to: "/master/pascabayar", label: "Pascabayar" },
+      { to: "/master/dil", label: "DIL" },
+    ] },
+    { to: "/pdpj", label: "Data PDPJ", icon: FileCheck2 },
+    { to: "/koreksi", label: "Data Koreksi", icon: FolderUp, children: [
+      { to: "/koreksi/idpel-tidak-ketemu", label: "IDPEL Tidak Ketemu" },
+      { to: "/koreksi/idpel-kosong", label: "IDPEL Kosong" },
+    ] },
     { to: "/process", label: "Input Manual & Matching", icon: SlidersHorizontal },
-    { to: "/candidates", label: "Review & Peta Spasial", icon: Map },
+    { to: "/peta-koreksi", label: "Peta Koreksi", icon: Map },
     { to: "/result", label: "Hasil Rekonsiliasi", icon: FileCheck2 },
     { to: "/history", label: "Riwayat Proses", icon: History },
   ];
@@ -134,6 +161,7 @@ export default function Sidebar() {
               Menu Utama
             </h2>
             {menu.map((m) => {
+              if (m.children) return <MasterNavigation key={m.to} item={m} />;
               const isActive = location.pathname === m.to;
               const Icon = m.icon;
               return (
@@ -215,6 +243,7 @@ export default function Sidebar() {
         {/* Navigation Items */}
         <nav className="flex-1 overflow-y-auto p-3 space-y-1.5 neo-scrollbar">
           {menu.map((m) => {
+            if (m.children) return <MasterNavigation key={m.to} item={m} collapsed={isSidebarCollapsed} />;
             const isActive = location.pathname === m.to;
             const Icon = m.icon;
             return (

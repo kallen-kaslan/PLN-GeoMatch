@@ -1,198 +1,193 @@
-"""
-Modul Pembentukan Data Master (ACMT/RBM Pascabayar + LPB Prabayar)
-Sesuai Action Plan PLN GeoMatch:
-1. Cleaning data ACMT RBM multi-bulan agar tidak numpuk (ambil tglbaca mutakhir).
-2. Cleaning data LPB multi-bulan agar tidak numpuk.
-3. Gabungkan Paska + Pra menjadi Master (kolom: idpel, koordinat_x, koordinat_y, tglbaca, jenis_pel).
-4. Auto-filter kolom sendiri (User-Oriented).
-"""
+"""Build a combined master while retaining identities without usable coordinates."""
+
+import re
+from datetime import UTC, date, datetime
+from typing import Any
 
 from sqlalchemy.orm import Session
-from typing import Dict, Any, List, Optional
-from datetime import datetime
 
-from app.models.upload import UploadBatch, SourceRecord, BatchStatus, DatasetType
-from app.models.master_sisa import CleanedMasterRecord, MasterSisaRecord
+from app.models.upload import BatchStatus, DatasetType, SourceRecord, UploadBatch
+from app.modules.upload.normalization import (  # noqa: F401
+    extract_standard_fields,
+    normalize_column_name,
+)
 
-def normalize_column_name(col: str) -> str:
-    """Membersihkan nama kolom: lowercase, hapus spasi/simbol untuk auto-filtering"""
-    if not col:
-        return ""
-    return str(col).strip().lower().replace(" ", "").replace("_", "").replace("-", "")
+MASTER_READ_CHUNK_ROWS = 400
 
-def extract_standard_fields(row_data: Dict[str, Any]) -> Dict[str, Any]:
-    """
-    Auto-filter kolom user-oriented:
-    Mengenali variasi nama kolom IDPEL, Koordinat X/Y (Lat/Long), Tgl Baca, Jenis Pel
-    """
-    normalized = {normalize_column_name(k): v for k, v in row_data.items() if v is not None}
 
-    # 1. IDPEL
-    idpel = None
-    for alias in ["idpel", "idpelanggan", "nopelanggan", "customerid", "nometer"]:
-        if alias in normalized and str(normalized[alias]).strip():
-            idpel = str(normalized[alias]).strip()
-            break
+def observation_period(value: str | None) -> tuple[date, str]:
+    """Compare compact DIL months and ISO periods without changing source values."""
+    text = value or ""
+    match = re.fullmatch(r"(\d{4})[-/]?(\d{2})(?:[-/]?(\d{2}))?(?:[ T].*)?", text)
+    if match:
+        try:
+            return date(int(match[1]), int(match[2]), int(match[3] or 1)), text
+        except ValueError:
+            pass
+    return date.min, text
 
-    # 2. Latitude (Y)
-    lat = None
-    for alias in ["latitudey", "latitude", "lat", "lintang", "koordinaty", "y"]:
-        if alias in normalized:
-            try:
-                val = float(str(normalized[alias]).replace(",", "."))
-                if val != 0:
-                    lat = val
-                    break
-            except (ValueError, TypeError):
-                continue
-
-    # 3. Longitude (X)
-    lon = None
-    for alias in ["longitudex", "longitude", "long", "lon", "bujur", "koordinatx", "x"]:
-        if alias in normalized:
-            try:
-                val = float(str(normalized[alias]).replace(",", "."))
-                if val != 0:
-                    lon = val
-                    break
-            except (ValueError, TypeError):
-                continue
-
-    # 4. Tanggal Baca / Periode
-    tglbaca = None
-    for alias in ["tglbaca", "tanggalbaca", "periode", "tgl", "bulan", "blth"]:
-        if alias in normalized:
-            tglbaca = str(normalized[alias]).strip()
-            break
-
-    # 5. Jenis Pelanggan (Paska / Pra)
-    jenis_pel = None
-    for alias in ["jenispelanggan", "jenispel", "layanan", "tarif", "produk"]:
-        if alias in normalized:
-            jenis_pel = str(normalized[alias]).strip()
-            break
-
-    # 6. Nama Pelanggan (opsional)
-    nama = None
-    for alias in ["namapelanggan", "nama", "customername"]:
-        if alias in normalized:
-            nama = str(normalized[alias]).strip()
-            break
-
-    # 7. Kode Gardu (untuk pencocokan gardu DIL)
-    kode_gardu = None
-    for alias in ["kodegardu", "gardu", "trafo", "idgardu"]:
-        if alias in normalized:
-            kode_gardu = str(normalized[alias]).strip()
-            break
-
-    return {
-        "idpel": idpel,
-        "lat": lat,
-        "lon": lon,
-        "tglbaca": tglbaca or "2026-01",
-        "jenis_pel": jenis_pel or "PASCABAYAR",
-        "nama": nama or "-",
-        "kode_gardu": kode_gardu
-    }
 
 def build_combined_master(
     db: Session,
-    pascabayar_batch_ids: List[int],
-    prabayar_batch_ids: List[int]
-) -> Dict[str, Any]:
-    """
-    Membersihkan data bertumpuk multi-bulan dari ACMT (pascabayar) dan LPB (prabayar),
-    lalu menggabungkannya menjadi Master Terpadu.
-    """
-    # Dictionary deduplikasi: key = idpel, value = record terbaru
-    dedup_master: Dict[str, Dict[str, Any]] = {}
-    pascabayar_count = 0
-    prabayar_count = 0
+    pascabayar_batch_ids: list[int],
+    prabayar_batch_ids: list[int],
+    dil_batch_ids: list[int] | None = None,
+    *,
+    commit: bool = True,
+) -> dict[str, Any]:
+    """Keep the latest observation per IDPEL, including incomplete locations."""
+    deduplicated: dict[str, dict[str, Any]] = {}
+    latest_dil: dict[str, dict[str, Any]] = {}
+    observations: dict[str, list[dict[str, Any]]] = {}
+    counts = {DatasetType.PASCABAYAR: 0, DatasetType.PRABAYAR: 0, DatasetType.DIL: 0}
+    skipped = 0
+    for batch_ids, dataset_type in (
+        (pascabayar_batch_ids, DatasetType.PASCABAYAR),
+        (prabayar_batch_ids, DatasetType.PRABAYAR),
+        (dil_batch_ids or [], DatasetType.DIL),
+    ):
+        for batch_id in dict.fromkeys(batch_ids):
+            batch = db.get(UploadBatch, batch_id)
+            if (
+                batch is None
+                or batch.dataset_type != dataset_type
+                or batch.status != BatchStatus.COMPLETED
+            ):
+                raise ValueError(
+                    "Batch master tidak ditemukan, belum selesai, atau jenisnya tidak sesuai"
+                )
+            records = (
+                db.query(SourceRecord)
+                .filter(SourceRecord.batch_id == batch_id)
+                .order_by(SourceRecord.id)
+                .yield_per(MASTER_READ_CHUNK_ROWS)
+            )
+            for source_row, record in enumerate(records, start=2):
+                counts[dataset_type] += 1
+                if record.row_number is None:
+                    record.row_number = source_row
+                # Invalid, already-normalized imports cannot become candidates.
+                # Retain legacy metadata backfills without parsing every rejected row.
+                fields = (
+                    extract_standard_fields(record.data or {}, batch.column_mapping)
+                    if record.is_valid or record.normalized_data is None
+                    else None
+                )
+                if fields is not None:
+                    fields["tglbaca"] = fields["tglbaca"] or batch.period
+                if record.normalized_data is None:
+                    assert fields is not None
+                    record.normalized_data = {
+                        key: value
+                        for key, value in fields.items()
+                        if key != "validation_errors"
+                    }
+                if (source_row - 1) % MASTER_READ_CHUNK_ROWS == 0:
+                    db.flush()
+                if (
+                    not record.is_valid
+                    or fields is None
+                    or not fields["idpel"]
+                    or fields["validation_errors"]
+                ):
+                    skipped += 1
+                    continue
+                observations.setdefault(fields["idpel"], []).append(
+                    {
+                        "batch_id": batch.id,
+                        "record_id": record.id,
+                        "filename": batch.filename,
+                        "row_number": record.row_number,
+                        "source_sheet": batch.source_sheet,
+                        "dataset_type": dataset_type.value,
+                        "fields": {
+                            key: value
+                            for key, value in fields.items()
+                            if key != "validation_errors"
+                        },
+                    }
+                )
+                fields.update(
+                    jenis_pel=dataset_type.value.upper()
+                    if dataset_type != DatasetType.DIL
+                    else fields["jenis_pel"],
+                    source_batch_id=batch.id,
+                    source_record_id=record.id,
+                    source_dataset_type=dataset_type.value,
+                )
+                destination = (
+                    latest_dil if dataset_type == DatasetType.DIL else deduplicated
+                )
+                existing = destination.get(fields["idpel"])
+                if existing is None or observation_period(
+                    fields["tglbaca"]
+                ) >= observation_period(existing["tglbaca"]):
+                    destination[fields["idpel"]] = fields
+            db.flush()
 
-    # 1. Proses Data Pascabayar (ACMT / RBM)
-    for batch_id in pascabayar_batch_ids:
-        records = db.query(SourceRecord).filter(SourceRecord.batch_id == batch_id).all()
-        for r in records:
-            pascabayar_count += 1
-            fields = extract_standard_fields(r.data or {})
-            if not fields["idpel"] or fields["lat"] is None or fields["lon"] is None:
-                continue
+    for idpel, fields in latest_dil.items():
+        existing = deduplicated.get(idpel)
+        if existing is None:
+            deduplicated[idpel] = fields
+            continue
+        # Supplement from the latest DIL source, after preserving every observation.
+        # Known coordinates and the prepaid/postpaid service remain authoritative.
+        for key, value in fields.items():
+            if key not in {
+                "lat",
+                "lon",
+                "source_batch_id",
+                "source_record_id",
+                "source_dataset_type",
+                "validation_errors",
+            } and existing.get(key) in (None, "", "-"):
+                existing[key] = value
+        if (
+            (existing["lat"] is None or existing["lon"] is None)
+            and fields["lat"] is not None
+            and fields["lon"] is not None
+        ):
+            existing["lat"], existing["lon"] = fields["lat"], fields["lon"]
 
-            idpel = fields["idpel"]
-            fields["jenis_pel"] = "PASCABAYAR"
-
-            # Jika sudah ada, bandingkan tglbaca/periode untuk ambil yang paling mutakhir
-            if idpel in dedup_master:
-                existing_tgl = str(dedup_master[idpel].get("tglbaca", ""))
-                new_tgl = str(fields.get("tglbaca", ""))
-                if new_tgl >= existing_tgl:
-                    dedup_master[idpel] = fields
-            else:
-                dedup_master[idpel] = fields
-
-    # 2. Proses Data Prabayar (LPB)
-    for batch_id in prabayar_batch_ids:
-        records = db.query(SourceRecord).filter(SourceRecord.batch_id == batch_id).all()
-        for r in records:
-            prabayar_count += 1
-            fields = extract_standard_fields(r.data or {})
-            if not fields["idpel"] or fields["lat"] is None or fields["lon"] is None:
-                continue
-
-            idpel = fields["idpel"]
-            fields["jenis_pel"] = "PRABAYAR"
-
-            # Deduplikasi
-            if idpel in dedup_master:
-                existing_tgl = str(dedup_master[idpel].get("tglbaca", ""))
-                new_tgl = str(fields.get("tglbaca", ""))
-                if new_tgl >= existing_tgl:
-                    dedup_master[idpel] = fields
-            else:
-                dedup_master[idpel] = fields
-
-    # Simpan hasil Master Bersih ke database
-    # Buat Batch Master baru
     master_batch = UploadBatch(
-        filename=f"Master_Gabungan_{datetime.utcnow().strftime('%Y%m%d_%H%M%S')}.csv",
+        filename=f"Master_Gabungan_{datetime.now(UTC).replace(tzinfo=None):%Y%m%d_%H%M%S}.csv",
         dataset_type=DatasetType.MASTER,
         status=BatchStatus.COMPLETED,
-        total_rows=len(dedup_master)
+        total_rows=len(deduplicated),
+        valid_rows=len(deduplicated),
     )
     db.add(master_batch)
-    db.commit()
-    db.refresh(master_batch)
-
-    # Simpan source records hasil master
-    new_records = []
-    for idpel, data in dedup_master.items():
-        rec = SourceRecord(
-            batch_id=master_batch.id,
-            idpel=idpel,
-            data={
-                "idpel": idpel,
-                "koordinat_x": data["lon"],
-                "koordinat_y": data["lat"],
-                "latitude": data["lat"],
-                "longitude": data["lon"],
-                "tglbaca": data["tglbaca"],
-                "jenis_pel": data["jenis_pel"],
-                "nama": data["nama"],
-                "kode_gardu": data.get("kode_gardu")
-            }
+    db.flush()
+    for idpel, fields in deduplicated.items():
+        data = {
+            key: value for key, value in fields.items() if key != "validation_errors"
+        }
+        data.update(
+            latitude=fields["lat"],
+            longitude=fields["lon"],
+            koordinat_x=fields["lon"],
+            koordinat_y=fields["lat"],
         )
-        new_records.append(rec)
-
-    if new_records:
-        db.bulk_save_objects(new_records)
-    db.commit()
-
+        data["source_observations"] = observations[idpel]
+        db.add(
+            SourceRecord(
+                batch_id=master_batch.id, idpel=idpel, data=data, normalized_data=data
+            )
+        )
+    if commit:
+        db.commit()
+    else:
+        db.flush()
     return {
         "status": "success",
         "master_batch_id": master_batch.id,
-        "total_pascabayar_raw": pascabayar_count,
-        "total_prabayar_raw": prabayar_count,
-        "total_master_clean": len(dedup_master),
-        "removed_duplicates": (pascabayar_count + prabayar_count) - len(dedup_master)
+        "total_pascabayar_raw": counts[DatasetType.PASCABAYAR],
+        "total_prabayar_raw": counts[DatasetType.PRABAYAR],
+        "total_dil_raw": counts[DatasetType.DIL],
+        "total_master_clean": len(deduplicated),
+        "incomplete_coordinates": sum(
+            row["lat"] is None or row["lon"] is None for row in deduplicated.values()
+        ),
+        "skipped_invalid_rows": skipped,
+        "removed_duplicates": sum(counts.values()) - skipped - len(deduplicated),
     }

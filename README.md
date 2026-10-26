@@ -97,6 +97,28 @@ npm run build
 
 ## Konfigurasi Environment
 
+### Unggahan besar
+
+Batas ukuran CSV/XLSX adalah **500 MB per berkas** (500 × 1024 × 1024 byte).
+Berkas yang lebih besar ditolak dengan HTTP 413. Backend membaca berkas dari
+file sementara, menyimpan setiap 1.000 baris, dan memvalidasi mapping bertahap
+agar seluruh dataset tidak dimuat ke RAM. Sediakan ruang disk untuk file sementara
+dan database; XLSX juga membutuhkan memori untuk metadata workbook/shared strings.
+Unggahan baru hanya disimpan permanen setelah semua baris berhasil dibaca.
+
+Jika memakai Nginx, terapkan pengaturan berikut pada lokasi proxy API yang sudah ada,
+lalu muat ulang Nginx. Batas request mencakup ruang tambahan untuk multipart;
+backend tetap membatasi ukuran berkas tepat 500 MB.
+
+```nginx
+client_max_body_size 501m;
+client_body_timeout 600s;
+proxy_send_timeout 600s;
+proxy_read_timeout 600s;
+```
+
+Sesuaikan batas request dan timeout pada reverse proxy lain jika digunakan.
+
 Edit file `backend/.env_exmple`:
 
 ```env_example

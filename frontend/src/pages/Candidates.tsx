@@ -90,7 +90,7 @@ export default function CandidatesPage() {
     if (!processId) return;
 
     // Cek status proses rekonsiliasi
-    api.get(`/history/process/${processId}/summary`)
+    api.get(`/process/${processId}/summary`)
       .then((sRes) => {
         const st = String(sRes.data.matching_status || "").toLowerCase();
         setProcessStatus(st);
@@ -117,9 +117,6 @@ export default function CandidatesPage() {
         setCandidates(res.data.items);
         setTotalCandidates(res.data.total);
         setError(null);
-        if (res.data.items.length > 0 && res.data.items[0].process_id && String(res.data.items[0].process_id) !== processId) {
-          setSearchParams({ process_id: String(res.data.items[0].process_id) });
-        }
       })
       .catch((err: any) => {
         setError(err.message || "Gagal memuat kandidat.");
@@ -127,7 +124,7 @@ export default function CandidatesPage() {
       .finally(() => {
         setLoading(false);
       });
-  }, [processId, currentPage, rowsPerPage, statusFilter, validityFilters, layananFilters, idpelFilters, setSearchParams]);
+  }, [processId, currentPage, rowsPerPage, statusFilter, validityFilters, layananFilters, idpelFilters]);
 
   // Polling otomatis jika worker masih memproses di background
   useEffect(() => {

@@ -1,73 +1,50 @@
-import os
-import sys
-import json
+"""Regression: mapped fields reach the master without altering raw source cells."""
 
-# Tambahkan path backend ke sys.path
-backend_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-sys.path.insert(0, backend_dir)
+from sqlalchemy.orm import Session
 
-from app.database import SessionLocal
-from app.models.upload import UploadBatch, SourceRecord, DatasetType, BatchStatus
+from app.models.upload import BatchStatus, DatasetType, SourceRecord, UploadBatch
 from app.modules.spatial.master_builder import build_combined_master
-from app.modules.spatial.engine import run_spatial_matching_job
 
-def test_mapping_persistence_and_extraction():
-    """
-    Memastikan mapping kolom custom di UploadBatch benar-benar digunakan
-    oleh downstream logic (master builder) tanpa menulis ulang SourceRecord.
-    """
-    print("=== TEST: Mapping Persistence & Extraction ===")
-    db = SessionLocal()
-    try:
-        # 1. Buat batch dengan nama kolom "aneh" (custom)
-        batch = UploadBatch(
-            filename="custom_cols.csv",
-            dataset_type=DatasetType.PASCABAYAR,
-            status=BatchStatus.COMPLETED,
-            column_mapping={
-                "idpel": "NOMOR_PELANGGAN_CUSTOM",
-                "nama": "NAMA_USER_CUSTOM",
-                "latitude": "KOORD_Y",
-                "longitude": "KOORD_X",
-                "tarif": "TARIF_PEL",
-                "daya": "DAYA_PEL"
-            }
-        )
-        db.add(batch)
-        db.commit()
-        db.refresh(batch)
 
-        # 2. Tambahkan data mentah sesuai kolom custom
-        raw_data = {
-            "NOMOR_PELANGGAN_CUSTOM": "530000000001",
-            "NAMA_USER_CUSTOM": "BUDI CUSTOM",
-            "KOORD_Y": -6.2,
-            "KOORD_X": 106.8,
-            "TARIF_PEL": "R1",
-            "DAYA_PEL": 900,
-            "TGL_BACA": "2023-10-01"
-        }
-        rec = SourceRecord(batch_id=batch.id, data=raw_data)
-        db.add(rec)
-        db.commit()
-
-        print(f"✓ Created batch #{batch.id} with custom mapping")
-
-        # 3. Jalankan Master Builder
-        # Logic builder harus bisa mengekstrak data dari raw_data menggunakan mapping di batch
-        res = build_combined_master(db, pascabayar_batch_ids=[batch.id], prabayar_batch_ids=[])
-
-        assert res["total_master_clean"] >= 1, "Master builder gagal memproses baris dengan mapping custom"
-        print(f"✓ Master builder sukses mengekstrak kolom custom: {res}")
-
-        # Cleanup
-        db.query(SourceRecord).filter(SourceRecord.batch_id == batch.id).delete()
-        db.query(UploadBatch).filter(UploadBatch.id == batch.id).delete()
-        db.commit()
-        print("✓ Cleanup sukses")
-
-    finally:
-        db.close()
-
-if __name__ == "__main__":
-    test_mapping_persistence_and_extraction()
+def test_mapping_persistence_and_extraction(db_session: Session) -> None:
+    raw_data = {
+        "CUSTOMER": "005300000001",
+        "CUSTOM_NAME": "BUDI CUSTOM",
+        "CUSTOM_Y": -6.2,
+        "CUSTOM_X": 106.8,
+        "CUSTOM_TARIFF": "R1",
+        "CUSTOM_POWER": "900",
+        "TGL_BACA": "2023-10-01",
+    }
+    batch = UploadBatch(
+        filename="custom_cols.csv",
+        dataset_type=DatasetType.PASCABAYAR,
+        status=BatchStatus.COMPLETED,
+        column_mapping={
+            "idpel": "CUSTOMER",
+            "nama": "CUSTOM_NAME",
+            "latitude": "CUSTOM_Y",
+            "longitude": "CUSTOM_X",
+            "tarif": "CUSTOM_TARIFF",
+            "daya": "CUSTOM_POWER",
+        },
+    )
+    db_session.add(batch)
+    db_session.flush()
+    source = SourceRecord(batch_id=batch.id, data=raw_data)
+    db_session.add(source)
+    db_session.commit()
+    result = build_combined_master(db_session, [batch.id], [])
+    master = (
+        db_session.query(SourceRecord)
+        .filter(SourceRecord.batch_id == result["master_batch_id"])
+        .one()
+    )
+    assert master.idpel == "005300000001"
+    assert master.data["latitude"] == -6.2
+    assert master.data["longitude"] == 106.8
+    assert master.data["tarif"] == "R1"
+    assert master.data["daya"] == 900
+    assert master.data["source_record_id"] == source.id
+    db_session.refresh(source)
+    assert source.data == raw_data

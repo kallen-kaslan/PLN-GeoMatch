@@ -30,6 +30,9 @@ from app.models.user import User  # noqa: E402
 from app.models.upload import UploadBatch, SourceRecord  # noqa: E402
 from app.models.master_sisa import CleanedMasterRecord, MasterSisaRecord  # noqa: E402
 from app.models.matching import ReconciliationProcess, MatchCandidate  # noqa: E402
+from app.models.pdpj import PdpjReview, PdpjRow, PdpjRecommendation, PdpjChange  # noqa: E402, F401
+from app.models.correction import CorrectionCheck, CorrectionAttempt, CorrectionTarget, CorrectionCandidateEvidence  # noqa: E402, F401
+from app.models.correction_decision import CorrectionDecision  # noqa: E402, F401
 from app.database import Base  # noqa: E402
 
 target_metadata = Base.metadata
@@ -71,6 +74,13 @@ def run_migrations_online() -> None:
     and associate a connection with the context.
 
     """
+    supplied_connection = config.attributes.get("connection")
+    if supplied_connection is not None:
+        context.configure(connection=supplied_connection, target_metadata=target_metadata)
+        with context.begin_transaction():
+            context.run_migrations()
+        return
+
     connectable = engine_from_config(
         config.get_section(config.config_ini_section, {}),
         prefix="sqlalchemy.",

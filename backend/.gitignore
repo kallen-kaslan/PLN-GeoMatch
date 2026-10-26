@@ -11,4 +11,9 @@ dist/
 build/
 pln_geomatch.db
 *.db
+*.db-journal
+*.db-wal
+*.db-shm
+backups/
 .DS_Store
+.coverage*

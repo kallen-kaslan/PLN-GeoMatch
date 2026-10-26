@@ -1,26 +1,27 @@
-from sqlalchemy import create_engine, inspect, text
-from sqlalchemy.ext.declarative import declarative_base
-from sqlalchemy.orm import sessionmaker
 import os
+
+from sqlalchemy import create_engine
+from sqlalchemy.exc import SQLAlchemyError
+from sqlalchemy.orm import DeclarativeBase, sessionmaker
+
 from .config import settings
 
 
 def ensure_schema_compatibility() -> None:
-    """Add columns introduced after an existing local database was created."""
-    inspector = inspect(engine)
-    if "master_sisa_records" not in inspector.get_table_names():
-        return
+    """Preserve old records while upgrading the local compatibility schema."""
+    from app.master_schema import upgrade_master_catalog
+    from app.pdpj_schema import upgrade_pdpj_validation
+    from app.correction_schema import upgrade_corrections
+    from app.correction_map_schema import upgrade_correction_map
+    from app.schema_compatibility import upgrade_foundations
 
-    columns = {column["name"] for column in inspector.get_columns("master_sisa_records")}
-    if "jenis_layanan" not in columns:
-        with engine.begin() as connection:
-            connection.execute(
-                text(
-                    "ALTER TABLE master_sisa_records "
-                    "ADD COLUMN jenis_layanan VARCHAR DEFAULT 'PASCABAYAR'"
-                )
-            )
-        print("[DATABASE] Added missing column master_sisa_records.jenis_layanan")
+    with engine.begin() as connection:
+        upgrade_foundations(connection)
+        upgrade_master_catalog(connection)
+        upgrade_pdpj_validation(connection)
+        upgrade_corrections(connection)
+        upgrade_correction_map(connection)
+
 
 # Coba sambung ke PostgreSQL, jika gagal gunakan SQLite lokal otomatis
 DATABASE_URL = settings.DATABASE_URL
@@ -28,23 +29,27 @@ DATABASE_URL = settings.DATABASE_URL
 try:
     if "postgresql" in DATABASE_URL:
         # Cek apakah koneksi postgres bisa dibuka
-        import psycopg2
         # Coba koneksi cepat
         engine = create_engine(DATABASE_URL, connect_args={"connect_timeout": 2})
         with engine.connect() as conn:
             pass
     else:
         engine = create_engine(DATABASE_URL)
-except Exception:
+except (SQLAlchemyError, ImportError):
     # Fallback aman ke SQLite lokal untuk development/testing instan
-    sqlite_path = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "pln_geomatch.db")
+    sqlite_path = os.path.join(
+        os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "pln_geomatch.db"
+    )
     DATABASE_URL = f"sqlite:///{sqlite_path}"
     engine = create_engine(DATABASE_URL, connect_args={"check_same_thread": False})
     print(f"[DATABASE] Menggunakan SQLite fallback: {sqlite_path}")
 
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 
-Base = declarative_base()
+
+class Base(DeclarativeBase):
+    """Typed declarative base shared by all database models."""
+
 
 def get_db():
     db = SessionLocal()

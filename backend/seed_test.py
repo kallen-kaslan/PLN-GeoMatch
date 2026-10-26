@@ -5,13 +5,14 @@ from datetime import datetime, timedelta
 
 from app.database import SessionLocal, engine, Base, ensure_schema_compatibility
 from app.models.upload import UploadBatch, SourceRecord, BatchStatus, DatasetType
-from app.models.matching import ReconciliationProcess, MatchCandidate
-from app.models.master_sisa import MasterSisaRecord, CleanedMasterRecord
+from app.models.matching import ReconciliationProcess, MatchCandidate, MatchingRun
+from app.models.master_sisa import MasterSisaRecord, CleanedMasterRecord, MasterSnapshot
 from app.modules.spatial.master_builder import build_combined_master
 from app.modules.spatial.preparation import process_master_sisa_exclusion
 from app.modules.spatial.engine import run_spatial_matching_job
 
 SEED_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "data_dummy")
+__test__ = False  # This is a manual seed utility, never a live-database pytest fixture.
 
 # Skala data dummy via environment variable (default kecil untuk uji cepat).
 PASCA_COUNT = int(os.getenv("SEED_PASCA_COUNT", "30"))
@@ -191,8 +192,10 @@ def test_pln_workflow():
     try:
         # Bersihkan data lama
         db.query(MatchCandidate).delete()
+        db.query(MatchingRun).delete()
         db.query(ReconciliationProcess).delete()
         db.query(MasterSisaRecord).delete()
+        db.query(MasterSnapshot).delete()
         db.query(CleanedMasterRecord).delete()
         db.query(SourceRecord).delete()
         db.query(UploadBatch).delete()
@@ -262,7 +265,8 @@ def test_pln_workflow():
             db=db,
             process_name="Uji Alur PLN GeoMatch (Dummy Variatif)",
             target_batch_id=target_batch.id,
-            radius_meters=150.0
+            radius_meters=150.0,
+            master_snapshot_id=sisa_res["master_snapshot_id"],
         )
         print(f"Total Titik Koordinat Kosong: {match_res['total_targets']}")
         print(f"Titik Menemukan Kandidat IDPEL di Master Sisa: {match_res['matched_targets']}")
