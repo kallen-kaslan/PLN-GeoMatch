@@ -4,6 +4,8 @@ Tahap ini memisahkan pengelolaan referensi pelanggan dari unggahan PDPJ dan data
 
 ## Penggunaan
 
+Perbaikan pembacaan `KOORDINAT_X`/`KOORDINAT_Y` dan pemulihan data lama dijelaskan pada [koordinat-xy.md](koordinat-xy.md). Beberapa file PLN memakai X untuk lintang dan Y untuk bujur; mapping kini mempertimbangkan nilai, bukan hanya nama kolom.
+
 1. Buka salah satu jenis Data Master dan pilih **Unggah berkas**.
 2. Pilih CSV atau XLSX. Untuk Excel, pilih sheet yang berisi data. Baris kosong di awal sheet dilewati; baris pertama yang terisi dipakai sebagai nama kolom, termasuk bila header berada di baris kedua atau lebih jauh. Pratinjau menampilkan posisi header dan nomor baris asli. Periode berkas opsional berformat `YYYY-MM`.
 3. Periksa deteksi kolom dan sesuaikan mapping jika nama kolom berbeda. IDPEL wajib tersedia; koordinat boleh kosong.

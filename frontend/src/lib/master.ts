@@ -73,8 +73,8 @@ export interface MappingField { key: string; label: string; aliases: string[]; r
 export const MASTER_FIELDS: MappingField[] = [
   { key: "idpel", label: "IDPEL", aliases: ["idpel", "idpelanggan", "nopelanggan", "customerid"], required: true },
   { key: "nama", label: "Nama pelanggan", aliases: ["nama", "namapelanggan", "customername"] },
-  { key: "lat", label: "Latitude / koordinat Y", aliases: ["lat", "latitude", "latitudey", "koordinaty", "lintang", "y"] },
-  { key: "lon", label: "Longitude / koordinat X", aliases: ["lon", "longitude", "longitudex", "koordinatx", "bujur", "x"] },
+  { key: "lat", label: "Latitude (lintang)", aliases: ["lat", "latitude", "latitudey", "koordinaty", "lintang", "y"] },
+  { key: "lon", label: "Longitude (bujur)", aliases: ["lon", "longitude", "longitudex", "koordinatx", "bujur", "x"] },
   { key: "tglbaca", label: "Tanggal baca / periode", aliases: ["vbulanrekap", "tglbaca", "tanggalbaca", "periode", "bulan", "blth", "tglrekap"] },
   { key: "tarif", label: "Tarif", aliases: ["tarif"] },
   { key: "daya", label: "Daya", aliases: ["daya"] },
@@ -139,11 +139,27 @@ export function normalizeSourceHeaders(values: unknown[]): string[] {
   });
 }
 
-export function guessMasterMapping(headers: string[], kind: SourceKind): Record<string, string> {
+export function guessMasterMapping(headers: string[], kind: SourceKind, rows: Record<string, unknown>[] = []): Record<string, string> {
   const normalized = (value: string) => value.toLowerCase().replace(/[\s_-]/g, "");
-  return Object.fromEntries(masterFields(kind).map((field) => [
+  const mapping = Object.fromEntries(masterFields(kind).map((field) => [
     field.key, field.aliases.map((alias) => headers.find((header) => normalized(header) === alias)).find(Boolean) ?? "",
   ]));
+  const first = normalized(mapping.lat ?? ""), second = normalized(mapping.lon ?? "");
+  const x = ["x", "koordinatx"], y = ["y", "koordinaty"];
+  if ((x.includes(first) && y.includes(second)) || (y.includes(first) && x.includes(second))) {
+    let forward = 0, reversed = 0;
+    for (const row of rows) {
+      const text = (value: unknown) => String(value ?? "").trim().replace(",", ".");
+      const lat = text(row[mapping.lat]), lon = text(row[mapping.lon]);
+      if (!lat || !lon) continue;
+      const a = Number(lat), b = Number(lon);
+      if (!Number.isFinite(a) || !Number.isFinite(b)) continue;
+      if (Math.abs(a) <= 90 && Math.abs(b) > 90 && Math.abs(b) <= 180) forward++;
+      if (Math.abs(a) > 90 && Math.abs(a) <= 180 && Math.abs(b) <= 90) reversed++;
+    }
+    if (reversed > 0 && forward === 0) [mapping.lat, mapping.lon] = [mapping.lon, mapping.lat];
+  }
+  return mapping;
 }
 
 export const masterApi = {

@@ -130,6 +130,37 @@ def raw_fields(
     }
 
 
+def coordinate_source_columns(
+    data: dict[str, Any], mapping: dict[str, str] | None = None
+) -> tuple[str | None, str | None]:
+    """Identify the exact two columns used, respecting explicit empty selections."""
+    selected = canonical_mapping(mapping)
+    if "lat" in selected and "lon" in selected:
+        return selected["lat"], selected["lon"]
+    names = {normalize_column_name(key): key for key in data}
+
+    def column(field: str) -> str | None:
+        if field in selected:
+            return selected[field]
+        return next(
+            (
+                names[key]
+                for key in ALIASES[field]
+                if key in names and clean_text(data[names[key]])
+            ),
+            None,
+        )
+
+    return column("lat"), column("lon")
+
+
+def is_xy_pair(columns: tuple[str | None, str | None]) -> bool:
+    """Only ambiguous X/Y headers may be reoriented; LAT/LON remain authoritative."""
+    first, second = (normalize_column_name(column or "") for column in columns)
+    x, y = {"x", "koordinatx"}, {"y", "koordinaty"}
+    return (first in x and second in y) or (first in y and second in x)
+
+
 def extract_standard_fields(
     row_data: dict[str, Any], column_mapping: dict[str, str] | None = None
 ) -> dict[str, Any]:
@@ -138,6 +169,22 @@ def extract_standard_fields(
         key: clean_text(value)
         for key, value in raw_fields(row_data, column_mapping).items()
     }
+    if is_xy_pair(coordinate_source_columns(row_data, column_mapping)):
+        try:
+            latitude = float((result["lat"] or "").replace(",", "."))
+            longitude = float((result["lon"] or "").replace(",", "."))
+            if (
+                math.isfinite(latitude)
+                and math.isfinite(longitude)
+                and 90 < abs(latitude) <= 180
+                and abs(longitude) <= 90
+            ):
+                # Some PLN exports name latitude X and longitude Y. Swap only
+                # when the default latitude is impossible and the reverse is valid.
+                result["lat"], result["lon"] = result["lon"], result["lat"]
+                result["_coordinate_axes_swapped"] = True
+        except (ValueError, TypeError):
+            pass
     errors: list[dict[str, str]] = []
     for field, maximum in (("lat", 90), ("lon", 180)):
         value = result[field]

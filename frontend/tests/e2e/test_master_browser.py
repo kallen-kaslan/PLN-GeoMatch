@@ -258,8 +258,8 @@ def test_csv_upload_mapping_details_and_category_isolation(
     page.get_by_label("Kolom Nama pelanggan", exact=True).select_option("CUSTOM_NAME")
     page.get_by_label("Kolom Kode DIL", exact=True).select_option("CODE_RAW")
     page.get_by_label("Kolom Kode gardu", exact=True).select_option("GARDU_CODE")
-    page.get_by_label("Kolom Latitude / koordinat Y", exact=True).select_option("Y_POS")
-    page.get_by_label("Kolom Longitude / koordinat X", exact=True).select_option(
+    page.get_by_label("Kolom Latitude (lintang)", exact=True).select_option("Y_POS")
+    page.get_by_label("Kolom Longitude (bujur)", exact=True).select_option(
         "X_POS"
     )
     page.get_by_role("button", name="Simpan dan validasi master").click()

@@ -25,6 +25,7 @@ from app.models.pdpj import PdpjReview, PdpjRow, PdpjRecommendation, PdpjChange 
 from app.models.correction import CorrectionCheck, CorrectionAttempt, CorrectionTarget, CorrectionCandidateEvidence  # noqa: F401
 from app.models.correction_decision import CorrectionDecision  # noqa: F401
 from app.models.upload_file import UploadFileArchive, UploadSheetImport  # noqa: F401
+from app.models.coordinate_repair import CoordinateRepair  # noqa: F401
 
 
 @pytest.fixture(autouse=True)

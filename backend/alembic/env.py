@@ -34,6 +34,7 @@ from app.models.pdpj import PdpjReview, PdpjRow, PdpjRecommendation, PdpjChange 
 from app.models.correction import CorrectionCheck, CorrectionAttempt, CorrectionTarget, CorrectionCandidateEvidence  # noqa: E402, F401
 from app.models.correction_decision import CorrectionDecision  # noqa: E402, F401
 from app.models.upload_file import UploadFileArchive, UploadSheetImport  # noqa: E402, F401
+from app.models.coordinate_repair import CoordinateRepair  # noqa: E402, F401
 from app.database import Base  # noqa: E402
 
 target_metadata = Base.metadata

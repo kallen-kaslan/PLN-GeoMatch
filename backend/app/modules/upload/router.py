@@ -28,6 +28,7 @@ from ...models.matching import (
 from ...models.pdpj import PdpjChange, PdpjRecommendation, PdpjReview, PdpjRow
 from ...models.upload import BatchStatus, DatasetType, SourceRecord, UploadBatch
 from ...models.upload_file import UploadFileArchive, UploadSheetImport
+from ...models.coordinate_repair import CoordinateRepair
 from ...schemas.upload import BatchProcessRequest, MappingRequest, UploadBatchResponse
 from ...tasks.spatial_tasks import (
     execute_batch_reconciliation_pipeline,
@@ -314,6 +315,7 @@ async def reset_database(db: DbSession):
     """Menghapus semua data upload, kandidat, dan riwayat untuk pengujian ulang."""
     try:
         archive_keys = [key for (key,) in db.query(UploadFileArchive.storage_key).all()]
+        db.query(CoordinateRepair).delete()
         db.query(UploadSheetImport).delete()
         db.query(CorrectionDecision).delete()
         db.query(CorrectionCandidateEvidence).delete()

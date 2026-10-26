@@ -125,7 +125,7 @@ export function MasterImport({ kind, saved, onSaved, onCancel }: {
   const [headers, setHeaders] = useState<string[]>(saved?.headers ?? []);
   const [rows, setRows] = useState<Record<string, unknown>[]>(saved?.preview ?? []);
   const [firstDataRow, setFirstDataRow] = useState(saved?.row_numbers?.[0] ?? 2);
-  const [mapping, setMapping] = useState<Record<string, string>>(saved?.column_mapping && Object.keys(saved.column_mapping).length ? saved.column_mapping : guessMasterMapping(saved?.headers ?? [], kind));
+  const [mapping, setMapping] = useState<Record<string, string>>(saved?.column_mapping && Object.keys(saved.column_mapping).length ? saved.column_mapping : guessMasterMapping(saved?.headers ?? [], kind, saved?.preview));
   const [period, setPeriod] = useState(saved?.period ?? "");
   const [sheet, setSheet] = useState(saved?.source_sheet ?? "");
   const [workbook, setWorkbook] = useState<XLSX.WorkBook | null>(null);
@@ -151,7 +151,7 @@ export function MasterImport({ kind, saved, onSaved, onCancel }: {
     setHeaders(preview.headers);
     setRows(preview.rows);
     setFirstDataRow((preview.headerRow ?? 1) + 1);
-    setMapping(guessMasterMapping(preview.headers, kind));
+    setMapping(guessMasterMapping(preview.headers, kind, preview.rows));
   };
 
   const mutation = useMutation<ImportResult, ApiError | Error>({
@@ -202,7 +202,7 @@ export function MasterImport({ kind, saved, onSaved, onCancel }: {
           try { return [{ name, preview: sheetPreview(book, name) }]; } catch { return []; }
         });
         const detected = previews.find(({ preview }) => {
-          const guessed = guessMasterMapping(preview.headers, kind);
+          const guessed = guessMasterMapping(preview.headers, kind, preview.rows);
           return fields.every((field) => !field.required || guessed[field.key]);
         }) ?? previews[0];
         const first = detected?.name ?? candidates[0];

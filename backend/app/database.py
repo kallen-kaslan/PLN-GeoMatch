@@ -15,6 +15,7 @@ def ensure_schema_compatibility() -> None:
     from app.correction_map_schema import upgrade_correction_map
     from app.schema_compatibility import upgrade_foundations
     from app.upload_file_schema import upgrade_upload_files
+    from app.coordinate_schema import repair_xy_coordinates
 
     with engine.begin() as connection:
         upgrade_foundations(connection)
@@ -23,6 +24,7 @@ def ensure_schema_compatibility() -> None:
         upgrade_corrections(connection)
         upgrade_correction_map(connection)
         upgrade_upload_files(connection)
+        repair_xy_coordinates(connection)
 
 
 # Coba sambung ke PostgreSQL, jika gagal gunakan SQLite lokal otomatis
