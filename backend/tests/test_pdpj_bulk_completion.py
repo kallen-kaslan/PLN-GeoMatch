@@ -57,19 +57,20 @@ def test_bulk_completion_preserves_issues_sources_old_exceptions_and_audit(
     }
     before = {row["id"]: row for row in rows(client, pending)}
     body = request_body(client, pending)
-    assert body["expected_unresolved"] == 4
+    assert body["expected_unresolved"] == 2
     done = client.post(f"/pdpj/reviews/{pending}/complete-with-exceptions", json=body)
     assert done.status_code == 200, done.text
-    assert done.json()["status"] == "completed" and done.json()["exceptions_added"] == 4
+    assert done.json()["status"] == "completed" and done.json()["exceptions_added"] == 2
     summary = client.get(f"/pdpj/reviews/{pending}").json()["summary"]
     assert (
         summary["unresolved"] == 0
-        and summary["exceptions"] == 5
-        and summary["ready"] == 1
+        and summary["exceptions"] == 3
+        and summary["ready"] == 3
     )
     for row in rows(client, pending):
         assert row["fields"] == before[row["id"]]["fields"]
         assert row["issues"] == before[row["id"]]["issues"]
+        assert row["warnings"] == before[row["id"]]["warnings"]
         assert row["reviewed"]
         if row["id"] == old["id"]:
             assert row["exception_reason"] == "Alasan khusus sebelumnya"
@@ -80,7 +81,7 @@ def test_bulk_completion_preserves_issues_sources_old_exceptions_and_audit(
     changes = db_session.query(PdpjChange).all()
     assert len(changes) == 6
     bulk = [change for change in changes if change.sources.get("bulk")]
-    assert len(bulk) == 4
+    assert len(bulk) == 2
     assert all(
         change.actor == "Petugas Massal"
         and change.reason == body["reason"]

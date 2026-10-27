@@ -36,7 +36,7 @@ transaksi; kegagalan penyimpanan membatalkan seluruh perubahan dan riwayat baru.
 - IDPEL dicari pada setiap observasi dari sumber master yang dipilih. Observasi tanpa koordinat maupun dengan koordinat tidak valid tetap dapat membuktikan keberadaan IDPEL. Nilai koordinat sumber yang tidak valid tidak dapat dipilih untuk pelengkapan.
 - Status IDPEL: **ditemukan**, **tidak ditemukan**, **kosong**, atau **format bermasalah**. IDPEL ditemukan dengan koordinat kosong tetap berstatus ditemukan.
 - Untuk penyelesaian biasa, IDPEL harus ditemukan di master, pasangan koordinat harus lengkap dan valid, dan kesalahan format pada atribut yang terisi harus diselesaikan. Nama, alamat, tarif, dan atribut lain yang kosong tidak diwajibkan seluruhnya.
-- IDPEL yang berulang dalam PDPJ ditandai. Baris tersebut harus dikoreksi atau mendapat keputusan pengecualian; duplikasi tidak dihapus otomatis.
+- IDPEL yang berulang dalam PDPJ menjadi catatan informasi, termasuk jika jenis pelanggan sama/berbeda atau koordinat berbeda. Duplikasi tidak menghalangi persetujuan baris maupun penyelesaian validasi dan tidak memerlukan alasan pengecualian. Semua baris dan nilainya tetap disimpan. Masalah format, kelengkapan koordinat, atau IDPEL yang tidak ditemukan tetap diperiksa terpisah.
 - Rekomendasi menampilkan file, jenis master, baris, sheet, periode, serta atribut yang tersedia. Seluruh observasi disimpan; pagination detail menampilkan sepuluh rekomendasi per halaman.
 - Pelengkapan tidak menimpa nilai terisi secara diam-diam. Pemilihan rekomendasi yang mengganti nilai memerlukan centang persetujuan dan alasan. Perubahan manual atas nilai terisi juga memerlukan alasan.
 - Jika IDPEL diubah secara manual, sistem mencari rekomendasi untuk IDPEL baru pada sumber pemeriksaan yang sama. Rekomendasi IDPEL sebelumnya tetap tersimpan sebagai riwayat dan tidak bisa diterapkan ke IDPEL baru.
@@ -44,6 +44,8 @@ transaksi; kegagalan penyimpanan membatalkan seluruh perubahan dan riwayat baru.
 - Selesai pemeriksaan otomatis berbeda dari selesai validasi oleh petugas. Pemeriksaan awal hanya menyimpan temuan; penyelesaian validasi memerlukan semua masalah sudah diperbaiki atau diberi alasan pengecualian.
 
 ## Versi, sumber, dan riwayat
+
+Migrasi `f6ac81d43e20` memindahkan temuan duplikasi lama pada pemeriksaan yang masih berjalan ke `warnings`, sehingga jumlah masalah dan tombol penyelesaian mengikuti aturan baru. Revisi pemeriksaan tersebut bertambah sekali untuk menolak permintaan lama yang belum dimuat ulang. Nilai sumber dan riwayat keputusan tetap dipertahankan. Temuan tersimpan pada pemeriksaan selesai tidak ditulis ulang; API menampilkan duplikasinya sebagai catatan informasi dan mempertahankan keputusan pengecualian historis.
 
 Setiap pemeriksaan menyimpan daftar batch master yang dipakai, nilai awal PDPJ, nilai saat ini, rekomendasi per observasi sumber, dan riwayat aksi. Riwayat menyimpan nilai sebelum/sesudah, kolom yang dipilih, asal rekomendasi atau pengisian manual, nama petugas, alasan, dan waktu.
 

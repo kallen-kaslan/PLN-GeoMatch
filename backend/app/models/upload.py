@@ -57,6 +57,9 @@ class UploadBatch(Base):
     source_headers: Mapped[list[str] | None] = cast(
         Mapped[list[str] | None], Column(JSON, nullable=True)
     )
+    catalog_version: Mapped[int | None] = cast(
+        Mapped[int | None], Column(Integer, nullable=True)
+    )
     total_rows: Mapped[int] = mapped_column(Integer, default=0, nullable=True)
     valid_rows: Mapped[int] = mapped_column(Integer, default=0, nullable=True)
     error_rows: Mapped[int] = mapped_column(Integer, default=0, nullable=True)

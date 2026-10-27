@@ -1,10 +1,10 @@
+# ruff: noqa: F401
+# Model imports register the complete metadata for autogenerate.
 import os
 import sys
-
 from logging.config import fileConfig
 
-from sqlalchemy import engine_from_config
-from sqlalchemy import pool
+from sqlalchemy import engine_from_config, pool
 
 from alembic import context
 
@@ -21,21 +21,27 @@ if config.config_file_name is not None:
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 # Read database URL from app settings (.env) instead of hardcoding in alembic.ini.
-from app.config import settings  # noqa: E402
+from app.config import settings
 
 config.set_main_option("sqlalchemy.url", settings.DATABASE_URL)
 
 # Import all model modules so Alembic autogenerate sees every table.
-from app.models.user import User  # noqa: E402
-from app.models.upload import UploadBatch, SourceRecord  # noqa: E402
-from app.models.master_sisa import CleanedMasterRecord, MasterSisaRecord  # noqa: E402
-from app.models.matching import ReconciliationProcess, MatchCandidate  # noqa: E402
-from app.models.pdpj import PdpjReview, PdpjRow, PdpjRecommendation, PdpjChange  # noqa: E402, F401
-from app.models.correction import CorrectionCheck, CorrectionAttempt, CorrectionTarget, CorrectionCandidateEvidence  # noqa: E402, F401
-from app.models.correction_decision import CorrectionDecision  # noqa: E402, F401
-from app.models.upload_file import UploadFileArchive, UploadSheetImport  # noqa: E402, F401
-from app.models.coordinate_repair import CoordinateRepair  # noqa: E402, F401
-from app.database import Base  # noqa: E402
+from app.database import Base
+from app.models.coordinate_repair import CoordinateRepair
+from app.models.correction import (
+    CorrectionAttempt,
+    CorrectionCandidateEvidence,
+    CorrectionCheck,
+    CorrectionTarget,
+)
+from app.models.correction_decision import CorrectionDecision
+from app.models.master_sisa import CleanedMasterRecord, MasterSisaRecord
+from app.models.matching import MatchCandidate, ReconciliationProcess
+from app.models.pdpj import PdpjChange, PdpjRecommendation, PdpjReview, PdpjRow
+from app.models.schema_state import SchemaState
+from app.models.upload import SourceRecord, UploadBatch
+from app.models.upload_file import UploadFileArchive, UploadSheetImport
+from app.models.user import User
 
 target_metadata = Base.metadata
 

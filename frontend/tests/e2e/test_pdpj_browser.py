@@ -60,6 +60,62 @@ def upload_source(api_url: str, kind: str, content: str, name: str) -> int:
     return batch_id
 
 
+def test_duplicate_pdpj_identities_allow_normal_completion_with_different_coordinates_and_service(
+    page: Page,
+    servers: tuple[str, str],
+) -> None:
+    api = servers[1]
+    upload_source(
+        api,
+        "dil",
+        "IDPEL,LAT,LON\n001,-6.2,106.8\n002,-6.2,106.8\n",
+        "master-duplikasi.csv",
+    )
+    batch = upload_source(
+        api,
+        "pdpj",
+        "IDPEL,NAMA,LAT,LON,JENISLAYANAN\n001,Pertama,-6.2,106.8,PRABAYAR\n001,Kedua,-7.3,108.2,PASCABAYAR\n002,Lain,-6.2,106.8,PRABAYAR\n",
+        "pdpj-duplikasi.csv",
+    )
+    response = httpx.post(f"{api}/pdpj/reviews", json={"batch_id": batch})
+    response.raise_for_status()
+    review = response.json()["id"]
+    page.goto(f"/pdpj?batch_id={batch}&review_id={review}")
+    expect(
+        page.get_by_text("IDPEL berulang · boleh dilanjutkan", exact=True)
+    ).to_have_count(2)
+    page.get_by_label("Petugas untuk riwayat", exact=True).fill("Petugas Duplikasi")
+    finish = page.get_by_role("button", name="Selesaikan validasi PDPJ", exact=True)
+    expect(finish).to_be_enabled()
+    expect(
+        page.get_by_role(
+            "button", name="Lanjutkan dengan pengecualian massal", exact=True
+        )
+    ).to_have_count(0)
+    page.get_by_role("button", name="Detail PDPJ baris 2", exact=True).click()
+    expect(
+        page.get_by_role("list", name="Catatan data PDPJ", exact=True)
+    ).to_contain_text("Validasi tetap dapat dilanjutkan")
+    expect(page.get_by_role("button", name="Setujui baris", exact=True)).to_be_enabled()
+    finish.click()
+    expect(
+        page.get_by_role("dialog", name="PDPJ selesai divalidasi", exact=True)
+    ).to_be_visible()
+    summary = httpx.get(f"{api}/pdpj/reviews/{review}").json()
+    assert summary["status"] == "completed"
+    assert summary["summary"]["total_rows"] == summary["summary"]["ready"] == 3
+    assert summary["summary"]["unresolved"] == summary["summary"]["exceptions"] == 0
+    saved = httpx.get(f"{api}/pdpj/reviews/{review}/rows").json()["items"]
+    assert [
+        (row["fields"]["idpel"], row["fields"]["lat"], row["fields"]["jenis_pel"])
+        for row in saved
+    ] == [
+        ("001", -6.2, "PRABAYAR"),
+        ("001", -7.3, "PASCABAYAR"),
+        ("002", -6.2, "PRABAYAR"),
+    ]
+
+
 def test_bulk_exceptions_enable_correction_map_and_preserve_reserved_identities(
     page: Page, servers: tuple[str, str]
 ) -> None:

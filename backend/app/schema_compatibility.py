@@ -8,6 +8,33 @@ from alembic.operations import Operations
 from sqlalchemy.engine import Connection
 
 
+def validate_sqlite_foreign_keys(connection: Connection) -> None:
+    """Use a covering index for the large raw table; retain native checks elsewhere."""
+    inspector = sa.inspect(connection)
+    for table in inspector.get_table_names():
+        keys = inspector.get_foreign_keys(table)
+        raw_batch_reference = (
+            table == "source_records" and len(keys) == 1
+            and keys[0]["constrained_columns"] == ["batch_id"]
+            and keys[0]["referred_table"] == "upload_batches"
+            and keys[0]["referred_columns"] == ["id"]
+            and inspector.get_pk_constraint("upload_batches")["constrained_columns"] == ["id"]
+        )
+        if raw_batch_reference:
+            if not any(index["column_names"][:1] == ["batch_id"] for index in inspector.get_indexes(table)):
+                connection.exec_driver_sql("CREATE INDEX IF NOT EXISTS ix_source_records_batch_id_id ON source_records (batch_id, id)")
+            invalid = connection.exec_driver_sql(
+                "SELECT 1 FROM source_records AS s "
+                "WHERE s.batch_id IS NOT NULL AND NOT EXISTS "
+                "(SELECT 1 FROM upload_batches AS b WHERE b.id = s.batch_id) LIMIT 1"
+            ).first()
+        else:
+            quoted = connection.dialect.identifier_preparer.quote(table)
+            invalid = connection.exec_driver_sql(f"PRAGMA foreign_key_check({quoted})").first()
+        if invalid is not None:
+            raise RuntimeError("Relasi database tidak konsisten setelah migrasi")
+
+
 def upgrade_foundations(connection: Connection) -> None:
     """Apply the same schema changes during Alembic and legacy app startup."""
     from app.models.master_sisa import MasterSnapshot
@@ -175,8 +202,7 @@ def upgrade_foundations(connection: Connection) -> None:
         )
     )
     if connection.dialect.name == "sqlite":
-        if connection.exec_driver_sql("PRAGMA foreign_key_check").first() is not None:
-            raise RuntimeError("Relasi database tidak konsisten setelah migrasi")
+        validate_sqlite_foreign_keys(connection)
         # SQLite retains deferred DROP TABLE violations even after recreating the
         # parent with identical keys. Reset only after checking the final graph.
         connection.exec_driver_sql("PRAGMA defer_foreign_keys=OFF")

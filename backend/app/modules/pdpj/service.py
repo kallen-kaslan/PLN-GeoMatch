@@ -17,6 +17,7 @@ from app.modules.upload.normalization import (
     validate_fields,
     with_reference_fields,
 )
+from app.pdpj_warning_schema import DUPLICATE_IDPEL
 from app.performance import timed
 
 MASTER_TYPES = {DatasetType.PRABAYAR, DatasetType.PASCABAYAR, DatasetType.DIL}
@@ -218,7 +219,11 @@ def refresh_row(row: PdpjRow, counts: Counter, recommendations: Counter) -> None
             ]
         }.values()
     )
-    issues = validate_fields(fields, DatasetType.PDPJ)
+    issues = [
+        item
+        for item in validate_fields(fields, DatasetType.PDPJ)
+        if item["code"] != DUPLICATE_IDPEL
+    ]
     idpel = fields["idpel"]
     row.recommendation_count = recommendations[(row.id, idpel)]
     row.existence = (
@@ -232,8 +237,11 @@ def refresh_row(row: PdpjRow, counts: Counter, recommendations: Counter) -> None
     )
     if row.existence == "not_found":
         issues.append({"field": "idpel", "code": "idpel_tidak_ditemukan"})
+    row.warnings = [
+        item for item in (row.warnings or []) if item.get("code") != DUPLICATE_IDPEL
+    ]
     if idpel and counts[idpel] > 1:
-        issues.append({"field": "idpel", "code": "idpel_berulang_pdpj"})
+        row.warnings = [*row.warnings, {"field": "idpel", "code": DUPLICATE_IDPEL}]
     for field in ("lat", "lon"):
         if fields[field] is None and not any(item["field"] == field for item in issues):
             issues.append({"field": field, "code": "koordinat_wajib_diisi"})

@@ -220,7 +220,13 @@ def test_pdpj_ingestion_detects_duplicates_across_chunks_and_carries_changes(cli
     summary = client.get(f"/pdpj/reviews/{first['id']}").json()
     assert summary["summary"]["total_rows"] == 403
     assert summary["summary"]["found"] == 403
-    assert summary["summary"]["unresolved"] == 2
+    assert summary["summary"]["unresolved"] == 0
+    duplicates = client.get(
+        f"/pdpj/reviews/{first['id']}/rows", params={"q": "000001"}
+    ).json()["items"]
+    assert len(duplicates) == 2 and all(
+        row["warnings"] and not row["issues"] for row in duplicates
+    )
     row = client.get(f"/pdpj/reviews/{first['id']}/rows").json()["items"][0]
     edited = client.patch(
         f"/pdpj/reviews/{first['id']}/rows/{row['id']}",
@@ -233,13 +239,10 @@ def test_pdpj_ingestion_detects_duplicates_across_chunks_and_carries_changes(cli
     )
     assert edited.status_code == 200, edited.text
     completed = client.post(
-        f"/pdpj/reviews/{first['id']}/complete-with-exceptions",
+        f"/pdpj/reviews/{first['id']}/complete",
         json={
             "revision": edited.json()["revision"],
             "actor": "Petugas Uji",
-            "reason": "Duplikasi ditinjau",
-            "expected_unresolved": 2,
-            "confirmed": True,
         },
     )
     assert completed.status_code == 200, completed.text
@@ -254,7 +257,7 @@ def test_pdpj_ingestion_detects_duplicates_across_chunks_and_carries_changes(cli
         for change in detail["history"]
     )
     assert (
-        client.get(f"/pdpj/reviews/{again['id']}").json()["summary"]["unresolved"] == 2
+        client.get(f"/pdpj/reviews/{again['id']}").json()["summary"]["unresolved"] == 0
     )
     changed_identity = client.patch(
         f"/pdpj/reviews/{again['id']}/rows/{new_row['id']}",

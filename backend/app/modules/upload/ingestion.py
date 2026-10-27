@@ -27,6 +27,7 @@ def import_raw_sheet(
             dataset_type=kind,
             status=BatchStatus.NEEDS_MAPPING,
             total_rows=0,
+            catalog_version=0,
             period=period,
             source_sheet=selected_sheet,
         )
