@@ -30,3 +30,7 @@ Thumbs.db
 # Build
 frontend/dist/
 backend/alembic/versions/*.pyc
+
+# Claude & Storage
+.claude/worktrees/
+backend/storage/
