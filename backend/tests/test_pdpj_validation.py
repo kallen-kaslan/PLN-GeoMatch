@@ -299,7 +299,7 @@ def test_manual_idpel_change_loads_new_sources_and_retains_previous_recommendati
     assert client.get(path).json()["fields"]["lat"] == -6.3
 
 
-def test_exceptions_duplicates_and_invalid_source_values_cannot_be_silently_approved(
+def test_duplicate_warning_allows_approval_but_invalid_values_require_resolution(
     client: TestClient,
 ) -> None:
     upload(client, "dil", "IDPEL,LAT,LON\n001,bad,106.8\n")
@@ -311,13 +311,12 @@ def test_exceptions_duplicates_and_invalid_source_values_cannot_be_silently_appr
     assert any(item["code"] == "daya_tidak_valid" for item in items[0]["issues"])
     for row in items:
         path = f"/pdpj/reviews/{review_id}/rows/{row['id']}"
-        assert any(item["code"] == "idpel_berulang_pdpj" for item in row["issues"])
-        assert (
-            client.post(
-                path + "/decision", json=action(client, review_id, action="reviewed")
-            ).status_code
-            == 409
-        )
+        assert any(item["code"] == "idpel_berulang_pdpj" for item in row["warnings"])
+        assert client.post(
+            path + "/decision", json=action(client, review_id, action="reviewed")
+        ).status_code == (409 if row["issues"] else 200)
+        if not row["issues"]:
+            continue
         assert (
             client.post(
                 path + "/decision", json=action(client, review_id, action="exception")

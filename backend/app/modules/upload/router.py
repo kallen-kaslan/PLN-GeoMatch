@@ -45,6 +45,7 @@ from .archive import archive_path
 from .archive import router as archive_router
 from .ingestion import import_raw_sheet
 from .normalization import (
+    NORMALIZATION_VERSION,
     extract_standard_fields,
     validate_fields,
     validate_mapping,
@@ -566,6 +567,18 @@ def apply_mapping(req: MappingRequest, db: Session) -> dict:
     batch.total_rows = total_rows
     batch.valid_rows = valid_rows
     batch.error_rows = total_rows - valid_rows
+    batch.catalog_version = NORMALIZATION_VERSION
+    # All rows were normalized atomically by the current extractor. They do not
+    # need the legacy X/Y repair scan on the next application startup.
+    from app.coordinate_schema import REPAIR_VERSION
+
+    if (
+        batch.dataset_type != DatasetType.MASTER
+        and db.get(CoordinateRepair, (batch.id, REPAIR_VERSION)) is None
+    ):
+        db.add(
+            CoordinateRepair(batch_id=batch.id, version=REPAIR_VERSION, rows_changed=0)
+        )
     db.commit()
     return {
         "message": "Mapping diterapkan dan validasi selesai",

@@ -179,7 +179,7 @@ export const validationMessage = (code: string) => ({
   daya_tidak_valid: "Daya harus berupa bilangan bulat positif atau nol.",
   koordinat_wajib_diisi: "Koordinat belum terisi.",
   idpel_tidak_ditemukan: "IDPEL belum ditemukan pada sumber master pemeriksaan ini.",
-  idpel_berulang_pdpj: "IDPEL berulang di berkas PDPJ ini. Periksa duplikasi atau beri alasan pengecualian.",
+  idpel_berulang_pdpj: "IDPEL berulang diperbolehkan, termasuk dengan jenis pelanggan atau koordinat berbeda. Validasi tetap dapat dilanjutkan.",
   kategori_idpel_harus_kosong: "IDPEL terisi pada kategori IDPEL Kosong. Periksa kategori berkas asal.",
 }[code] ?? code);
 

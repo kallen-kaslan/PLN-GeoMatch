@@ -8,6 +8,7 @@ from sqlalchemy.orm import Session
 
 from app.models.upload import BatchStatus, DatasetType, SourceRecord, UploadBatch
 from app.modules.upload.normalization import (  # noqa: F401
+    NORMALIZATION_VERSION,
     extract_standard_fields,
     normalize_column_name,
 )
@@ -157,11 +158,12 @@ def build_combined_master(
         status=BatchStatus.COMPLETED,
         total_rows=len(deduplicated),
         valid_rows=len(deduplicated),
+        catalog_version=NORMALIZATION_VERSION,
     )
     db.add(master_batch)
     db.flush()
     pending = []
-    for idpel, fields in deduplicated.items():
+    for source_number, (idpel, fields) in enumerate(deduplicated.items(), start=2):
         data = {
             key: value for key, value in fields.items() if key != "validation_errors"
         }
@@ -175,6 +177,7 @@ def build_combined_master(
         pending.append(
             {
                 "batch_id": master_batch.id,
+                "row_number": source_number,
                 "idpel": idpel,
                 "data": data,
                 "normalized_data": {

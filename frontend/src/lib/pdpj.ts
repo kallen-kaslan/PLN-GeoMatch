@@ -15,6 +15,7 @@ export interface PdpjRow {
   id: number; source_record_id: number; row_number: number; fields: Fields;
   existence: "found" | "not_found" | "empty" | "invalid"; coordinates_complete: boolean;
   issues: { field: string; code: string }[]; recommendation_count: number;
+  warnings?: { field: string; code: string }[];
   reviewed: boolean; exception: boolean; exception_reason: string;
 }
 export interface Recommendation {

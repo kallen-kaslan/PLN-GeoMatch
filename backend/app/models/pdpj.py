@@ -45,6 +45,7 @@ class PdpjRow(Base):
     current_fields: Mapped[dict[str, Any]] = mapped_column(JSON)
     existence: Mapped[str] = mapped_column(String)
     issues: Mapped[list[dict[str, str]]] = mapped_column(JSON, default=list)
+    warnings: Mapped[list[dict[str, str]]] = mapped_column(JSON, default=list)
     recommendation_count: Mapped[int] = mapped_column(Integer, default=0)
     reviewed: Mapped[bool] = mapped_column(Boolean, default=False)
     exception: Mapped[bool] = mapped_column(Boolean, default=False)

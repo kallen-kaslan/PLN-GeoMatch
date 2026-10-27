@@ -91,3 +91,37 @@ Proses backend lama dengan `--reload` juga masih aktif dan mengunci database. Se
 Koneksi SQLite aplikasi sekarang mengaktifkan `PRAGMA foreign_keys=ON` supaya referensi induk yang tidak ada ditolak sebelum tersimpan. Pengujian mencakup penolakan baris yatim pada koneksi aplikasi dan migrasi dengan foreign key aktif.
 
 Log serta PID proses lokal disimpan di `backend/.runtime/` dan diabaikan Git. Proses yang dijalankan pada pemulihan ini memakai folder sementara `backend/.runtime/tmp` di drive D: melalui `TEMP`, `TMP`, dan `SQLITE_TMPDIR`. Verifikasi dilakukan melalui root backend, OpenAPI, frontend, serta proxy API frontend; semuanya merespons HTTP 200.
+
+## Startup dengan jutaan baris pada 27 Oktober 2026
+
+Database aktif berukuran sekitar 13,82 GiB dengan 5.784.251 baris sumber dalam 15 batch. Membuka koneksi SQLite hanya membutuhkan sekitar 0,14 detik. Sebelum API menerima koneksi, startup lama menjalankan ulang migrasi kompatibilitas, pemeriksaan seluruh foreign key, dan pencarian versi normalisasi pada setiap baris JSON. Akibatnya aplikasi tampak belum terhubung meskipun koneksi database sudah terbuka.
+
+Startup sekarang menyimpan tahap migrasi yang selesai di `app_schema_state`. Tahap yang versinya sudah sesuai dilewati pada startup berikutnya. Pemeriksaan foreign key tabel sumber memakai indeks `batch_id`, sementara bentuk relasi lain tetap diperiksa dengan pemeriksaan SQLite. `PRAGMA foreign_keys=ON` tetap berlaku pada setiap koneksi aplikasi.
+
+`upload_batches.catalog_version` mencatat versi normalisasi seluruh batch. Batch lama yang belum memiliki penanda diverifikasi sekali melalui pembacaan metadata bertahap, maksimal 2.000 baris per kelompok. Sel asli hanya dimuat untuk baris yang perlu normalisasi ulang. Penanda batch dan tahap migrasi berada dalam transaksi yang sama dengan pekerjaan terkait sehingga kegagalan dapat dicoba lagi. Unggahan baru mencatat versi setelah pemetaan selesai; penomoran baris dan penanda pemulihan koordinat juga disimpan saat penulisan. Startup berikutnya cukup memeriksa metadata batch dan tahap migrasi.
+
+Nilai `catalog_version=NULL` berarti belum diverifikasi, `0` berarti impor mentah dengan nomor baris yang sudah tersedia, dan nilai `NORMALIZATION_VERSION` berarti normalisasi batch selesai. Jika kode pemeliharaan menambahkan atau mengubah baris sumber langsung, kosongkan penanda batch terkait agar diperiksa ulang. Naikkan versi tahap di `startup_schema.py` ketika mengubah migrasi struktural dan naikkan `NORMALIZATION_VERSION` ketika mengubah interpretasi kolom. Penanda migrasi struktural dipertahankan ketika data pengguna direset.
+
+Konfigurasi lokal sekarang menunjuk langsung ke berkas SQLite yang memang berisi data, menggunakan path absolut di `backend/.env`. Ini menghindari percobaan PostgreSQL yang tidak tersedia sebelum fallback. Tidak ada pemindahan database atau penghapusan data. Salinan lengkap sebelum perubahan disimpan di `backend/backups/before-startup-20261027-c7be330b/pln_geomatch.db` dan jumlah baris sumbernya diverifikasi.
+
+Pengujian mencakup startup kedua tanpa pembacaan `source_records`, pemrosesan batch baru dan versi normalisasi lama, rollback sebelum penanda selesai, serta deteksi referensi induk yang tidak ada pada pemeriksaan melalui indeks maupun pemeriksaan SQLite biasa.
+
+Pengukuran pada database aktif: pemeriksaan pertama memakai kode baru membutuhkan 412,355 detik; seluruh 15 batch sudah memakai normalisasi versi 3, dengan `changed=False` pada setiap batch. Jumlah baris sumber setelah commit tetap 5.784.251. Impor `app.main` melalui proses Python baru sesudahnya membutuhkan 2,341 detik, dengan tahap katalog hanya 4,681 ms. Angka pertama merupakan verifikasi satu kali menggunakan kode baru, bukan pengukuran startup versi lama. Perubahan versi normalisasi di masa depan dapat memerlukan pemeriksaan ulang batch.
+
+Backend dan frontend kemudian dijalankan kembali tanpa jendela terminal; keduanya siap dalam 4,268 detik pada peluncuran lokal ini. Root backend, health, OpenAPI, halaman frontend, serta proxy `/api/health` memberikan HTTP 200. Redis tetap bersifat opsional pada konfigurasi lokal dan tidak menjadi syarat kesiapan API.
+
+## Pembacaan daftar gagal ketika pemeriksaan menulis database
+
+Pada pemeriksaan/koreksi berikutnya, mode jurnal database masih `delete`. Transaksi penulisan panjang dapat memegang kunci eksklusif setelah cache SQLite menulis halaman ke disk, sehingga SELECT daftar berkas master dan PDPJ ikut gagal dengan `SQLITE_BUSY`. Pemeriksaan proses menunjukkan satu pohon Uvicorn dengan reloader, bukan dua server API terpisah.
+
+Koneksi SQLite sekarang disiapkan dengan `journal_mode=WAL`, `busy_timeout=5000`, `foreign_keys=ON`, dan `synchronous=FULL`. WAL memungkinkan koneksi pembaca melihat data yang sudah di-commit ketika koneksi penulis masih menyiapkan hasil baru. Hasil pemeriksaan tetap diterbitkan dalam satu transaksi, dan kegagalan tetap di-rollback. WAL tidak menambah jumlah penulis serentak: tindakan tulis yang bersamaan masih dapat menunggu atau ditolak sementara. Durabilitas dan validasi relasi tidak dikurangi.
+
+Mode WAL diaktifkan sebelum inisialisasi skema. Jika database sudah memakai WAL, startup hanya membaca modenya. Perubahan mode memerlukan database yang tidak sedang ditulis; kegagalan memperoleh akses menampilkan pesan startup yang jelas. Database dalam memori untuk pengujian tetap memakai mode `memory`.
+
+Penanganan error aplikasi mengubah `SQLITE_BUSY`, `SQLITE_LOCKED`, dan kode turunannya yang belum ditangani endpoint menjadi HTTP 503 dengan `Retry-After: 2`. Pesan menyarankan menunggu pemeriksaan atau koreksi selesai. Log hanya memuat kode error SQLite, tanpa SQL atau parameter pelanggan. Error operasional lain tetap diperlakukan sebagai error operasional lain, dan aplikasi tidak mencoba ulang aksi tulis secara otomatis.
+
+Perbaikan diuji di salinan kode di luar direktori yang dipantau `--reload`. Delapan pengujian tambahan memakai koneksi SQLite sungguhan untuk memeriksa pembacaan PDPJ/master ketika writer aktif, visibilitas data sebelum/sesudah commit, rollback, foreign key, durabilitas, serta respons busy tanpa membocorkan SQL. Seluruh 190 tes backend lulus. Setelah pengguna menyetujui penghentian pemeriksaan yang belum selesai, worker dihentikan, SQLite memulihkan jurnalnya sendiri, dan jumlah sumber terverifikasi tetap 5.784.251 baris dalam 15 batch. Cadangan sebelum aktivasi WAL dibuat melalui SQLite Backup API pada `backend/backups/before-wal-20261027-locked-recovery/pln_geomatch.db`.
+
+Untuk pencadangan ketika WAL aktif, gunakan SQLite Backup API agar isi `.db` dan transaksi yang sudah di-commit dalam WAL tercakup konsisten. Menyalin `.db` saja saat aplikasi masih berjalan dapat melewatkan perubahan di file `-wal`. Jangan menghapus file `-wal`, `-shm`, atau jurnal secara manual untuk mengatasi kunci database.
+
+Pada database aktif, setelah cadangan selesai diverifikasi, mode `wal`, `foreign_keys=1`, `synchronous=2` (FULL), dan `busy_timeout=5000` terkonfirmasi. Backend baru siap dalam 3,24 detik. Health dan daftar PDPJ/prabayar/pascabayar/DIL menghasilkan HTTP 200, demikian juga daftar PDPJ dan prabayar melalui proxy frontend. Tidak ada proses atau matching run yang tersisa setelah rollback pemeriksaan terputus; pemeriksaan yang belum selesai perlu dimulai ulang oleh operator. Sebanyak 24 tes terkait konkurensi, relasi, penyimpanan upload, reset, dan startup juga lulus pada kode yang sudah diterapkan.

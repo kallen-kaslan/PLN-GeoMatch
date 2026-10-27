@@ -5,6 +5,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from .config import settings
 from .database import Base, engine, ensure_schema_compatibility
+from .database_errors import register_database_error_handlers
 from .models.coordinate_repair import CoordinateRepair
 from .models.correction import (
     CorrectionAttempt,
@@ -16,6 +17,7 @@ from .models.correction_decision import CorrectionDecision
 from .models.master_sisa import CleanedMasterRecord, MasterSisaRecord
 from .models.matching import MatchCandidate, ReconciliationProcess
 from .models.pdpj import PdpjChange, PdpjRecommendation, PdpjReview, PdpjRow
+from .models.schema_state import SchemaState
 from .models.upload import SourceRecord, UploadBatch
 from .models.upload_file import UploadFileArchive, UploadSheetImport
 
@@ -38,6 +40,7 @@ from .modules.spatial.router import router as spatial_router
 from .modules.upload.router import router as upload_router
 
 app = FastAPI(title="PLN GeoMatch API", version="1.0.0")
+register_database_error_handlers(app)
 
 app.add_middleware(
     CORSMiddleware,

@@ -1,33 +1,19 @@
 import os
-from typing import Any
 
-from sqlalchemy import create_engine, event
+from sqlalchemy import create_engine
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import DeclarativeBase, sessionmaker
 
 from .config import settings
+from .sqlite_runtime import configure_sqlite_engine
 
 
 def ensure_schema_compatibility() -> None:
     """Preserve old records while upgrading the local compatibility schema."""
-    from app.coordinate_schema import repair_xy_coordinates
-    from app.correction_map_schema import upgrade_correction_map
-    from app.correction_schema import upgrade_corrections
-    from app.master_schema import upgrade_master_catalog
-    from app.pdpj_schema import upgrade_pdpj_validation
-    from app.performance_schema import upgrade_performance
-    from app.schema_compatibility import upgrade_foundations
-    from app.upload_file_schema import upgrade_upload_files
+    from app.startup_schema import prepare_database
 
     with engine.begin() as connection:
-        upgrade_foundations(connection)
-        upgrade_master_catalog(connection)
-        upgrade_pdpj_validation(connection)
-        upgrade_corrections(connection)
-        upgrade_correction_map(connection)
-        upgrade_upload_files(connection)
-        repair_xy_coordinates(connection)
-        upgrade_performance(connection)
+        prepare_database(connection)
 
 
 # Coba sambung ke PostgreSQL, jika gagal gunakan SQLite lokal otomatis
@@ -51,15 +37,7 @@ except (SQLAlchemyError, ImportError):
     engine = create_engine(DATABASE_URL, connect_args={"check_same_thread": False})
     print(f"[DATABASE] Menggunakan SQLite fallback: {sqlite_path}")
 
-if engine.dialect.name == "sqlite":
-    @event.listens_for(engine, "connect")
-    def enable_sqlite_foreign_keys(connection: Any, _record: object) -> None:
-        """Enforce parent references on application connections, as PostgreSQL does."""
-        cursor = connection.cursor()
-        try:
-            cursor.execute("PRAGMA foreign_keys=ON")
-        finally:
-            cursor.close()
+configure_sqlite_engine(engine)
 
 
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)

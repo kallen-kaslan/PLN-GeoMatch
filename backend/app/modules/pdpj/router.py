@@ -23,6 +23,7 @@ from app.modules.pdpj.service import (
     update_fields,
 )
 from app.modules.upload.storage import database_write_error
+from app.pdpj_warning_schema import DUPLICATE_IDPEL
 
 DbSession = Annotated[Session, Depends(get_db)]
 router = APIRouter(prefix="/pdpj", tags=["Validasi PDPJ"])
@@ -93,13 +94,19 @@ def review_info(review: PdpjReview) -> dict[str, Any]:
 
 def row_info(row: PdpjRow) -> dict[str, Any]:
     """Return current values and independent identity, completeness, and review states."""
+    warnings = list(row.warnings or [])
+    if not any(item.get("code") == DUPLICATE_IDPEL for item in warnings):
+        warnings.extend(
+            item for item in row.issues if item.get("code") == DUPLICATE_IDPEL
+        )
     return {
         "id": row.id,
         "source_record_id": row.source_record_id,
         "row_number": row.row_number,
         "fields": row.current_fields,
         "existence": row.existence,
-        "issues": row.issues,
+        "issues": [item for item in row.issues if item.get("code") != DUPLICATE_IDPEL],
+        "warnings": warnings,
         "coordinates_complete": row.current_fields.get("lat") is not None
         and row.current_fields.get("lon") is not None,
         "recommendation_count": row.recommendation_count,
