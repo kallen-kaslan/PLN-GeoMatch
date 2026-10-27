@@ -13,8 +13,10 @@ from app.models.pdpj import PdpjChange, PdpjRecommendation, PdpjReview, PdpjRow
 from app.models.upload import DatasetType, SourceRecord, UploadBatch
 from app.modules.master.router import batch_info
 from app.modules.pdpj.service import (
+    advance_review,
     before_change,
     complete_validation,
+    control_processing,
     create_review,
     get_review,
     pdpj_batch,
@@ -32,6 +34,11 @@ router = APIRouter(prefix="/pdpj", tags=["Validasi PDPJ"])
 class StartReview(BaseModel):
     batch_id: int = Field(gt=0)
     master_batch_ids: list[int] | None = Field(None, max_length=1000)
+    incremental: bool = False
+
+
+class ProcessingStep(BaseModel):
+    revision: int = Field(ge=1)
 
 
 class ReviewAction(BaseModel):
@@ -89,6 +96,7 @@ def review_info(review: PdpjReview) -> dict[str, Any]:
         "created_at": review.created_at,
         "completed_at": review.completed_at,
         "completed_by": review.completed_by,
+        "processing": review.processing,
     }
 
 
@@ -177,7 +185,40 @@ def list_reviews(batch_id: int, db: DbSession) -> list[dict[str, Any]]:
 @router.post("/reviews")
 def start_review(req: StartReview, db: DbSession) -> dict[str, Any]:
     """Match every PDPJ identity against every observation in the selected sources."""
+    if req.incremental:
+        return review_info(
+            create_review(db, req.batch_id, req.master_batch_ids, incremental=True)
+        )
     return review_info(create_review(db, req.batch_id, req.master_batch_ids))
+
+
+@router.post("/reviews/{review_id}/advance")
+def advance_processing(
+    review_id: int, req: ProcessingStep, db: DbSession
+) -> dict[str, Any]:
+    """Process one bounded transaction and return its durable checkpoint."""
+    try:
+        return review_info(advance_review(db, review_id, req.revision))
+    except SQLAlchemyError as exc:
+        raise database_write_error(db, exc, "pemeriksaan PDPJ") from exc
+
+
+@router.post("/reviews/{review_id}/pause")
+def pause_processing(review_id: int, db: DbSession) -> dict[str, Any]:
+    """Wait for the active chunk and preserve all committed results."""
+    try:
+        return review_info(control_processing(db, review_id, "paused"))
+    except SQLAlchemyError as exc:
+        raise database_write_error(db, exc, "jeda pemeriksaan PDPJ") from exc
+
+
+@router.post("/reviews/{review_id}/resume")
+def resume_processing(review_id: int, db: DbSession) -> dict[str, Any]:
+    """Continue with the saved sources and cursors, never create another review."""
+    try:
+        return review_info(control_processing(db, review_id, "running"))
+    except SQLAlchemyError as exc:
+        raise database_write_error(db, exc, "kelanjutan pemeriksaan PDPJ") from exc
 
 
 @router.get("/reviews/{review_id}")

@@ -6,6 +6,14 @@ export type PdpjStatus = "all" | "found" | "not_found" | "empty" | "invalid" | "
 export interface PdpjReview {
   id: number; batch_id: number; master_batch_ids: number[]; status: "in_progress" | "completed";
   revision: number; created_at: string; completed_at: string | null; completed_by: string;
+  processing: PdpjProcessing | null;
+}
+export interface PdpjProcessing {
+  state: "running" | "paused" | "failed" | "ready";
+  stage: "matching" | "validating" | "done";
+  total_rows: number; processed_rows: number; validated_rows: number;
+  last_source_id: number; last_row_number: number | null; last_validated_id: number;
+  started_at: string; updated_at: string; elapsed_seconds: number; error: string | null;
 }
 export interface PdpjSummary extends PdpjReview {
   summary: { total_rows: number; found: number; not_found: number; empty: number; invalid: number; incomplete_coordinates: number; exceptions: number; unresolved: number; ready: number };
@@ -33,12 +41,15 @@ export interface PdpjDetail extends PdpjRow {
 
 export const PDPJ_FIELDS = masterFields("dil").map((field) => ({ ...field, key: field.key === "nomor_meter" ? "target_ref" : field.key }));
 export const existenceLabel = { found: "IDPEL ditemukan", not_found: "IDPEL tidak ditemukan", empty: "IDPEL kosong", invalid: "Format IDPEL bermasalah" };
-export const reviewLabel = (status: string) => status === "completed" ? "Selesai divalidasi" : "Dalam pemeriksaan";
+export const reviewLabel = (status: string, processing?: PdpjProcessing | null) => status === "completed" ? "Selesai divalidasi" : processing && processing.state !== "ready" ? "Pemeriksaan otomatis belum selesai" : "Menunggu tinjauan petugas";
 export const pdpjApi = {
   batches: async () => (await api.get<MasterBatch[]>("/pdpj/batches")).data,
   batch: async (id: number) => (await api.get<MasterBatchPreview>(`/pdpj/batches/${id}`)).data,
   reviews: async (id: number) => (await api.get<PdpjReview[]>(`/pdpj/batches/${id}/reviews`)).data,
-  start: async (batchId: number, masterIds?: number[]) => (await api.post<PdpjReview>("/pdpj/reviews", { batch_id: batchId, master_batch_ids: masterIds })).data,
+  start: async (batchId: number, masterIds?: number[]) => (await api.post<PdpjReview>("/pdpj/reviews", { batch_id: batchId, master_batch_ids: masterIds, incremental: true })).data,
+  advance: async (id: number, revision: number) => (await api.post<PdpjReview>(`/pdpj/reviews/${id}/advance`, { revision })).data,
+  pause: async (id: number) => (await api.post<PdpjReview>(`/pdpj/reviews/${id}/pause`)).data,
+  resume: async (id: number) => (await api.post<PdpjReview>(`/pdpj/reviews/${id}/resume`)).data,
   summary: async (id: number) => (await api.get<PdpjSummary>(`/pdpj/reviews/${id}`)).data,
   rows: async (id: number, params: { q: string; status: PdpjStatus; skip: number; limit: number }) => (await api.get<{ total: number; items: PdpjRow[] }>(`/pdpj/reviews/${id}/rows`, { params })).data,
   detail: async (id: number, rowId: number, skip: number) => (await api.get<PdpjDetail>(`/pdpj/reviews/${id}/rows/${rowId}`, { params: { skip, limit: 10 } })).data,

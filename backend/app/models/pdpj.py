@@ -9,6 +9,7 @@ from sqlalchemy import (
     Column,
     DateTime,
     ForeignKey,
+    Index,
     Integer,
     String,
     UniqueConstraint,
@@ -31,6 +32,9 @@ class PdpjReview(Base):
         Mapped[datetime | None], Column(DateTime, nullable=True)
     )
     completed_by: Mapped[str] = mapped_column(String, default="")
+    processing: Mapped[dict[str, Any] | None] = cast(
+        Mapped[dict[str, Any] | None], Column(JSON, nullable=True)
+    )
 
 
 class PdpjRow(Base):
@@ -50,6 +54,13 @@ class PdpjRow(Base):
     reviewed: Mapped[bool] = mapped_column(Boolean, default=False)
     exception: Mapped[bool] = mapped_column(Boolean, default=False)
     exception_reason: Mapped[str] = mapped_column(String, default="")
+
+
+Index(
+    "ix_pdpj_rows_review_identity",
+    PdpjRow.review_id,
+    PdpjRow.current_fields["idpel"].as_string(),
+)
 
 
 class PdpjRecommendation(Base):

@@ -13,6 +13,43 @@ Menu **Data PDPJ** (`/pdpj`) sekarang terpisah dari Data Master dan Data Koreksi
 7. Setelah masalah selesai, pilih **Selesaikan validasi PDPJ**. Tindakan ini menyetujui seluruh baris yang sudah lengkap dan mengunci pemeriksaan. Popup keberhasilan baru muncul setelah penyimpanan berhasil.
 8. Buka Data Koreksi, pilih PDPJ yang sudah selesai divalidasi sebagai acuan pengecualian master, lalu lanjutkan alur koreksi yang tersedia.
 
+## Progres, penghentian, dan kelanjutan pemeriksaan otomatis
+
+Halaman PDPJ menampilkan tahap aktif, persentase keseluruhan, jumlah baris yang
+sudah dicocokkan dan disimpan, jumlah baris yang selesai divalidasi akhir, baris
+sumber terakhir yang tersimpan, durasi pemrosesan, dan waktu pembaruan terakhir.
+Persentase dihitung dari pekerjaan tersimpan pada dua tahap: pencocokan dan
+validasi akhir. Selesai pencocokan berarti 50%; 100% baru ditampilkan setelah
+validasi akhir seluruh baris tersimpan.
+
+Pemeriksaan otomatis menyimpan hasil per bagian, maksimal 400 baris. Data baris,
+rekomendasi, riwayat bawaan, dan penanda posisi disimpan dalam transaksi yang
+sama. Tombol **Hentikan sementara** menunggu bagian aktif selesai disimpan lalu
+menjeda proses. **Lanjutkan pemeriksaan** memakai pemeriksaan, sumber master,
+dan posisi terakhir yang sama. Hasil tersimpan tidak diproses ulang atau digandakan.
+Validasi akhir juga memiliki posisi tersimpan tersendiri, termasuk pemeriksaan
+IDPEL berulang antarbagian.
+
+Halaman mengirim permintaan bagian berikutnya secara berurutan selama proses
+berjalan. Jika halaman ditutup, koneksi terputus, atau backend berhenti, bagian
+yang sudah berhasil disimpan tetap tersedia di database. Buka kembali halaman
+dan pilih **Lanjutkan pemeriksaan**. Bagian yang terputus sebelum transaksi
+berhasil disimpan akan dicoba ulang seluruhnya. Hasil parsial ditandai dan belum
+dapat diedit, diselesaikan, atau dipakai sebagai PDPJ selesai pada Data Koreksi.
+Setelah pemeriksaan otomatis selesai, status menjadi **Menunggu tinjauan petugas**.
+
+UI mengirim `incremental: true` ke `POST /pdpj/reviews` untuk membuat checkpoint
+tanpa menunggu seluruh baris. `POST /pdpj/reviews/{id}/advance` memproses satu
+bagian dengan `revision` terakhir. Endpoint `/pause` dan `/resume` menjeda dan
+melanjutkan pemeriksaan yang sama. Revisi dan penguncian database mencegah dua
+permintaan memakai checkpoint lama bersamaan. Pemanggil lama yang tidak mengirim
+`incremental` tetap menerima hasil pemeriksaan otomatis secara sinkron.
+
+Migrasi `a91d72f04c63` menambahkan checkpoint dan indeks identitas pemeriksaan.
+Pemeriksaan lama tanpa checkpoint tetap dianggap selesai diproses otomatis;
+hasil dan keputusan sebelumnya dipertahankan. Migrasi juga berjalan melalui
+jalur kompatibilitas startup backend.
+
 ## Aturan pemeriksaan
 
 Untuk dataset besar, tombol **Lanjutkan dengan pengecualian massal** dapat

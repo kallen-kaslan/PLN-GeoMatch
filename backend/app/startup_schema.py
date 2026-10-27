@@ -41,6 +41,7 @@ def prepare_database(connection: Connection) -> None:
     from app.correction_map_schema import upgrade_correction_map
     from app.correction_schema import upgrade_corrections
     from app.master_schema import upgrade_master_catalog
+    from app.pdpj_progress_schema import upgrade_pdpj_progress
     from app.pdpj_schema import upgrade_pdpj_validation
     from app.performance_schema import upgrade_performance
     from app.schema_compatibility import upgrade_foundations
@@ -54,6 +55,7 @@ def prepare_database(connection: Connection) -> None:
     apply_once(connection, "performance", "e5fa92c30b71", upgrade_performance)
     upgrade_master_catalog(connection)
     apply_once(connection, "pdpj", "f6ac81d43e20", upgrade_pdpj_validation)
+    apply_once(connection, "pdpj_progress", "a91d72f04c63", upgrade_pdpj_progress)
     apply_once(connection, "corrections", "f21a85db4e09", upgrade_corrections)
     apply_once(connection, "correction_map", "a4b19c7e6201", upgrade_correction_map)
     apply_once(connection, "upload_files", "c8d72fe610ab", upgrade_upload_files)

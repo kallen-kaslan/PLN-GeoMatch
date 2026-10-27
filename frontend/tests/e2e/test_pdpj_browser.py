@@ -233,7 +233,7 @@ def test_pdpj_import_recommendations_manual_exception_completion_and_matching(
     page.get_by_role("button", name="Periksa IDPEL ke master", exact=True).click()
     expect(
         page.get_by_role(
-            "heading", name="Hasil pemeriksaan · Dalam pemeriksaan", exact=True
+            "heading", name="Hasil pemeriksaan · Menunggu tinjauan petugas", exact=True
         )
     ).to_be_visible()
     finish = page.get_by_role("button", name="Selesaikan validasi PDPJ", exact=True)
@@ -342,7 +342,7 @@ def test_replacing_filled_recommendation_requires_explicit_overwrite(
     page.get_by_role("button", name="Periksa ulang PDPJ", exact=True).click()
     expect(
         page.get_by_role(
-            "heading", name="Hasil pemeriksaan · Dalam pemeriksaan", exact=True
+            "heading", name="Hasil pemeriksaan · Menunggu tinjauan petugas", exact=True
         )
     ).to_be_visible()
     page.get_by_role("button", name="Detail PDPJ baris 2", exact=True).click()
