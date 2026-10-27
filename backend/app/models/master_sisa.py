@@ -3,7 +3,16 @@
 from datetime import datetime
 from typing import cast
 
-from sqlalchemy import Boolean, Column, DateTime, Float, ForeignKey, Integer, String
+from sqlalchemy import (
+    Boolean,
+    Column,
+    DateTime,
+    Float,
+    ForeignKey,
+    Index,
+    Integer,
+    String,
+)
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.database import Base
@@ -52,6 +61,14 @@ class CleanedMasterRecord(Base):
 
 class MasterSisaRecord(Base):
     __tablename__ = "master_sisa_records"
+    __table_args__ = (
+        Index(
+            "ix_master_sisa_records_snapshot_latitude_id",
+            "snapshot_id",
+            "latitude",
+            "id",
+        ),
+    )
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
     snapshot_id: Mapped[int | None] = cast(

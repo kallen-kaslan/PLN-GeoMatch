@@ -10,13 +10,14 @@ from .config import settings
 
 def ensure_schema_compatibility() -> None:
     """Preserve old records while upgrading the local compatibility schema."""
+    from app.coordinate_schema import repair_xy_coordinates
+    from app.correction_map_schema import upgrade_correction_map
+    from app.correction_schema import upgrade_corrections
     from app.master_schema import upgrade_master_catalog
     from app.pdpj_schema import upgrade_pdpj_validation
-    from app.correction_schema import upgrade_corrections
-    from app.correction_map_schema import upgrade_correction_map
+    from app.performance_schema import upgrade_performance
     from app.schema_compatibility import upgrade_foundations
     from app.upload_file_schema import upgrade_upload_files
-    from app.coordinate_schema import repair_xy_coordinates
 
     with engine.begin() as connection:
         upgrade_foundations(connection)
@@ -26,6 +27,7 @@ def ensure_schema_compatibility() -> None:
         upgrade_correction_map(connection)
         upgrade_upload_files(connection)
         repair_xy_coordinates(connection)
+        upgrade_performance(connection)
 
 
 # Coba sambung ke PostgreSQL, jika gagal gunakan SQLite lokal otomatis

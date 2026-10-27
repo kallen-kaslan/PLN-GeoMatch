@@ -640,13 +640,19 @@ def test_partial_flush_of_many_conflicts_rolls_back_without_losing_published_res
     process_id = original["process_id"]
     flushed = False
 
-    def interrupt_after_outcomes_are_written(session, _):
+    def interrupt_after_outcomes_are_written(
+        connection, cursor, statement, parameters, context, executemany
+    ):
         nonlocal flushed
-        if any(isinstance(row, CorrectionTarget) for row in session.new):
+        if statement.startswith("INSERT INTO correction_targets"):
             flushed = True
             raise RuntimeError("Simulated failure after writing outcomes")
 
-    event.listen(db_session, "after_flush", interrupt_after_outcomes_are_written)
+    event.listen(
+        db_session.get_bind(),
+        "after_cursor_execute",
+        interrupt_after_outcomes_are_written,
+    )
     try:
         result = client.post(
             f"/corrections/{kind}/checks/{process_id}/retry",
@@ -658,7 +664,11 @@ def test_partial_flush_of_many_conflicts_rolls_back_without_losing_published_res
             },
         ).json()
     finally:
-        event.remove(db_session, "after_flush", interrupt_after_outcomes_are_written)
+        event.remove(
+            db_session.get_bind(),
+            "after_cursor_execute",
+            interrupt_after_outcomes_are_written,
+        )
     assert flushed
     assert result["latest_run"]["status"] == "failed"
     assert result["latest_run"]["failure_code"] == "processing_failed"

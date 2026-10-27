@@ -11,6 +11,7 @@ from app.modules.upload.normalization import (  # noqa: F401
     extract_standard_fields,
     normalize_column_name,
 )
+from app.performance import timed
 
 MASTER_READ_CHUNK_ROWS = 400
 
@@ -27,6 +28,7 @@ def observation_period(value: str | None) -> tuple[date, str]:
     return date.min, text
 
 
+@timed("master.build")
 def build_combined_master(
     db: Session,
     pascabayar_batch_ids: list[int],
@@ -158,6 +160,7 @@ def build_combined_master(
     )
     db.add(master_batch)
     db.flush()
+    pending = []
     for idpel, fields in deduplicated.items():
         data = {
             key: value for key, value in fields.items() if key != "validation_errors"
@@ -169,11 +172,23 @@ def build_combined_master(
             koordinat_y=fields["lat"],
         )
         data["source_observations"] = observations[idpel]
-        db.add(
-            SourceRecord(
-                batch_id=master_batch.id, idpel=idpel, data=data, normalized_data=data
-            )
+        pending.append(
+            {
+                "batch_id": master_batch.id,
+                "idpel": idpel,
+                "data": data,
+                "normalized_data": {
+                    key: value
+                    for key, value in data.items()
+                    if key != "source_observations"
+                },
+            }
         )
+        if len(pending) >= MASTER_READ_CHUNK_ROWS:
+            db.bulk_insert_mappings(SourceRecord.__mapper__, pending)
+            pending.clear()
+    if pending:
+        db.bulk_insert_mappings(SourceRecord.__mapper__, pending)
     if commit:
         db.commit()
     else:

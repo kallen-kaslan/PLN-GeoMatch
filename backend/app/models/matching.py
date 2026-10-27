@@ -11,6 +11,7 @@ from sqlalchemy import (
     Enum,
     Float,
     ForeignKey,
+    Index,
     Integer,
     String,
     UniqueConstraint,
@@ -104,6 +105,15 @@ class MatchingRun(Base):
 
 class MatchCandidate(Base):
     __tablename__ = "match_candidates"
+    __table_args__ = (
+        Index(
+            "ix_match_candidates_process_generation_target_rank",
+            "process_id",
+            "generation",
+            "target_record_id",
+            "rank",
+        ),
+    )
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
     process_id: Mapped[int] = mapped_column(

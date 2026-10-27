@@ -101,7 +101,7 @@ def record_info(record: SourceRecord, batch: UploadBatch) -> dict[str, Any]:
 
 
 @router.get("/{kind}/batches")
-async def list_master_batches(kind: MasterKind, db: DbSession) -> list[dict[str, Any]]:
+def list_master_batches(kind: MasterKind, db: DbSession) -> list[dict[str, Any]]:
     """List uploaded files, including those awaiting mapping so import can resume."""
     return [
         batch_info(batch)
@@ -113,7 +113,7 @@ async def list_master_batches(kind: MasterKind, db: DbSession) -> list[dict[str,
 
 
 @router.get("/{kind}/batches/{batch_id}")
-async def get_master_batch(
+def get_master_batch(
     kind: MasterKind, batch_id: int, db: DbSession
 ) -> dict[str, Any]:
     """Return saved headers and preview rows for a resumable column-mapping form."""
@@ -135,7 +135,7 @@ async def get_master_batch(
 
 
 @router.get("/{kind}/summary")
-async def get_master_summary(
+def get_master_summary(
     kind: MasterKind, db: DbSession, batch_id: int | None = Query(None, gt=0)
 ) -> dict[str, Any]:
     """Aggregate the entire selected dataset, independent of table pagination."""
@@ -174,7 +174,7 @@ async def get_master_summary(
 
 
 @router.get("/{kind}/records")
-async def list_master_records(
+def list_master_records(
     kind: MasterKind,
     db: DbSession,
     batch_id: int | None = Query(None, gt=0),
@@ -242,7 +242,7 @@ async def list_master_records(
 
 
 @router.get("/{kind}/records/{record_id}")
-async def get_master_record(
+def get_master_record(
     kind: MasterKind, record_id: int, db: DbSession
 ) -> dict[str, Any]:
     """Show original cells alongside mapped values and exact source metadata."""

@@ -9,8 +9,10 @@ from app.models.pdpj import PdpjRow
 from app.models.upload import BatchStatus, DatasetType, SourceRecord, UploadBatch
 from app.modules.pdpj.service import completed_review
 from app.modules.upload.normalization import extract_standard_fields
+from app.performance import timed
 
 
+@timed("master.exclude_pdpj")
 def process_master_sisa_exclusion(
     db: Session,
     master_batch_id: int,
@@ -50,7 +52,11 @@ def process_master_sisa_exclusion(
         for record in (
             []
             if pdpj_review_id is not None
-            else (db.query(SourceRecord).filter(SourceRecord.batch_id == pdpj.id).all())
+            else (
+                db.query(SourceRecord)
+                .filter(SourceRecord.batch_id == pdpj.id)
+                .yield_per(400)
+            )
         ):
             fields = extract_standard_fields(record.data or {}, pdpj.column_mapping)
             verified = (fields["verif"] or "").lower() not in {
@@ -70,9 +76,13 @@ def process_master_sisa_exclusion(
     snapshot = MasterSnapshot(master_batch_id=master.id, pdpj_batch_id=pdpj_batch_id)
     db.add(snapshot)
     db.flush()
-    records = db.query(SourceRecord).filter(SourceRecord.batch_id == master.id).all()
-    total_excluded = total_sisa = incomplete = 0
+    records = (
+        db.query(SourceRecord).filter(SourceRecord.batch_id == master.id).yield_per(400)
+    )
+    total_master = total_excluded = total_sisa = incomplete = 0
+    pending = []
     for record in records:
+        total_master += 1
         fields = extract_standard_fields(record.data or {}, master.column_mapping)
         if not record.is_valid or fields["validation_errors"]:
             continue
@@ -81,20 +91,25 @@ def process_master_sisa_exclusion(
             continue
         if fields["lat"] is None or fields["lon"] is None:
             incomplete += 1
-        db.add(
-            MasterSisaRecord(
-                snapshot_id=snapshot.id,
-                source_record_id=record.id,
-                idpel=fields["idpel"] or f"UNASSIGNED-{record.id}",
-                nama=fields["nama"],
-                latitude=fields["lat"],
-                longitude=fields["lon"],
-                tarif=fields["tarif"],
-                daya=fields["daya"],
-                jenis_layanan=fields["jenis_pel"] or "TIDAK_DIKETAHUI",
-            )
+        pending.append(
+            {
+                "snapshot_id": snapshot.id,
+                "source_record_id": record.id,
+                "idpel": fields["idpel"] or f"UNASSIGNED-{record.id}",
+                "nama": fields["nama"],
+                "latitude": fields["lat"],
+                "longitude": fields["lon"],
+                "tarif": fields["tarif"],
+                "daya": fields["daya"],
+                "jenis_layanan": fields["jenis_pel"] or "TIDAK_DIKETAHUI",
+            }
         )
         total_sisa += 1
+        if len(pending) >= 400:
+            db.bulk_insert_mappings(MasterSisaRecord.__mapper__, pending)
+            pending.clear()
+    if pending:
+        db.bulk_insert_mappings(MasterSisaRecord.__mapper__, pending)
     if commit:
         db.commit()
     else:
@@ -102,7 +117,7 @@ def process_master_sisa_exclusion(
     return {
         "status": "success",
         "master_snapshot_id": snapshot.id,
-        "total_master": len(records),
+        "total_master": total_master,
         "total_excluded_by_pdpj": total_excluded,
         "total_master_sisa": total_sisa,
         "incomplete_coordinates": incomplete,

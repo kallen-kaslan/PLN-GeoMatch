@@ -5,6 +5,7 @@ from pydantic import BaseModel, Field
 from sqlalchemy import or_
 from sqlalchemy.orm import Session
 from sqlalchemy.sql.elements import ColumnElement
+
 from app.models.correction import CorrectionCheck
 
 
@@ -94,6 +95,7 @@ from app.models.matching import (
     ReconciliationProcess,
     ReviewStatus,
 )
+from app.modules.pdpj.service import completed_review
 from app.modules.spatial.engine import (
     create_matching_run,
     lock_matching_session,
@@ -101,7 +103,6 @@ from app.modules.spatial.engine import (
     validate_target_batch,
 )
 from app.modules.spatial.master_builder import build_combined_master
-from app.modules.pdpj.service import completed_review
 from app.modules.spatial.preparation import (
     process_master_sisa_exclusion,
     resolve_master_snapshot,
@@ -143,7 +144,7 @@ class BulkDecisionRequest(BaseModel):
 
 
 @router.post("/build-master")
-async def build_master_endpoint(req: BuildMasterRequest, db: DbSession):
+def build_master_endpoint(req: BuildMasterRequest, db: DbSession):
     """
     Step 1: Membersihkan data bertumpuk multi-bulan dari ACMT (pascabayar) & LPB (prabayar),
     lalu menggabungkannya menjadi Master Terpadu.
@@ -161,7 +162,7 @@ async def build_master_endpoint(req: BuildMasterRequest, db: DbSession):
 
 
 @router.post("/prepare-master-sisa")
-async def prepare_master_sisa(req: PrepareMasterSisaRequest, db: DbSession):
+def prepare_master_sisa(req: PrepareMasterSisaRequest, db: DbSession):
     """
     Step 2: Mengecualikan data yang sudah valid/verif dari Master menggunakan data PDPJ.
     Hasilnya adalah Master Sisa.
@@ -228,7 +229,7 @@ def dispatch_matching(
 
 
 @router.get("/master-snapshots")
-async def list_master_snapshots(db: DbSession) -> list[dict]:
+def list_master_snapshots(db: DbSession) -> list[dict]:
     """Expose immutable source IDs for explicit matching requests."""
     return [
         {
@@ -244,7 +245,7 @@ async def list_master_snapshots(db: DbSession) -> list[dict]:
 
 
 @router.post("/run-matching")
-async def run_matching(req: RunMatchingRequest, db: DbSession) -> dict:
+def run_matching(req: RunMatchingRequest, db: DbSession) -> dict:
     """Bind both sources before enqueueing so later uploads cannot change a job."""
     try:
         validate_target_batch(db, req.target_batch_id)
@@ -272,7 +273,7 @@ class RerunRequest(BaseModel):
 
 
 @router.post("/{process_id}/rerun")
-async def rerun_matching(process_id: int, req: RerunRequest, db: DbSession) -> dict:
+def rerun_matching(process_id: int, req: RerunRequest, db: DbSession) -> dict:
     """Create a new search generation; keep all prior candidates and decisions."""
     reject_correction_legacy_write(db, process_id)
     process = db.get(ReconciliationProcess, process_id)
@@ -287,7 +288,7 @@ async def rerun_matching(process_id: int, req: RerunRequest, db: DbSession) -> d
 
 
 @router.get("/{process_id}/runs")
-async def list_matching_runs(process_id: int, db: DbSession) -> list[dict]:
+def list_matching_runs(process_id: int, db: DbSession) -> list[dict]:
     """Inspect every search attempt including historical radius and completion."""
     process = db.get(ReconciliationProcess, process_id)
     if process is None:
@@ -313,7 +314,7 @@ async def list_matching_runs(process_id: int, db: DbSession) -> list[dict]:
 
 
 @router.get("/{process_id}/candidates")
-async def get_candidates(
+def get_candidates(
     process_id: int,
     db: DbSession,
     status_filter: int | None = Query(None),
@@ -389,7 +390,7 @@ def ensure_current_candidate(db: Session, candidate: MatchCandidate) -> None:
 
 
 @router.post("/candidates/bulk-decision")
-async def submit_bulk_candidate_decision(req: BulkDecisionRequest, db: DbSession):
+def submit_bulk_candidate_decision(req: BulkDecisionRequest, db: DbSession):
     if not req.candidate_ids:
         raise HTTPException(status_code=400, detail="candidate_ids tidak boleh kosong")
     if req.is_accepted not in (0, 1):
@@ -418,7 +419,7 @@ async def submit_bulk_candidate_decision(req: BulkDecisionRequest, db: DbSession
 
 
 @router.post("/candidates/{candidate_id}/decision")
-async def submit_candidate_decision(
+def submit_candidate_decision(
     candidate_id: int, req: DecisionRequest, db: DbSession
 ):
     cand = db.query(MatchCandidate).filter(MatchCandidate.id == candidate_id).first()
@@ -438,7 +439,7 @@ async def submit_candidate_decision(
 
 
 @router.post("/{process_id}/finalize-review")
-async def finalize_review(process_id: int, db: DbSession):
+def finalize_review(process_id: int, db: DbSession):
     reject_correction_legacy_write(db, process_id)
     process = (
         db.query(ReconciliationProcess)

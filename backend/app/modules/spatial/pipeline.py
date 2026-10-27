@@ -11,6 +11,7 @@ from app.modules.pdpj.service import completed_review
 from app.modules.spatial.engine import lock_matching_session, run_spatial_matching_job
 from app.modules.spatial.master_builder import build_combined_master
 from app.modules.spatial.preparation import process_master_sisa_exclusion
+from app.performance import timed
 
 
 def pin_pipeline_sources(
@@ -133,6 +134,7 @@ def pin_pipeline_sources(
     }
 
 
+@timed("pipeline.total")
 def execute_pipeline(
     db: Session, process_id: int, run_id: int | None = None
 ) -> dict[str, Any]:

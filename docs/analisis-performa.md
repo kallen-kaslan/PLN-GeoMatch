@@ -1,5 +1,37 @@
 # Analisis waktu proses
 
+## Optimasi yang diterapkan pada 27 Oktober 2026
+
+- Migrasi `e5fa92c30b71` menambahkan empat indeks untuk akses batch/identitas sumber, kandidat per proses/generasi/target/rank, dan snapshot/latitude. Pemasangan idempoten tersedia saat startup dan lewat Alembic. Indeks sudah diverifikasi pada SQLite lokal saat tidak ada pekerjaan aktif; jumlah baris sumber tetap nol setelah reset sebelumnya.
+- Nama kolom dicatat pada `UploadBatch.source_headers`. Mapping tidak lagi membaca seluruh JSON untuk menemukan header. Batch lama tetap membaca gabungan seluruh nama kolom sebelum mencatat hasilnya.
+- Cache terbatas menyimpan pemetaan alamat kolom, bukan nilai sel. Fallback alias saat sel kosong, mapping eksplisit, nol di depan, dan interpretasi koordinat tetap diperiksa per baris.
+- Kandidat/evidence ditulis maksimal 400 per kelompok dan hasil target maksimal 100. Hasil `RETURNING` dipasangkan melalui target/rank, tanpa mengandalkan urutan database. Observasi diambil sekaligus per kelompok. Publikasi generasi tetap satu transaksi, termasuk rollback ketika kegagalan terjadi setelah sebagian kelompok ditulis.
+- Pembuatan PDPJ memuat/menyimpan 400 baris per kelompok, termasuk nilai pemeriksaan sebelumnya dan rekomendasi. Duplikasi tetap diperiksa terhadap seluruh review. Perubahan satu baris hanya menyegarkan kelompok IDPEL lama/baru yang terdampak, sambil mempertahankan audit.
+- Master Sisa membaca sumber bertahap dan menulis bulk. Master gabungan mempertahankan observasi lengkap pada data snapshot, tanpa menggandakannya lagi dalam `normalized_data`.
+- Endpoint SQL sinkron memakai threadpool FastAPI sehingga tidak menahan event loop API. Konfigurasi PostgreSQL, Redis, dan Celery tidak diganti oleh optimasi ini; threadpool berbeda dari antrean worker terpisah.
+
+Log `uvicorn.error.performance` mencatat `stage`, `status`, `duration_ms`, serta ID internal/jumlah baris yang diizinkan. Tahap mencakup `upload.read_and_store`, `upload.validate_and_map`, `pdpj.create_review`, `master.build`, `master.exclude_pdpj`, `corrections.match_and_store`, dan `pipeline.total`. Isi sel, nama pelanggan/file, SQL, dan pesan exception tidak dicatat. Waktu transfer browser ke server tidak termasuk waktu pemrosesan ini.
+
+Perbandingan terisolasi dengan baseline `19e2e1ca90a7ccbd258ea47ed5961af95bc4b587` memakai SQLite dalam memori, skema/indeks yang sama pada kedua jalur, 500 target dan 3.500 kandidat:
+
+| Pengukuran | Baseline | Sesudah optimasi |
+| --- | --- | --- |
+| Pemeriksaan koreksi, satu pengukuran | 2,0034 detik | 0,2531 detik |
+| Statement INSERT kandidat | 3.500 | 9 |
+| Ekstraksi 10.000 baris, median tiga pengulangan | 0,6134 detik | 0,2341 detik |
+
+Nilai/status target, kandidat, rank, jarak, dan evidence dibandingkan dan identik. Angka ini menunjukkan pengurangan overhead pada skenario uji; bukan jaminan percepatan yang sama untuk file 500 MB, I/O disk, atau beban pengguna bersamaan. Ulangi dari direktori `backend`:
+
+```powershell
+venv/Scripts/python.exe -m tests.benchmark_processing --baseline 19e2e1ca90a7ccbd258ea47ed5961af95bc4b587 --targets 500
+```
+
+Runner hanya menjalankan commit lokal tepercaya yang dipilih secara eksplisit dan memakai database dalam memori. Pengujian juga mencakup urutan `RETURNING` terbalik, rollback penulisan parsial, duplikasi/perubahan identitas melintasi kelompok, dan respons endpoint ringan ketika pemeriksaan PDPJ sedang menunggu.
+
+Penyimpanan evidence bersama secara penuh, snapshot lintas proses dengan identitas versi sumber yang aman, dan migrasi PostgreSQL/PostGIS tetap merupakan pekerjaan lanjutan. Radius dan rumus jarak tidak diubah pada tahap ini.
+
+## Analisis awal pada 26 Oktober 2026
+
 Pemeriksaan dilakukan pada 26 Oktober 2026 dengan membaca kode, konfigurasi, metadata database, serta query plan pada salinan database. Proses aktif tidak dihentikan. Perubahan indeks maupun mode jurnal belum diterapkan pada database aktif.
 
 ## Temuan

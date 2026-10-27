@@ -123,7 +123,7 @@ def selected_row(db: Session, review_id: int, row_id: int) -> PdpjRow:
 
 
 @router.get("/batches")
-async def list_batches(db: DbSession) -> list[dict[str, Any]]:
+def list_batches(db: DbSession) -> list[dict[str, Any]]:
     """List PDPJ uploads separately from masters and correction data."""
     return [
         batch_info(batch)
@@ -135,7 +135,7 @@ async def list_batches(db: DbSession) -> list[dict[str, Any]]:
 
 
 @router.get("/batches/{batch_id}")
-async def batch_preview(batch_id: int, db: DbSession) -> dict[str, Any]:
+def batch_preview(batch_id: int, db: DbSession) -> dict[str, Any]:
     """Resume mapping of an already uploaded PDPJ file."""
     batch = pdpj_batch(db, batch_id)
     rows = (
@@ -155,7 +155,7 @@ async def batch_preview(batch_id: int, db: DbSession) -> dict[str, Any]:
 
 
 @router.get("/batches/{batch_id}/reviews")
-async def list_reviews(batch_id: int, db: DbSession) -> list[dict[str, Any]]:
+def list_reviews(batch_id: int, db: DbSession) -> list[dict[str, Any]]:
     """Retain completed checks when the operator starts a new validation version."""
     pdpj_batch(db, batch_id)
     return [
@@ -168,13 +168,13 @@ async def list_reviews(batch_id: int, db: DbSession) -> list[dict[str, Any]]:
 
 
 @router.post("/reviews")
-async def start_review(req: StartReview, db: DbSession) -> dict[str, Any]:
+def start_review(req: StartReview, db: DbSession) -> dict[str, Any]:
     """Match every PDPJ identity against every observation in the selected sources."""
     return review_info(create_review(db, req.batch_id, req.master_batch_ids))
 
 
 @router.get("/reviews/{review_id}")
-async def review_summary(review_id: int, db: DbSession) -> dict[str, Any]:
+def review_summary(review_id: int, db: DbSession) -> dict[str, Any]:
     """Aggregate the entire review, independent of row filters and pagination."""
     review = get_review(db, review_id)
     query = db.query(PdpjRow).filter(PdpjRow.review_id == review.id)
@@ -222,7 +222,7 @@ async def review_summary(review_id: int, db: DbSession) -> dict[str, Any]:
 
 
 @router.get("/reviews/{review_id}/rows")
-async def list_rows(
+def list_rows(
     review_id: int,
     db: DbSession,
     q: str = Query("", max_length=120),
@@ -290,7 +290,7 @@ async def list_rows(
 
 
 @router.get("/reviews/{review_id}/rows/{row_id}")
-async def row_detail(
+def row_detail(
     review_id: int,
     row_id: int,
     db: DbSession,
@@ -347,7 +347,7 @@ async def row_detail(
 
 
 @router.patch("/reviews/{review_id}/rows/{row_id}")
-async def edit_row(
+def edit_row(
     review_id: int, row_id: int, req: EditRow, db: DbSession
 ) -> dict[str, Any]:
     """Apply manual partial corrections and retain before/after history."""
@@ -358,7 +358,7 @@ async def edit_row(
 
 
 @router.post("/reviews/{review_id}/rows/{row_id}/apply")
-async def apply_recommendation(
+def apply_recommendation(
     review_id: int, row_id: int, req: ApplyRecommendation, db: DbSession
 ) -> dict[str, Any]:
     """Fill selected fields from exactly one stored recommendation."""
@@ -381,13 +381,13 @@ async def apply_recommendation(
 
 
 @router.post("/reviews/{review_id}/rows/{row_id}/decision")
-async def decide_row(
+def decide_row(
     review_id: int, row_id: int, req: DecideRow, db: DbSession
 ) -> dict[str, Any]:
     """Require a reason for unresolved exceptions and preserve reopening decisions."""
     review = get_review(db, review_id, req.revision)
     row = selected_row(db, review_id, row_id)
-    refresh_rows(db, review)
+    refresh_rows(db, review, row)
     if req.action == "reviewed" and row.issues:
         raise HTTPException(409, "Baris masih memiliki masalah yang perlu diselesaikan")
     if req.action == "exception" and not req.reason.strip():

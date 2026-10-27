@@ -7,15 +7,9 @@ from typing import Any, cast
 
 from sqlalchemy.orm import Session
 
-from app.models.correction import (
-    CorrectionCandidateEvidence,
-    CorrectionCheck,
-    CorrectionTarget,
-    utc_now,
-)
+from app.models.correction import CorrectionCheck, utc_now
 from app.models.master_sisa import MasterSisaRecord
 from app.models.matching import (
-    MatchCandidate,
     MatchingRun,
     ProcessStatus,
     ReconciliationProcess,
@@ -24,6 +18,7 @@ from app.models.matching import (
 from app.models.pdpj import PdpjRow
 from app.models.upload import BatchStatus, SourceRecord, UploadBatch
 from app.modules.corrections.service import CORRECTION_TYPES, reference_tokens
+from app.modules.corrections.writer import SearchWriter
 from app.modules.pdpj.service import completed_review
 from app.modules.spatial.engine import (
     calculate_haversine_distance,
@@ -35,8 +30,10 @@ from app.modules.upload.normalization import (
     validate_fields,
     with_reference_fields,
 )
+from app.performance import timed
 
 
+@timed("corrections.match_and_store")
 def run_correction_matching(
     db: Session, process_id: int, target_batch_id: int, run_id: int | None
 ) -> dict[str, Any]:
@@ -132,6 +129,7 @@ def run_correction_matching(
     }
     eligible = (
         db.query(MasterSisaRecord)
+        .join(SourceRecord, SourceRecord.id == MasterSisaRecord.source_record_id)
         .filter(
             MasterSisaRecord.snapshot_id == process.master_snapshot_id,
             MasterSisaRecord.latitude.isnot(None),
@@ -144,19 +142,16 @@ def run_correction_matching(
         db.query(SourceRecord)
         .filter(SourceRecord.batch_id == target_batch_id)
         .order_by(SourceRecord.id)
-        .all()
+        .yield_per(100)
     )
-    matched = 0
+    matched = total_targets = 0
+    writer = SearchWriter(db)
     # A latitude band is a conservative spherical bound. Full source snapshots
     # are loaded only for real candidates, then reused across nearby targets.
     latitudes = [cast(float, master.latitude) for master in eligible]
     latitude_delta = math.degrees(run.radius_meters / 6371000) + 1e-9
-    source_cache: dict[int, SourceRecord] = {}
-    for index, record in enumerate(records):
-        # Conflict-only targets never reach the candidate flush below. Bound
-        # pending outcomes as well, while publishing the generation in one commit.
-        if index and index % 100 == 0:
-            db.flush()
+    for record in records:
+        total_targets += 1
         fields = extract_standard_fields(record.data or {}, batch.column_mapping)
         errors = validate_fields(fields, batch.dataset_type)
         fields.pop("validation_errors", None)
@@ -202,18 +197,19 @@ def run_correction_matching(
             if lat is None or lon is None
             else "no_candidates"
         )
-        outcome = CorrectionTarget(
-            run_id=run.id,
-            source_record_id=record.id,
-            fields=fields,
-            identity_status=identity,
-            search_status=status,
-            errors=errors,
-            conflicts=conflicts,
-            warnings=warnings,
-        )
-        db.add(outcome)
+        outcome = {
+            "run_id": run.id,
+            "source_record_id": record.id,
+            "fields": fields,
+            "identity_status": identity,
+            "search_status": status,
+            "candidate_count": 0,
+            "errors": errors,
+            "conflicts": conflicts,
+            "warnings": warnings,
+        }
         if status != "no_candidates":
+            writer.outcome(outcome)
             continue
         found = []
         lower = bisect_left(latitudes, lat - latitude_delta)
@@ -231,57 +227,40 @@ def run_correction_matching(
             if distance <= run.radius_meters:
                 if master.source_record_id is None:
                     continue
-                source = source_cache.get(master.source_record_id) or db.get(
-                    SourceRecord, master.source_record_id
-                )
-                if source is None:
-                    continue
-                source_cache[master.source_record_id] = source
-                found.append((distance, master.idpel, master, source))
+                found.append((distance, master.idpel, master))
         found.sort(key=lambda item: (item[0], item[1]))
-        for rank, (distance, _, master, source) in enumerate(found, 1):
-            candidate = MatchCandidate(
-                process_id=process_id,
-                generation=run.generation,
-                target_record_id=record.id,
-                target_ref=fields["target_ref"]
+        for rank, (distance, _, master) in enumerate(found, 1):
+            candidate = {
+                "process_id": process_id,
+                "generation": run.generation,
+                "target_record_id": record.id,
+                "target_ref": fields["target_ref"]
                 or fields["idpel"]
                 or f"TARGET-{record.id}",
-                target_lat=lat,
-                target_lon=lon,
-                candidate_idpel=master.idpel,
-                candidate_nama=master.nama,
-                candidate_lat=master.latitude,
-                candidate_lon=master.longitude,
-                distance_meters=round(distance, 2),
-                rank=rank,
-                jenis_layanan=master.jenis_layanan,
-                validity_status="VALID",
-                is_under_5m=int(distance < 5),
-                is_accepted=0,
-            )
-            db.add(candidate)
-            db.flush()
-            db.add(
-                CorrectionCandidateEvidence(
-                    candidate_id=candidate.id,
-                    master_record_id=master.id,
-                    fields={
-                        key: value
-                        for key, value in (source.data or {}).items()
-                        if key != "source_observations"
-                    },
-                    observations=(source.data or {}).get("source_observations", []),
-                )
-            )
-        outcome.candidate_count = len(found)
+                "target_lat": lat,
+                "target_lon": lon,
+                "candidate_idpel": master.idpel,
+                "candidate_nama": master.nama,
+                "candidate_lat": master.latitude,
+                "candidate_lon": master.longitude,
+                "distance_meters": round(distance, 2),
+                "rank": rank,
+                "jenis_layanan": master.jenis_layanan,
+                "validity_status": "VALID",
+                "is_under_5m": int(distance < 5),
+                "is_accepted": 0,
+            }
+            writer.candidate(candidate, master.id, cast(int, master.source_record_id))
+        outcome["candidate_count"] = len(found)
         if found:
-            outcome.search_status = "matched"
+            outcome["search_status"] = "matched"
             matched += 1
+        writer.outcome(outcome)
+    writer.flush()
     run.status = process.matching_status = ProcessStatus.COMPLETED
-    run.total_targets = process.total_targets = len(records)
+    run.total_targets = process.total_targets = total_targets
     run.matched_targets = process.matched_targets = matched
-    process.unmatched_targets = len(records) - matched
+    process.unmatched_targets = total_targets - matched
     process.current_generation = run.generation
     process.radius_meters = run.radius_meters
     process.review_status = ReviewStatus.IN_PROGRESS

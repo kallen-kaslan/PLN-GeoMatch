@@ -11,6 +11,7 @@ from sqlalchemy import (
     DateTime,
     Enum,
     ForeignKey,
+    Index,
     Integer,
     String,
 )
@@ -53,6 +54,9 @@ class UploadBatch(Base):
     column_mapping: Mapped[dict[str, str] | None] = cast(
         Mapped[dict[str, str] | None], Column(JSON, nullable=True)
     )
+    source_headers: Mapped[list[str] | None] = cast(
+        Mapped[list[str] | None], Column(JSON, nullable=True)
+    )
     total_rows: Mapped[int] = mapped_column(Integer, default=0, nullable=True)
     valid_rows: Mapped[int] = mapped_column(Integer, default=0, nullable=True)
     error_rows: Mapped[int] = mapped_column(Integer, default=0, nullable=True)
@@ -71,6 +75,10 @@ class UploadBatch(Base):
 
 class SourceRecord(Base):
     __tablename__ = "source_records"
+    __table_args__ = (
+        Index("ix_source_records_batch_id_id", "batch_id", "id"),
+        Index("ix_source_records_batch_id_idpel", "batch_id", "idpel"),
+    )
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
     batch_id: Mapped[int] = mapped_column(

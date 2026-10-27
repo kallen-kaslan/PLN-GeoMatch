@@ -89,7 +89,7 @@ def target_scope(
 
 
 @router.get("/{kind}/checks/{process_id}/records/{record_id}/choice")
-async def get_choice(
+def get_choice(
     kind: CorrectionKind, process_id: int, record_id: int, db: DbSession
 ) -> dict[str, Any]:
     target_scope(db, kind, process_id, record_id)
@@ -97,7 +97,7 @@ async def get_choice(
 
 
 @router.post("/{kind}/checks/{process_id}/records/{record_id}/choice")
-async def choose_candidate(
+def choose_candidate(
     kind: CorrectionKind,
     process_id: int,
     record_id: int,

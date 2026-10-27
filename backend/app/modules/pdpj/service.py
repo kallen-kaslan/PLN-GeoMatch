@@ -6,7 +6,7 @@ from datetime import UTC, datetime
 from typing import Any
 
 from fastapi import HTTPException
-from sqlalchemy import func
+from sqlalchemy import func, or_
 from sqlalchemy.orm import Session
 
 from app.models.pdpj import PdpjChange, PdpjRecommendation, PdpjReview, PdpjRow
@@ -17,6 +17,7 @@ from app.modules.upload.normalization import (
     validate_fields,
     with_reference_fields,
 )
+from app.performance import timed
 
 MASTER_TYPES = {DatasetType.PRABAYAR, DatasetType.PASCABAYAR, DatasetType.DIL}
 EDITABLE_FIELDS = set(ALIASES) - {"verif"}
@@ -106,10 +107,13 @@ def add_recommendations(db: Session, review: PdpjReview, rows: list[PdpjRow]) ->
         (item.row_id, item.source_record_id)
         for item in db.query(PdpjRecommendation)
         .join(PdpjRow, PdpjRow.id == PdpjRecommendation.row_id)
-        .filter(PdpjRow.review_id == review.id)
+        .filter(
+            PdpjRow.review_id == review.id, PdpjRow.id.in_([row.id for row in rows])
+        )
         .all()
     }
     identifiers = list(by_idpel)
+    pending = []
     for offset in range(0, len(identifiers), 400):
         observations = (
             db.query(SourceRecord, UploadBatch)
@@ -128,13 +132,13 @@ def add_recommendations(db: Session, review: PdpjReview, rows: list[PdpjRow]) ->
             errors = fields.pop("validation_errors")
             for row in by_idpel.get(fields["idpel"], []):
                 if (row.id, record.id) not in known:
-                    db.add(
-                        PdpjRecommendation(
-                            row_id=row.id,
-                            source_record_id=record.id,
-                            fields=fields,
-                            validation_errors=errors,
-                            provenance={
+                    pending.append(
+                        {
+                            "row_id": row.id,
+                            "source_record_id": record.id,
+                            "fields": fields,
+                            "validation_errors": errors,
+                            "provenance": {
                                 "batch_id": batch.id,
                                 "filename": batch.filename,
                                 "dataset_type": batch.dataset_type.value,
@@ -142,32 +146,60 @@ def add_recommendations(db: Session, review: PdpjReview, rows: list[PdpjRow]) ->
                                 "source_sheet": batch.source_sheet,
                                 "period": fields["tglbaca"],
                             },
-                        )
+                        }
                     )
+                    if len(pending) >= 400:
+                        db.bulk_insert_mappings(PdpjRecommendation.__mapper__, pending)
+                        pending.clear()
+    if pending:
+        db.bulk_insert_mappings(PdpjRecommendation.__mapper__, pending)
     db.flush()
 
 
-def refresh_rows(db: Session, review: PdpjReview) -> list[PdpjRow]:
+def refresh_rows(
+    db: Session,
+    review: PdpjReview,
+    focus: PdpjRow | None = None,
+    previous_idpel: str | None = None,
+) -> list[PdpjRow]:
     """Keep existence, coordinate completeness, duplicates, and review status separate."""
-    rows = (
-        db.query(PdpjRow)
-        .filter(PdpjRow.review_id == review.id)
-        .order_by(PdpjRow.row_number)
-        .all()
-    )
+    query = db.query(PdpjRow).filter(PdpjRow.review_id == review.id)
+    if focus is not None:
+        identities = {
+            value
+            for value in (focus.current_fields.get("idpel"), previous_idpel)
+            if value
+        }
+        query = query.filter(
+            or_(
+                PdpjRow.id == focus.id,
+                PdpjRow.current_fields["idpel"].as_string().in_(identities),
+            )
+        )
+    rows = query.order_by(PdpjRow.row_number).all()
     counts = Counter(
         row.current_fields.get("idpel")
         for row in rows
         if row.current_fields.get("idpel")
     )
     recommendations: Counter = Counter()
-    for item in (
-        db.query(PdpjRecommendation)
+    identity = PdpjRecommendation.fields["idpel"].as_string()
+    recommendations_query = (
+        db.query(PdpjRecommendation.row_id, identity, func.count(PdpjRecommendation.id))
         .join(PdpjRow, PdpjRow.id == PdpjRecommendation.row_id)
         .filter(PdpjRow.review_id == review.id)
-        .all()
-    ):
-        recommendations[(item.row_id, item.fields.get("idpel"))] += 1
+    )
+    if focus is not None:
+        recommendations_query = recommendations_query.filter(
+            or_(
+                PdpjRow.id == focus.id,
+                PdpjRow.current_fields["idpel"].as_string().in_(identities),
+            )
+        )
+    for row_id, idpel, count in recommendations_query.group_by(
+        PdpjRecommendation.row_id, identity
+    ).all():
+        recommendations[(row_id, idpel)] = count
     for row in rows:
         refresh_row(row, counts, recommendations)
     db.flush()
@@ -258,6 +290,7 @@ def validation_chunks(db: Session, review: PdpjReview) -> Iterator[list[PdpjRow]
             db.expunge(row)
 
 
+@timed("pdpj.create_review")
 def create_review(
     db: Session, batch_id: int, master_batch_ids: list[int] | None
 ) -> PdpjReview:
@@ -304,65 +337,96 @@ def create_review(
                 "Selesaikan pemeriksaan yang sedang berjalan sebelum mengganti sumber master",
             )
         return previous
-    previous_rows = (
-        {
-            row.source_record_id: row
-            for row in db.query(PdpjRow).filter(PdpjRow.review_id == previous.id).all()
-        }
-        if previous
-        else {}
-    )
-    records = (
-        db.query(SourceRecord)
-        .filter(SourceRecord.batch_id == batch_id)
-        .order_by(SourceRecord.id)
-        .all()
-    )
-    if not records:
+    if (
+        db.query(SourceRecord.id).filter(SourceRecord.batch_id == batch_id).first()
+        is None
+    ):
         raise HTTPException(422, "Berkas PDPJ tidak memiliki baris data")
     review = PdpjReview(batch_id=batch_id, master_batch_ids=ids)
     db.add(review)
     db.flush()
-    rows = []
-    for number, record in enumerate(records, 2):
-        fields = normalized(record, batch)
-        # Validation issues are recomputed from the canonical values; original bad
-        # cells remain accessible in raw_data and original_fields.validation_errors.
-        prior = previous_rows.get(record.id)
-        row = PdpjRow(
-            review_id=review.id,
-            source_record_id=record.id,
-            row_number=record.row_number or number,
-            original_fields=fields,
-            current_fields=with_reference_fields(
-                prior.current_fields, record.data or {}, batch.column_mapping
-            )
-            if prior
-            else fields,
-            existence="empty",
+    last_id, number = 0, 2
+    while True:
+        records = (
+            db.query(SourceRecord)
+            .filter(SourceRecord.batch_id == batch_id, SourceRecord.id > last_id)
+            .order_by(SourceRecord.id)
+            .limit(400)
+            .all()
         )
-        db.add(row)
-        rows.append(row)
-    db.flush()
-    for row in rows:
-        prior = previous_rows.get(row.source_record_id)
-        if prior:
-            record_change(
-                db,
-                row,
-                "carried_forward",
-                "Sistem",
-                "Nilai dari pemeriksaan sebelumnya dipertahankan untuk diperiksa ulang",
+        if not records:
+            break
+        source_ids = [record.id for record in records]
+        previous_rows = (
+            {
+                row.source_record_id: row
+                for row in db.query(PdpjRow)
+                .filter(
+                    PdpjRow.review_id == previous.id,
+                    PdpjRow.source_record_id.in_(source_ids),
+                )
+                .all()
+            }
+            if previous
+            else {}
+        )
+        pending = []
+        for record in records:
+            fields = normalized(record, batch)
+            prior = previous_rows.get(record.id)
+            pending.append(
                 {
-                    "fields": row.original_fields,
-                    "reviewed": False,
-                    "exception": False,
-                    "exception_reason": "",
-                },
-                {"previous_review_id": prior.review_id, "previous_row_id": prior.id},
+                    "review_id": review.id,
+                    "source_record_id": record.id,
+                    "row_number": record.row_number or number,
+                    "original_fields": fields,
+                    "current_fields": with_reference_fields(
+                        prior.current_fields, record.data or {}, batch.column_mapping
+                    )
+                    if prior
+                    else fields,
+                    "existence": "empty",
+                }
             )
-    add_recommendations(db, review, rows)
-    refresh_rows(db, review)
+            number += 1
+        db.bulk_insert_mappings(PdpjRow.__mapper__, pending)
+        rows = (
+            db.query(PdpjRow)
+            .filter(
+                PdpjRow.review_id == review.id, PdpjRow.source_record_id.in_(source_ids)
+            )
+            .order_by(PdpjRow.id)
+            .all()
+        )
+        for row in rows:
+            prior = previous_rows.get(row.source_record_id)
+            if prior:
+                record_change(
+                    db,
+                    row,
+                    "carried_forward",
+                    "Sistem",
+                    "Nilai dari pemeriksaan sebelumnya dipertahankan untuk diperiksa ulang",
+                    {
+                        "fields": row.original_fields,
+                        "reviewed": False,
+                        "exception": False,
+                        "exception_reason": "",
+                    },
+                    {
+                        "previous_review_id": prior.review_id,
+                        "previous_row_id": prior.id,
+                    },
+                )
+        add_recommendations(db, review, rows)
+        db.flush()
+        for row in rows:
+            db.expunge(row)
+        last_id = records[-1].id
+    # Duplicate counts and existence are global to the review, including rows
+    # crossing ingestion chunks. Only the row objects are processed in batches.
+    for _rows in validation_chunks(db, review):
+        pass
     db.commit()
     return review
 
@@ -471,7 +535,7 @@ def update_fields(
     row.exception_reason = ""
     db.flush()
     add_recommendations(db, review, [row])
-    refresh_rows(db, review)
+    refresh_rows(db, review, row, before["fields"].get("idpel"))
     sources = (
         {
             key: {"recommendation_id": recommendation.id, **recommendation.provenance}

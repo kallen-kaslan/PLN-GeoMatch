@@ -24,6 +24,7 @@ def upgrade_foundations(connection: Connection) -> None:
     op = Operations(MigrationContext.configure(connection))
     cast(sa.Table, MasterSnapshot.__table__).create(connection, checkfirst=True)
     additions = {
+        "upload_batches": [sa.Column("source_headers", sa.JSON(), nullable=True)],
         "source_records": [
             sa.Column(
                 "is_valid", sa.Boolean(), nullable=False, server_default=sa.true()

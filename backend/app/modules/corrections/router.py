@@ -4,7 +4,6 @@ import logging
 from typing import Annotated, Any, Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Query
-from fastapi.concurrency import run_in_threadpool
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 from sqlalchemy import and_, func, or_
 from sqlalchemy.orm import Session
@@ -230,7 +229,7 @@ def record_info(
 
 
 @router.get("/ready-pdpj")
-async def ready_pdpj(db: DbSession) -> list[dict[str, Any]]:
+def ready_pdpj(db: DbSession) -> list[dict[str, Any]]:
     """Offer only files whose latest review is complete, without hiding unfinished rechecks."""
     latest: dict[int, PdpjReview] = {}
     for review in db.query(PdpjReview).order_by(PdpjReview.id.desc()).all():
@@ -251,7 +250,7 @@ async def ready_pdpj(db: DbSession) -> list[dict[str, Any]]:
 
 
 @router.get("/{kind}/batches")
-async def list_batches(kind: CorrectionKind, db: DbSession) -> list[dict[str, Any]]:
+def list_batches(kind: CorrectionKind, db: DbSession) -> list[dict[str, Any]]:
     """Do not guess the category of legacy target uploads."""
     return [
         batch_info(batch)
@@ -263,9 +262,7 @@ async def list_batches(kind: CorrectionKind, db: DbSession) -> list[dict[str, An
 
 
 @router.get("/{kind}/batches/{batch_id}")
-async def batch_preview(
-    kind: CorrectionKind, batch_id: int, db: DbSession
-) -> dict[str, Any]:
+def batch_preview(kind: CorrectionKind, batch_id: int, db: DbSession) -> dict[str, Any]:
     """Resume column mapping without creating a duplicate upload."""
     batch = source_batch(db, kind, batch_id)
     rows = (
@@ -285,7 +282,7 @@ async def batch_preview(
 
 
 @router.get("/{kind}/checks")
-async def list_checks(
+def list_checks(
     kind: CorrectionKind, db: DbSession, batch_id: int = Query(gt=0)
 ) -> list[dict[str, Any]]:
     """List previous checks with their original PDPJ source and parameters."""
@@ -304,9 +301,7 @@ async def list_checks(
 
 
 @router.post("/{kind}/checks")
-async def start_check(
-    kind: CorrectionKind, req: StartCheck, db: DbSession
-) -> dict[str, Any]:
+def start_check(kind: CorrectionKind, req: StartCheck, db: DbSession) -> dict[str, Any]:
     """Check category ownership and completed PDPJ before submitting real work."""
     process, run, fresh = create_check(
         db,
@@ -318,7 +313,7 @@ async def start_check(
         req.actor,
     )
     run_id, process_id = run.id, process.id
-    mode = await run_in_threadpool(dispatch, db, process, run, fresh)
+    mode = dispatch(db, process, run, fresh)
     return {
         **check_info(db, kind, process_id),
         "requested_run_id": run_id,
@@ -327,15 +322,13 @@ async def start_check(
 
 
 @router.get("/{kind}/checks/{process_id}")
-async def get_check(
-    kind: CorrectionKind, process_id: int, db: DbSession
-) -> dict[str, Any]:
+def get_check(kind: CorrectionKind, process_id: int, db: DbSession) -> dict[str, Any]:
     """Poll status until the requested attempt has actually completed."""
     return check_info(db, kind, process_id)
 
 
 @router.post("/{kind}/checks/{process_id}/retry")
-async def rerun_check(
+def rerun_check(
     kind: CorrectionKind, process_id: int, req: RetryCheck, db: DbSession
 ) -> dict[str, Any]:
     """Retain earlier candidates and row outcomes when changing radius or retrying failure."""
@@ -349,7 +342,7 @@ async def rerun_check(
         req.actor,
     )
     run_id = run.id
-    mode = await run_in_threadpool(dispatch, db, process, run, fresh)
+    mode = dispatch(db, process, run, fresh)
     return {
         **check_info(db, kind, process_id),
         "requested_run_id": run_id,
@@ -358,7 +351,7 @@ async def rerun_check(
 
 
 @router.get("/{kind}/summary")
-async def summary(
+def summary(
     kind: CorrectionKind,
     db: DbSession,
     batch_id: int | None = Query(None, gt=0),
@@ -401,7 +394,7 @@ async def summary(
 
 
 @router.get("/{kind}/records")
-async def list_records(
+def list_records(
     kind: CorrectionKind,
     db: DbSession,
     batch_id: int | None = Query(None, gt=0),
@@ -469,7 +462,7 @@ async def list_records(
 
 
 @router.get("/{kind}/records/{record_id}")
-async def record_detail(
+def record_detail(
     kind: CorrectionKind,
     record_id: int,
     db: DbSession,

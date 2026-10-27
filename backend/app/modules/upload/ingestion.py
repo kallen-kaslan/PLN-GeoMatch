@@ -5,10 +5,12 @@ from typing import BinaryIO
 from sqlalchemy.orm import Session
 
 from app.models.upload import BatchStatus, DatasetType, SourceRecord, UploadBatch
+from app.performance import timed
 
 from .reader import IMPORT_CHUNK_ROWS, read_upload
 
 
+@timed("upload.read_and_store")
 def import_raw_sheet(
     db: Session,
     source: BinaryIO,
@@ -33,6 +35,8 @@ def import_raw_sheet(
         pending = []
         total = 0
         for number, row in rows:
+            if total == 0:
+                batch.source_headers = list(row)
             pending.append({"batch_id": batch.id, "data": row, "row_number": number})
             total += 1
             if len(pending) >= batch_rows:

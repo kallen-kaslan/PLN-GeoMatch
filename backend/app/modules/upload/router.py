@@ -8,8 +8,11 @@ from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
 
+from app.performance import timed
+
 from ...config import settings
 from ...database import get_db
+from ...models.coordinate_repair import CoordinateRepair
 from ...models.correction import (
     CorrectionAttempt,
     CorrectionCandidateEvidence,
@@ -28,7 +31,6 @@ from ...models.matching import (
 from ...models.pdpj import PdpjChange, PdpjRecommendation, PdpjReview, PdpjRow
 from ...models.upload import BatchStatus, DatasetType, SourceRecord, UploadBatch
 from ...models.upload_file import UploadFileArchive, UploadSheetImport
-from ...models.coordinate_repair import CoordinateRepair
 from ...schemas.upload import BatchProcessRequest, MappingRequest, UploadBatchResponse
 from ...tasks.spatial_tasks import (
     execute_batch_reconciliation_pipeline,
@@ -39,6 +41,9 @@ from ..spatial.engine import run_spatial_matching_job
 from ..spatial.master_builder import build_combined_master
 from ..spatial.pipeline import execute_pipeline, pin_pipeline_sources
 from ..spatial.preparation import process_master_sisa_exclusion
+from .archive import archive_path
+from .archive import router as archive_router
+from .ingestion import import_raw_sheet
 from .normalization import (
     extract_standard_fields,
     validate_fields,
@@ -46,8 +51,6 @@ from .normalization import (
 )
 from .reader import IMPORT_CHUNK_ROWS, check_file_size, read_upload
 from .storage import database_write_error
-from .ingestion import import_raw_sheet
-from .archive import router as archive_router, archive_path
 
 DbSession = Annotated[Session, Depends(get_db)]
 
@@ -55,7 +58,7 @@ router = APIRouter(prefix="/upload", tags=["Upload"])
 
 
 @router.get("/batches")
-async def list_batches(db: DbSession):
+def list_batches(db: DbSession):
     batches = db.query(UploadBatch).order_by(UploadBatch.id.desc()).all()
     return [
         {
@@ -219,7 +222,7 @@ def seed_dummy_data(db: DbSession):
 
 
 @router.post("/batch-process")
-async def batch_process_endpoint(req: BatchProcessRequest, db: DbSession) -> dict:
+def batch_process_endpoint(req: BatchProcessRequest, db: DbSession) -> dict:
     """Pin source datasets before dispatching the shared reconciliation pipeline."""
     try:
         sources = pin_pipeline_sources(
@@ -270,7 +273,7 @@ async def batch_process_endpoint(req: BatchProcessRequest, db: DbSession) -> dic
 
 
 @router.post("/auto-pipeline")
-async def auto_pipeline_endpoint(batch_id: int, db: DbSession) -> dict:
+def auto_pipeline_endpoint(batch_id: int, db: DbSession) -> dict:
     """Create a separate process and snapshot; existing processes stay unchanged."""
     batch = db.get(UploadBatch, batch_id)
     if batch is None:
@@ -345,7 +348,9 @@ def reset_database(db: DbSession) -> dict[str, str]:
         return {"message": "Semua data berhasil direset. Database kembali bersih."}
     except SQLAlchemyError as exc:
         error = database_write_error(
-            db, exc, "reset database",
+            db,
+            exc,
+            "reset database",
             busy_message=(
                 "Reset belum dapat dijalankan karena database masih dipakai proses lain. "
                 "Tunggu proses impor atau pemeriksaan selesai, atau hentikan pekerjaan "
@@ -399,7 +404,12 @@ def upload_file(
     try:
         check_file_size(file.file)
         batch = import_raw_sheet(
-            db, file.file, file.filename or "", dataset_type, sheet_name, period,
+            db,
+            file.file,
+            file.filename or "",
+            dataset_type,
+            sheet_name,
+            period,
             chunk_rows=IMPORT_CHUNK_ROWS,
         )
         # A late parser/insert failure must leave no partial batch behind.
@@ -426,6 +436,7 @@ def confirm_mapping(req: MappingRequest, db: DbSession) -> dict:
         raise database_write_error(db, exc, "konfirmasi mapping") from exc
 
 
+@timed("upload.validate_and_map")
 def apply_mapping(req: MappingRequest, db: Session) -> dict:
     """Keep derived fields and batch completion in the same transaction."""
     lock_review_session(db)
@@ -481,15 +492,19 @@ def apply_mapping(req: MappingRequest, db: Session) -> dict:
         and (batch.column_mapping or {}) != req.column_mapping
     ):
         raise HTTPException(
-            409, "Sheet sudah disimpan dan divalidasi; pilih sheet lain atau unggah berkas yang diperbaiki"
+            409,
+            "Sheet sudah disimpan dan divalidasi; pilih sheet lain atau unggah berkas yang diperbaiki",
         )
-    headers: set[str] = set()
-    for (data,) in (
-        db.query(SourceRecord.data)
-        .filter(SourceRecord.batch_id == batch.id)
-        .yield_per(IMPORT_CHUNK_ROWS)
-    ):
-        headers.update(data or {})
+    headers: set[str] = set(batch.source_headers or [])
+    if batch.source_headers is None:
+        # Legacy batches may have heterogeneous row keys; retain the full union.
+        for (data,) in (
+            db.query(SourceRecord.data)
+            .filter(SourceRecord.batch_id == batch.id)
+            .yield_per(IMPORT_CHUNK_ROWS)
+        ):
+            headers.update(data or {})
+        batch.source_headers = sorted(headers)
     try:
         validate_mapping(req.column_mapping, headers, batch.dataset_type)
     except ValueError as exc:
@@ -508,30 +523,40 @@ def apply_mapping(req: MappingRequest, db: Session) -> dict:
         )
         if not records:
             break
+        updates = []
         for record in records:
             total_rows += 1
             row_number = record.row_number or total_rows + 1
             fields = extract_standard_fields(record.data or {}, req.column_mapping)
             fields["tglbaca"] = fields["tglbaca"] or batch.period
-            record.normalized_data = {
+            normalized_data = {
                 key: value
                 for key, value in fields.items()
                 if key != "validation_errors"
             }
-            record.row_number = row_number
-            record.idpel = fields["idpel"]
-            record.validation_errors = validate_fields(fields, batch.dataset_type)
-            record.is_valid = not record.validation_errors
-            valid_rows += int(record.is_valid)
-            if record.validation_errors and len(errors) < 100:
+            validation_errors = validate_fields(fields, batch.dataset_type)
+            is_valid = not validation_errors
+            updates.append(
+                {
+                    "id": record.id,
+                    "row_number": row_number,
+                    "idpel": fields["idpel"],
+                    "normalized_data": normalized_data,
+                    "validation_errors": validation_errors,
+                    "is_valid": is_valid,
+                }
+            )
+            valid_rows += int(is_valid)
+            if validation_errors and len(errors) < 100:
                 errors.append(
                     {
                         "record_id": record.id,
                         "row": row_number,
-                        "errors": record.validation_errors,
+                        "errors": validation_errors,
                     }
                 )
         last_id = records[-1].id
+        db.bulk_update_mappings(SourceRecord.__mapper__, updates)
         db.flush()
         # Release each chunk from the identity map before loading the next one.
         for record in records:

@@ -15,7 +15,7 @@ router = APIRouter(tags=["History & Result"])
 
 
 @router.get("/history/processes")
-async def get_process_history(db: DbSession):
+def get_process_history(db: DbSession):
     """Mengambil seluruh riwayat proses yang pernah dijalankan (PRD §8 FR-HIST-01)"""
     processes = (
         db.query(ReconciliationProcess)
@@ -42,7 +42,7 @@ async def get_process_history(db: DbSession):
 
 
 @router.delete("/history/processes/{process_id}")
-async def delete_process(process_id: int, db: DbSession):
+def delete_process(process_id: int, db: DbSession):
     """Menghapus satu riwayat proses beserta semua kandidat hasil pencocokannya"""
     process = (
         db.query(ReconciliationProcess)
@@ -67,7 +67,7 @@ async def delete_process(process_id: int, db: DbSession):
 
 
 @router.delete("/history/processes")
-async def clear_all_history(db: DbSession):
+def clear_all_history(db: DbSession):
     """Menghapus semua riwayat proses rekonsiliasi"""
     try:
         db.query(MatchCandidate).delete()
@@ -103,7 +103,7 @@ def get_process_generation(
 
 
 @router.get("/process/{process_id}/summary")
-async def get_process_summary(
+def get_process_summary(
     process_id: int, db: DbSession, generation: int | None = Query(None, ge=1)
 ) -> dict:
     """Read summary strictly within the requested process and search generation."""
@@ -136,7 +136,7 @@ async def get_process_summary(
 
 
 @router.get("/process/{process_id}/export")
-async def export_process_results(
+def export_process_results(
     process_id: int, db: DbSession, generation: int | None = Query(None, ge=1)
 ) -> Response:
     """Ekspor hasil verifikasi ke file CSV (PRD §8 FR-RES-04)"""

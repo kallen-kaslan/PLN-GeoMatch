@@ -47,6 +47,8 @@ def reference_tokens(
         kind: {value for key in keys if (value := reference_value(fields.get(key)))}
         for kind, keys in REFERENCE_FIELDS.items()
     }
+    if all(REFERENCE_FIELDS[kind][0] in fields for kind in REFERENCE_FIELDS):
+        return result
     selected = canonical_mapping(mapping).get("target_ref")
     if not selected:
         names = {normalize_column_name(key): key for key in raw}

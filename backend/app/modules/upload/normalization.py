@@ -1,6 +1,7 @@
 """Shared mapping-aware extraction without changing original source data."""
 
 import math
+from functools import lru_cache
 from typing import Any
 
 from app.models.upload import DatasetType
@@ -83,8 +84,13 @@ def normalize_source_headers(values: list[Any]) -> list[str]:
 
 def canonical_mapping(mapping: dict[str, str] | None) -> dict[str, str]:
     """Resolve frontend and legacy mapping keys to the same standard fields."""
+    return dict(_canonical_items(tuple((mapping or {}).items())))
+
+
+@lru_cache(maxsize=128)
+def _canonical_items(items: tuple[tuple[str, str], ...]) -> tuple[tuple[str, str], ...]:
     result: dict[str, str] = {}
-    for key, column in (mapping or {}).items():
+    for key, column in items:
         if not column:
             continue
         field = next(
@@ -100,7 +106,7 @@ def canonical_mapping(mapping: dict[str, str] | None) -> dict[str, str]:
         if field in result and result[field] != column:
             raise ValueError(f"Mapping ganda untuk field {field}")
         result[field] = column
-    return result
+    return tuple(result.items())
 
 
 def clean_text(value: Any) -> str | None:
@@ -111,22 +117,41 @@ def clean_text(value: Any) -> str | None:
     return None if value.lower() in {"", "none", "null", "nan", "-"} else value
 
 
+@lru_cache(maxsize=128)
+def _column_plan(
+    headers: tuple[str, ...], mapping: tuple[tuple[str, str], ...]
+) -> tuple[tuple[str, bool, tuple[str, ...]], ...]:
+    """Cache column addresses only; values and blank-alias fallback remain per row."""
+    normalized = {normalize_column_name(key): key for key in headers}
+    selected = dict(_canonical_items(mapping))
+    return tuple(
+        (
+            name,
+            name in selected,
+            (selected[name],)
+            if name in selected
+            else tuple(normalized[alias] for alias in aliases if alias in normalized),
+        )
+        for name, aliases in ALIASES.items()
+    )
+
+
 def raw_fields(
     data: dict[str, Any], mapping: dict[str, str] | None = None
 ) -> dict[str, Any]:
     """Explicit mapping takes precedence, even when the selected cell is empty."""
-    normalized = {normalize_column_name(k): v for k, v in data.items()}
-    selected = canonical_mapping(mapping)
     return {
         name: (
-            data.get(selected[name])
-            if name in selected
+            data.get(columns[0])
+            if explicit
             else next(
-                (normalized[key] for key in aliases if clean_text(normalized.get(key))),
+                (data[key] for key in columns if clean_text(data.get(key))),
                 None,
             )
         )
-        for name, aliases in ALIASES.items()
+        for name, explicit, columns in _column_plan(
+            tuple(data), tuple((mapping or {}).items())
+        )
     }
 
 
@@ -235,6 +260,8 @@ def with_reference_fields(
     current: dict[str, Any], raw: dict[str, Any], mapping: dict[str, str] | None
 ) -> dict[str, Any]:
     """Derive typed references for older PDPJ versions without reviving replaced values."""
+    if all(key in current for key in ("meter_ref", "agenda_ref", "survey_ref")):
+        return dict(current)
     original = extract_standard_fields(raw, mapping)
     result = dict(current)
     for key in ("meter_ref", "agenda_ref", "survey_ref"):
