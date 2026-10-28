@@ -4,6 +4,7 @@ import { masterFields, type MasterBatch, type MasterBatchPreview } from "@/lib/m
 export type Fields = Record<string, string | number | null>;
 export type PdpjStatus = "all" | "found" | "not_found" | "empty" | "invalid" | "incomplete" | "unresolved" | "exception" | "ready";
 export interface PdpjReview {
+  activity?: import("./progress").ProcessActivity;
   id: number; batch_id: number; master_batch_ids: number[]; status: "in_progress" | "completed";
   revision: number; created_at: string; completed_at: string | null; completed_by: string;
   processing: PdpjProcessing | null;
@@ -53,6 +54,7 @@ export const pdpjApi = {
   reviews: async (id: number) => (await api.get<PdpjReview[]>(`/pdpj/batches/${id}/reviews`)).data,
   start: async (batchId: number, masterIds?: number[]) => (await api.post<PdpjReview>("/pdpj/reviews", { batch_id: batchId, master_batch_ids: masterIds, incremental: true })).data,
   advance: async (id: number, revision: number) => (await api.post<PdpjReview>(`/pdpj/reviews/${id}/advance`, { revision, chunk_size: 100 })).data,
+  progress: async (id: number) => (await api.get<PdpjReview>(`/pdpj/reviews/${id}/progress`)).data,
   pause: async (id: number) => (await api.post<PdpjReview>(`/pdpj/reviews/${id}/pause`)).data,
   resume: async (id: number) => (await api.post<PdpjReview>(`/pdpj/reviews/${id}/resume`)).data,
   summary: async (id: number) => (await api.get<PdpjSummary>(`/pdpj/reviews/${id}`)).data,

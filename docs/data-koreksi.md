@@ -36,6 +36,21 @@ termasuk setelah halaman dibuka ulang atau koneksi terputus. Jika satu bagian
 gagal disimpan, hasil bagian sebelumnya tetap tersedia dan bagian gagal dicoba
 ulang tanpa menggandakan kandidat.
 
+Refresh memulihkan aktivitas server beserta checkpoint melalui
+`GET /corrections/{kind}/checks/{id}/progress` setiap dua detik. Animasi dan
+tombol mengikuti permintaan yang masih aktif, termasuk persiapan master,
+pencocokan, validasi, dan penyelesaian. Ketika bagian aktif selesai tetapi
+halaman lama sudah ditutup, tampil **Menunggu dilanjutkan dari hasil tersimpan**.
+Tombol lanjut tidak mengirim pekerjaan baru selama bagian sebelumnya masih
+aktif. Jeda dari halaman baru menunggu bagian itu selesai disimpan. Pemantauan
+ringan ini tidak menjalankan ulang master atau ringkasan setiap dua detik.
+
+Aktivitas nyata dibedakan dari status checkpoint: SQLite memakai kunci berkas
+antarproses, PostgreSQL memakai advisory lock pada koneksi khusus. Kunci
+dilepas otomatis ketika proses server keluar; checkpoint dan hasil tetap
+tersimpan. Permintaan jeda mencegah bagian berikutnya mendahului penyimpanan
+status jeda. Status yang belum dapat diperiksa ditampilkan sebagai tidak pasti.
+
 Tabel, ringkasan, filter, dan detail langsung membaca hasil bagian yang sudah
 tersimpan, termasuk saat proses berjalan, dijeda, atau terhenti. Versi terbaru
 ditampilkan sebagai **hasil sementara** sampai validasi akhir dan penyelesaian

@@ -6,7 +6,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 from sqlalchemy import and_, case, func, or_
 from sqlalchemy.exc import SQLAlchemyError
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, object_session
 
 from app.database import get_db
 from app.models.pdpj import PdpjChange, PdpjRecommendation, PdpjReview, PdpjRow
@@ -26,6 +26,7 @@ from app.modules.pdpj.service import (
 )
 from app.modules.upload.storage import database_write_error
 from app.pdpj_warning_schema import DUPLICATE_IDPEL
+from app.processing_activity import monitor_request, request_activity
 
 DbSession = Annotated[Session, Depends(get_db)]
 router = APIRouter(prefix="/pdpj", tags=["Validasi PDPJ"])
@@ -98,6 +99,7 @@ def review_info(review: PdpjReview) -> dict[str, Any]:
         "completed_at": review.completed_at,
         "completed_by": review.completed_by,
         "processing": review.processing,
+        "activity": request_activity(object_session(review), "pdpj", review.id),
         "source_review_id": review.source_review_id,
         "publication": review.publication,
     }
@@ -199,6 +201,7 @@ def start_review(req: StartReview, db: DbSession) -> dict[str, Any]:
 
 
 @router.post("/reviews/{review_id}/advance")
+@monitor_request("pdpj", "review_id", "matching")
 def advance_processing(
     review_id: int, req: ProcessingStep, db: DbSession
 ) -> dict[str, Any]:
@@ -210,6 +213,7 @@ def advance_processing(
 
 
 @router.post("/reviews/{review_id}/pause")
+@monitor_request("pdpj", "review_id", "pausing")
 def pause_processing(review_id: int, db: DbSession) -> dict[str, Any]:
     """Wait for the active chunk and preserve all committed results."""
     try:
@@ -219,12 +223,19 @@ def pause_processing(review_id: int, db: DbSession) -> dict[str, Any]:
 
 
 @router.post("/reviews/{review_id}/resume")
+@monitor_request("pdpj", "review_id", "resuming")
 def resume_processing(review_id: int, db: DbSession) -> dict[str, Any]:
     """Continue with the saved sources and cursors, never create another review."""
     try:
         return review_info(control_processing(db, review_id, "running"))
     except SQLAlchemyError as exc:
         raise database_write_error(db, exc, "kelanjutan pemeriksaan PDPJ") from exc
+
+
+@router.get("/reviews/{review_id}/progress")
+def processing_status(review_id: int, db: DbSession) -> dict[str, Any]:
+    """Return a lightweight checkpoint and actual in-flight activity."""
+    return review_info(get_review(db, review_id))
 
 
 @router.get("/reviews/{review_id}")
@@ -464,6 +475,7 @@ def decide_row(
 
 
 @router.post("/reviews/{review_id}/complete")
+@monitor_request("pdpj", "review_id", "publishing")
 def finish_review(review_id: int, req: ReviewAction, db: DbSession) -> dict[str, Any]:
     """Finalize clean rows together; exceptions must already carry explicit reasons."""
     try:
@@ -478,6 +490,7 @@ def finish_review(review_id: int, req: ReviewAction, db: DbSession) -> dict[str,
 
 
 @router.post("/reviews/{review_id}/complete-with-exceptions")
+@monitor_request("pdpj", "review_id", "publishing")
 def finish_with_exceptions(
     review_id: int, req: CompleteWithExceptions, db: DbSession
 ) -> dict[str, Any]:

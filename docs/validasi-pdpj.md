@@ -46,6 +46,16 @@ berhasil disimpan akan dicoba ulang seluruhnya. Saat proses dijeda, hasil yang
 sudah tersimpan dapat ditinjau, diperbaiki, dan disetujui secara bertahap.
 Setelah pemeriksaan otomatis selesai, status menjadi **Menunggu tinjauan petugas**.
 
+Saat halaman dimuat ulang, status dipulihkan dari checkpoint dan aktivitas
+permintaan server melalui endpoint ringan `/pdpj/reviews/{id}/progress` setiap
+dua detik. Bagian yang masih dikerjakan tetap menampilkan animasi dan tombol
+jeda; setelah selesai tanpa pengiriman bagian berikutnya, status menjadi
+**Menunggu dilanjutkan dari hasil tersimpan**. Jeda yang diminta dari halaman
+baru menunggu transaksi aktif selesai. Proses yang dijeda atau terhenti tidak
+ditampilkan sebagai sedang bekerja hanya karena checkpoint lamanya `running`.
+Penyimpanan persetujuan juga dipantau setelah refresh. Polling tidak menjalankan
+pencocokan atau memuat seluruh master, dan permintaan bagian ganda ditolak.
+
 ### Menyelesaikan validasi data tersimpan sambil melanjutkan PDPJ
 
 Setelah **Hentikan sementara** selesai menyimpan bagian aktif, tombol

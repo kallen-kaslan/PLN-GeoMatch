@@ -7,7 +7,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 from sqlalchemy import and_, func, or_
 from sqlalchemy.exc import SQLAlchemyError
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, object_session
 
 from app.config import settings
 from app.database import get_db
@@ -38,6 +38,7 @@ from app.modules.master.router import batch_info
 from app.modules.spatial.pipeline import execute_pipeline
 from app.modules.upload.normalization import extract_standard_fields, validate_fields
 from app.modules.upload.storage import database_write_error
+from app.processing_activity import monitor_request, request_activity
 from app.tasks.spatial_tasks import (
     execute_batch_reconciliation_pipeline,
     mark_process_failed,
@@ -106,6 +107,7 @@ def run_info(run: MatchingRun) -> dict[str, Any]:
         "created_at": run.created_at,
         "completed_at": run.completed_at,
         "processing": run.processing,
+        "activity": request_activity(object_session(run), "correction", run.id),
     }
 
 
@@ -387,7 +389,17 @@ def rerun_check(
     }
 
 
+@router.get("/{kind}/checks/{process_id}/progress")
+def processing_status(kind: CorrectionKind, process_id: int, db: DbSession) -> dict[str, Any]:
+    check_process(db, kind, process_id)
+    run = db.query(MatchingRun).filter_by(process_id=process_id).order_by(MatchingRun.generation.desc()).first()
+    if run is None:
+        raise HTTPException(404, "Pemeriksaan tidak ditemukan")
+    return run_info(run)
+
+
 @router.post("/{kind}/checks/{process_id}/advance")
+@monitor_request("correction", "req.run_id", "matching")
 def advance_check(
     kind: CorrectionKind, process_id: int, req: ProgressStep, db: DbSession
 ) -> dict[str, Any]:
@@ -402,6 +414,7 @@ def advance_check(
 
 
 @router.post("/{kind}/checks/{process_id}/pause")
+@monitor_request("correction", "req.run_id", "pausing")
 def pause_check(
     kind: CorrectionKind, process_id: int, req: ProgressControl, db: DbSession
 ) -> dict[str, Any]:
@@ -412,6 +425,7 @@ def pause_check(
 
 
 @router.post("/{kind}/checks/{process_id}/resume")
+@monitor_request("correction", "req.run_id", "resuming")
 def resume_check(
     kind: CorrectionKind, process_id: int, req: ProgressControl, db: DbSession
 ) -> dict[str, Any]:

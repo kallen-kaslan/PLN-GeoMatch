@@ -29,7 +29,7 @@ export interface MasterPreparationProgress {
   file_index?: number; file_count?: number; current_file?: string | null;
   pdpj_total?: number; pdpj_rows?: number; materialized_rows?: number; eligible_rows?: number; excluded_rows?: number;
 }
-export interface CorrectionRun { id: number; generation: number; status: "queued" | "running" | "completed" | "failed"; failure_code?: string | null; radius_meters: number; total_targets: number; matched_targets: number; created_at: string; completed_at: string | null; processing?: CorrectionProcessing | null }
+export interface CorrectionRun { activity?: import("./progress").ProcessActivity; id: number; generation: number; status: "queued" | "running" | "completed" | "failed"; failure_code?: string | null; radius_meters: number; total_targets: number; matched_targets: number; created_at: string; completed_at: string | null; processing?: CorrectionProcessing | null }
 export interface CorrectionCheck { process_id: number; batch_id: number; category: CorrectionKind; pdpj_review_id: number; status: CorrectionRun["status"]; current_generation: number; master_snapshot_id: number | null; latest_run: CorrectionRun; runs: CorrectionRun[]; requested_run_id?: number; execution_mode?: string; pdpj_update?: { review_id: number; publication: PdpjPublication | null; conflicts: { record_id: number; codes: string[] }[] } | null }
 export interface CorrectionScope { batch_id?: number; process_id?: number; generation?: number }
 export interface CorrectionSummary { total_rows: number; not_checked: number; pdpj_conflicts: number; matched: number; no_candidates: number; invalid_data: number; incomplete_coordinates: number; identity_found: number; identity_not_found: number; eligible_searched: number; generation: number | null }
@@ -58,6 +58,7 @@ export const correctionApi = {
   start: async (kind: CorrectionKind, body: CheckRequest) => (await api.post<CorrectionCheck>(`/corrections/${kind}/checks`, body)).data,
   retry: async (kind: CorrectionKind, id: number, body: RetryRequest) => (await api.post<CorrectionCheck>(`/corrections/${kind}/checks/${id}/retry`, body)).data,
   advance: async (kind: CorrectionKind, id: number, run: CorrectionRun) => (await api.post<CorrectionRun>(`/corrections/${kind}/checks/${id}/advance`, { run_id: run.id, revision: run.processing!.revision, chunk_size: 100 })).data,
+  progress: async (kind: CorrectionKind, id: number) => (await api.get<CorrectionRun>(`/corrections/${kind}/checks/${id}/progress`)).data,
   pause: async (kind: CorrectionKind, id: number, runId: number) => (await api.post<CorrectionRun>(`/corrections/${kind}/checks/${id}/pause`, { run_id: runId })).data,
   resume: async (kind: CorrectionKind, id: number, runId: number) => (await api.post<CorrectionRun>(`/corrections/${kind}/checks/${id}/resume`, { run_id: runId })).data,
   summary: async (kind: CorrectionKind, scope: CorrectionScope) => (await api.get<CorrectionSummary>(`/corrections/${kind}/summary`, { params: scope })).data,

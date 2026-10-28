@@ -62,7 +62,7 @@ def servers(tmp_path_factory: pytest.TempPathFactory) -> Iterator[tuple[str, str
                     sys.executable,
                     "-m",
                     "uvicorn",
-                    "app.main:app",
+                    os.environ.get("E2E_ASGI_APP", "app.main:app"),
                     "--host",
                     "127.0.0.1",
                     "--port",
