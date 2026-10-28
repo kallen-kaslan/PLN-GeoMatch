@@ -9,12 +9,13 @@ from typing import Any
 from fastapi import HTTPException
 from sqlalchemy import func, or_
 from sqlalchemy.exc import SQLAlchemyError
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, load_only
 
 from app.models.pdpj import PdpjChange, PdpjRecommendation, PdpjReview, PdpjRow
 from app.models.upload import BatchStatus, DatasetType, SourceRecord, UploadBatch
 from app.modules.upload.normalization import (
     ALIASES,
+    NORMALIZATION_VERSION,
     extract_standard_fields,
     validate_fields,
     with_reference_fields,
@@ -126,7 +127,18 @@ def pending_pdpj_records(db: Session, review: PdpjReview) -> Iterator[SourceReco
 
 def normalized(record: SourceRecord, batch: UploadBatch) -> dict[str, Any]:
     """Read mapped source values without modifying the uploaded cells."""
-    fields = extract_standard_fields(record.data or {}, batch.column_mapping)
+    cached = record.normalized_data
+    if (
+        batch.catalog_version == NORMALIZATION_VERSION
+        and cached is not None
+        and cached.get("_normalization_version") == NORMALIZATION_VERSION
+        and record.is_valid
+        and not record.validation_errors
+    ):
+        fields = {**cached, "validation_errors": []}
+    else:
+        # Invalid and older imports still need their original parsing errors.
+        fields = extract_standard_fields(record.data or {}, batch.column_mapping)
     fields["tglbaca"] = fields["tglbaca"] or batch.period
     return fields
 
@@ -148,21 +160,40 @@ def add_recommendations(db: Session, review: PdpjReview, rows: list[PdpjRow]) ->
         .all()
     }
     identifiers = list(by_idpel)
+    masters = {
+        batch.id: batch
+        for batch in db.query(UploadBatch)
+        .filter(
+            UploadBatch.id.in_(review.master_batch_ids),
+            UploadBatch.status == BatchStatus.COMPLETED,
+            UploadBatch.dataset_type.in_(MASTER_TYPES),
+        )
+        .all()
+    }
     pending = []
     for offset in range(0, len(identifiers), 400):
         observations = (
-            db.query(SourceRecord, UploadBatch)
-            .join(UploadBatch, SourceRecord.batch_id == UploadBatch.id)
+            db.query(SourceRecord)
+            .options(
+                load_only(
+                    SourceRecord.id,
+                    SourceRecord.batch_id,
+                    SourceRecord.normalized_data,
+                    SourceRecord.is_valid,
+                    SourceRecord.validation_errors,
+                    SourceRecord.row_number,
+                )
+            )
             .filter(
-                UploadBatch.id.in_(review.master_batch_ids),
-                UploadBatch.status == BatchStatus.COMPLETED,
-                UploadBatch.dataset_type.in_(MASTER_TYPES),
+                SourceRecord.batch_id.in_(masters),
                 SourceRecord.idpel.in_(identifiers[offset : offset + 400]),
             )
-            .order_by(UploadBatch.id, SourceRecord.id)
             .all()
         )
-        for record, batch in observations:
+        # SQL ORDER BY batch/id made SQLite scan whole files to satisfy ordering.
+        # Sort just the indexed matches, preserving existing recommendation order.
+        for record in sorted(observations, key=lambda item: (item.batch_id, item.id)):
+            batch = masters[record.batch_id]
             fields = normalized(record, batch)
             errors = fields.pop("validation_errors")
             for row in by_idpel.get(fields["idpel"], []):
@@ -574,6 +605,7 @@ def match_processing_chunk(
         progress["stage"] = "validating"
 
 
+@timed("pdpj.advance")
 def advance_review(
     db: Session, review_id: int, revision: int, chunk_size: int = 400
 ) -> PdpjReview:

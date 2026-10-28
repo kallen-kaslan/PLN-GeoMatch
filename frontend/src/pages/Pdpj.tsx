@@ -10,6 +10,7 @@ import { PdpjProgress } from "@/components/pdpj/PdpjProgress";
 import type { ApiError } from "@/lib/api";
 import { MASTER_TYPES, displayValue, masterApi, type ImportResult } from "@/lib/master";
 import { existenceLabel, pdpjApi, reviewLabel, type PdpjCompletion, type PdpjStatus, type PdpjSummary } from "@/lib/pdpj";
+import { newestCheckpoint } from "@/lib/progress";
 import { useAppStore } from "@/store/app";
 
 const control = "rounded-sm border-2 border-neo-border bg-white px-3 py-2 text-sm disabled:opacity-50";
@@ -37,6 +38,9 @@ export default function PdpjPage() {
   const deferredSearch = useDeferredValue(search);
   const [status, setStatus] = useState<PdpjStatus>("all");
   const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(25);
+  const [pageInput, setPageInput] = useState<string | null>(null);
+  const [pageError, setPageError] = useState("");
   const [rowId, setRowId] = useState<number | null>(null);
   const [notice, setNotice] = useState("");
   const [completion, setCompletion] = useState<PdpjCompletion | null>(null);
@@ -45,14 +49,24 @@ export default function PdpjPage() {
   const [bulkSaving, setBulkSaving] = useState(false);
   const [autoRunId, setAutoRunId] = useState<number | null>(null);
 
+  const navigatePage = (next: number) => {
+    setPage(next); setPageInput(null); setPageError(""); setRowId(null);
+  };
+
   const batches = useQuery({ queryKey: ["pdpj", "batches"], queryFn: pdpjApi.batches });
   const batchId = requestedBatch ?? batches.data?.[0]?.id ?? null;
   const batch = batches.data?.find((item) => item.id === batchId);
   const reviews = useQuery({ queryKey: ["pdpj", "reviews", batchId], queryFn: () => pdpjApi.reviews(batchId!), enabled: batchId !== null });
   const selectedReview = requestedReview ? reviews.data?.find((item) => item.id === requestedReview) : reviews.data?.[0];
   const reviewId = selectedReview?.id;
-  const review = useQuery({ queryKey: ["pdpj", reviewId, "summary"], queryFn: () => pdpjApi.summary(reviewId!), enabled: reviewId !== undefined });
-  const records = useQuery({ queryKey: ["pdpj", reviewId, "rows", deferredSearch, status, page], queryFn: () => pdpjApi.rows(reviewId!, { q: deferredSearch, status, skip: (page - 1) * 25, limit: 25 }), enabled: reviewId !== undefined });
+  const review = useQuery({ queryKey: ["pdpj", reviewId, "summary"], queryFn: async ({ signal }) => {
+    const fresh = await pdpjApi.summary(reviewId!, signal);
+    const current = queryClient.getQueryData<PdpjSummary>(["pdpj", reviewId, "summary"]);
+    return current && newestCheckpoint(current, fresh, (value) => value.revision) === current
+      ? { ...fresh, revision: current.revision, processing: current.processing, activity: current.activity, status: current.status, completed_at: current.completed_at, completed_by: current.completed_by }
+      : fresh;
+  }, enabled: reviewId !== undefined });
+  const records = useQuery({ queryKey: ["pdpj", reviewId, "rows", deferredSearch, status, page, pageSize], queryFn: ({ signal }) => pdpjApi.rows(reviewId!, { q: deferredSearch, status, skip: (page - 1) * pageSize, limit: pageSize }, signal), enabled: reviewId !== undefined });
   const masters = useQuery({ queryKey: ["masters", "all-ready"], queryFn: async () => (await Promise.all(MASTER_TYPES.map((item) => masterApi.batches(item.key)))).flat().filter((item) => item.status === "completed") });
   const saved = useQuery({ queryKey: ["pdpj", "batch", resumeId], queryFn: () => pdpjApi.batch(resumeId!), enabled: resumeId !== null });
   const activeMasterIds = selectedMasters ?? masters.data?.map((item) => item.id) ?? [];
@@ -63,7 +77,7 @@ export default function PdpjPage() {
     onSuccess: (result) => {
       setParams({ batch_id: String(result.batch_id), review_id: String(result.id) });
       setAutoRunId(result.processing?.state === "running" ? result.id : null);
-      setRowId(null); setPage(1); setSearch(""); setStatus("all"); setNotice("Pemeriksaan PDPJ tersimpan. Progres dan hasil akan diperbarui selama proses berjalan.");
+      setRowId(null); navigatePage(1); setSearch(""); setStatus("all"); setNotice("Pemeriksaan PDPJ tersimpan. Progres dan hasil akan diperbarui selama proses berjalan.");
       void queryClient.invalidateQueries({ queryKey: ["pdpj"] });
     },
   });
@@ -79,16 +93,25 @@ export default function PdpjPage() {
   });
 
   const changeBatch = (id: number) => {
-    setParams({ batch_id: String(id) }); setRowId(null); setPage(1); setStatus("all"); setSearch("");
+    setParams({ batch_id: String(id) }); setRowId(null); navigatePage(1); setStatus("all"); setSearch("");
     setShowImport(false); setResumeId(null); setNotice("");
   };
   const imported = (result: ImportResult, filename: string) => {
-    setParams({ batch_id: String(result.batch_id) }); setShowImport(false); setResumeId(null); setRowId(null); setPage(1);
+    setParams({ batch_id: String(result.batch_id) }); setShowImport(false); setResumeId(null); setRowId(null); navigatePage(1);
     setNotice(`${filename} tersimpan: ${count(result.rows)} baris. Jalankan pemeriksaan IDPEL terhadap master.`);
     void queryClient.invalidateQueries({ queryKey: ["pdpj"] });
   };
   const failure = batches.isError || reviews.isError || review.isError || records.isError || masters.isError;
-  const totalPages = Math.max(1, Math.ceil((records.data?.total ?? 0) / 25));
+  const totalPages = Math.max(1, Math.ceil((records.data?.total ?? 0) / pageSize));
+  const openPage = (event: React.FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    const requested = Number(pageInput ?? page);
+    if (!Number.isInteger(requested) || requested < 1 || requested > totalPages) {
+      setPageError(`Masukkan nomor halaman antara 1 dan ${count(totalPages)}.`);
+      return;
+    }
+    navigatePage(requested);
+  };
   const processingIncomplete = !!review.data?.processing && review.data.processing.state !== "ready";
   const processingLocked = processBusy || review.data?.activity?.active === true || (!!review.data?.processing && (review.data.processing.state === "running" || review.data.processing.processed_rows === 0));
   return <div className="space-y-5 sm:space-y-6">
@@ -101,7 +124,7 @@ export default function PdpjPage() {
       {batch?.status !== "completed" && batch && <div className="flex flex-wrap items-center justify-between gap-3 rounded-sm border border-amber-700 bg-amber-50 p-3 text-xs text-amber-900"><p>Selesaikan mapping berkas sebelum pemeriksaan.</p><button type="button" onClick={() => { setResumeId(batch.id); setShowImport(true); }} className={button}>Lanjutkan mapping PDPJ</button></div>}
       {!batches.isPending && !batches.data?.length && <p className="text-sm text-neo-border">Belum ada berkas PDPJ. Mulai dengan tombol Unggah PDPJ.</p>}
       <details className="rounded-sm border border-gray-300 p-3"><summary className="cursor-pointer text-xs font-bold">Sumber master untuk pemeriksaan baru ({activeMasterIds.length} berkas)</summary><p className="mt-2 text-xs text-neo-border">Secara bawaan seluruh master siap dipakai. Pemeriksaan menyimpan daftar sumbernya agar hasil tidak berubah saat ada unggahan baru.</p><div className="mt-3 grid gap-2 sm:grid-cols-2">{masters.data?.map((item) => <label key={item.id} className="flex min-w-0 items-start gap-2 text-xs"><input type="checkbox" checked={activeMasterIds.includes(item.id)} onChange={(event) => setSelectedMasters(event.target.checked ? [...activeMasterIds, item.id] : activeMasterIds.filter((id) => id !== item.id))} disabled={start.isPending || latestReview?.status === "in_progress"} className="mt-0.5 size-4 shrink-0 accent-neo-accent" /><span className="break-words">{item.dataset_type.toUpperCase()} · {item.filename}{item.period ? ` · ${item.period}` : ""}</span></label>)}</div>{!masters.isPending && !masters.data?.length && <p className="mt-2 text-xs text-amber-900">Unggah referensi melalui <Link to="/master/prabayar" className="font-bold underline">Data Master</Link> terlebih dahulu.</p>}</details>
-      <div className="flex flex-col justify-between gap-3 sm:flex-row sm:items-end"><label className="flex flex-1 flex-col gap-1.5 text-xs font-bold">Versi pemeriksaan<select aria-label="Versi pemeriksaan" disabled={!reviews.data?.length} value={reviewId ?? ""} onChange={(event) => { setParams({ batch_id: String(batchId), review_id: event.target.value }); setRowId(null); setPage(1); }} className={control}><option value="" disabled>Belum diperiksa</option>{reviews.data?.map((item) => <option key={item.id} value={item.id}>Pemeriksaan #{item.id} · {reviewLabel(item.status, item.processing)}</option>)}</select></label><button type="button" onClick={() => start.mutate()} disabled={batch?.status !== "completed" || !activeMasterIds.length || start.isPending || reviews.isPending || latestReview?.status === "in_progress"} className={buttonClass.primary}>{start.isPending && <LoaderCircle size={16} className="animate-spin" />}{latestReview ? "Periksa ulang PDPJ" : "Periksa IDPEL ke master"}</button></div>
+      <div className="flex flex-col justify-between gap-3 sm:flex-row sm:items-end"><label className="flex flex-1 flex-col gap-1.5 text-xs font-bold">Versi pemeriksaan<select aria-label="Versi pemeriksaan" disabled={!reviews.data?.length} value={reviewId ?? ""} onChange={(event) => { setParams({ batch_id: String(batchId), review_id: event.target.value }); setRowId(null); navigatePage(1); }} className={control}><option value="" disabled>Belum diperiksa</option>{reviews.data?.map((item) => <option key={item.id} value={item.id}>Pemeriksaan #{item.id} · {reviewLabel(item.status, item.processing)}</option>)}</select></label><button type="button" onClick={() => start.mutate()} disabled={batch?.status !== "completed" || !activeMasterIds.length || start.isPending || reviews.isPending || latestReview?.status === "in_progress"} className={buttonClass.primary}>{start.isPending && <LoaderCircle size={16} className="animate-spin" />}{latestReview ? "Periksa ulang PDPJ" : "Periksa IDPEL ke master"}</button></div>
       {latestReview?.status === "in_progress" && <p className="text-xs text-neo-border">Lanjutkan pemeriksaan otomatis yang belum selesai atau tinjau hasilnya sebelum membuat versi baru.</p>}
       {start.isError && <p role="alert" className="text-sm text-red-700">{(start.error as unknown as ApiError).message}</p>}
     </section>
@@ -123,9 +146,28 @@ export default function PdpjPage() {
         {review.data.status === "completed" && <p className="rounded-sm border border-green-700 bg-green-50 p-3 text-xs text-green-900">Diselesaikan oleh {review.data.completed_by}. Pemeriksaan ini terkunci; gunakan Periksa ulang PDPJ untuk pemeriksaan berikutnya.</p>}
         <details className="text-xs"><summary className="cursor-pointer font-semibold">Lihat sumber master pemeriksaan ini</summary><ul className="mt-2 list-disc space-y-1 pl-4">{review.data.masters.map((item) => <li key={item.id} className="break-words">{item.dataset_type.toUpperCase()} · {item.filename}{item.source_sheet ? ` · Sheet ${item.source_sheet}` : ""}</li>)}</ul></details>
         {finish.error && <p role="alert" className="text-sm text-red-700">{finish.error.message}</p>}
-        <div className="flex flex-col gap-3 sm:flex-row"><input type="search" aria-label="Cari data PDPJ" placeholder="Cari IDPEL, nama, atau nomor meter…" value={search} onChange={(event) => { setSearch(event.target.value); setPage(1); }} className={`${control} min-w-0 flex-1`} /><select aria-label="Filter pemeriksaan PDPJ" value={status} onChange={(event) => { setStatus(event.target.value as PdpjStatus); setPage(1); }} className={control}>{[["all", "Semua kondisi"], ["found", "IDPEL ditemukan"], ["not_found", "IDPEL tidak ditemukan"], ["empty", "IDPEL kosong"], ["invalid", "Format IDPEL bermasalah"], ["incomplete", "Koordinat belum lengkap"], ["unresolved", "Masalah belum selesai"], ["ready", "Siap diselesaikan"], ["exception", "Dengan pengecualian"]].map(([key, label]) => <option key={key} value={key}>{label}</option>)}</select></div>
+        <div className="flex flex-col gap-3 sm:flex-row"><input type="search" aria-label="Cari data PDPJ" placeholder="Cari IDPEL, nama, atau nomor meter…" value={search} onChange={(event) => { setSearch(event.target.value); navigatePage(1); }} className={`${control} min-w-0 flex-1`} /><select aria-label="Filter pemeriksaan PDPJ" value={status} onChange={(event) => { setStatus(event.target.value as PdpjStatus); navigatePage(1); }} className={control}>{[["all", "Semua kondisi"], ["found", "IDPEL ditemukan"], ["not_found", "IDPEL tidak ditemukan"], ["empty", "IDPEL kosong"], ["invalid", "Format IDPEL bermasalah"], ["incomplete", "Koordinat belum lengkap"], ["unresolved", "Masalah belum selesai"], ["ready", "Siap diselesaikan"], ["exception", "Dengan pengecualian"]].map(([key, label]) => <option key={key} value={key}>{label}</option>)}</select></div>
         <div className="overflow-x-auto rounded-sm border border-neo-border"><table className="w-full min-w-[900px] text-left text-xs"><thead className="bg-gray-100"><tr>{["Baris", "IDPEL / Nama", "Keberadaan IDPEL", "Koordinat", "Rekomendasi", "Review", "Detail"].map((label) => <th key={label} className="p-3">{label}</th>)}</tr></thead><tbody>{records.isPending ? <tr><td colSpan={7} className="p-8 text-center">Memuat hasil pemeriksaan…</td></tr> : records.isError ? <tr><td colSpan={7} className="p-8 text-center text-red-700">Hasil belum dapat dimuat.</td></tr> : records.data?.items.length ? records.data.items.map((row) => <tr key={row.id} className={`border-t border-gray-200 ${row.id === rowId ? "bg-amber-50" : "hover:bg-neo-white"}`}><td className="p-3 font-mono">{row.row_number}</td><td className="p-3"><p className="font-mono font-bold">{displayValue(row.fields.idpel)}</p><p className="mt-1 max-w-48 truncate">{displayValue(row.fields.nama)}</p></td><td className={`p-3 font-semibold ${row.existence === "found" ? "text-green-800" : "text-red-700"}`}>{existenceLabel[row.existence]}</td><td className="p-3"><p className="font-mono">{displayValue(row.fields.lat)}, {displayValue(row.fields.lon)}</p><p className="mt-1 text-[10px]">{row.coordinates_complete ? "Lengkap" : "Belum lengkap"}</p></td><td className="p-3">{row.recommendation_count} sumber</td><td className="p-3">{row.exception ? "Pengecualian beralasan" : row.issues.length ? `${row.issues.length} masalah` : row.reviewed ? "Sudah ditinjau" : "Siap disetujui"}{!!row.warnings?.length && <p className="mt-1 text-[10px] text-blue-800">IDPEL berulang · boleh dilanjutkan</p>}</td><td className="p-3"><button type="button" aria-label={`Detail PDPJ baris ${row.row_number}`} disabled={processingLocked} onClick={() => setRowId(row.id)} className={button}>Detail</button></td></tr>) : <tr><td colSpan={7} className="p-8 text-center">Tidak ada baris sesuai filter.</td></tr>}</tbody></table></div>
-        <footer className="flex flex-wrap items-center justify-between gap-3 text-xs"><p>{count(records.data?.total)} baris sesuai filter · Halaman {page} dari {totalPages}</p><div className="flex gap-2"><button type="button" aria-label="Halaman PDPJ sebelumnya" disabled={page <= 1 || records.isFetching} onClick={() => setPage((previous) => previous - 1)} className={button}><ArrowLeft size={16} /></button><button type="button" aria-label="Halaman PDPJ berikutnya" disabled={page >= totalPages || records.isFetching} onClick={() => setPage((previous) => previous + 1)} className={button}><ArrowRight size={16} /></button></div></footer>
+        <footer aria-label="Navigasi halaman PDPJ" className="flex flex-wrap items-center justify-between gap-3 text-xs">
+          <p aria-live="polite">{count(records.data?.total)} baris sesuai filter. Halaman {count(page)} dari {count(totalPages)}</p>
+          <div className="flex flex-wrap items-center gap-3">
+            <label className="flex items-center gap-2 font-bold">Baris per halaman
+              <select aria-label="Baris per halaman PDPJ" value={pageSize} onChange={(event) => { setPageSize(Number(event.target.value)); navigatePage(1); }} className={control}>
+                {[10, 25, 50, 100].map((size) => <option key={size} value={size}>{size} baris</option>)}
+              </select>
+            </label>
+            <form noValidate onSubmit={openPage} className="flex flex-wrap items-center gap-2">
+              <label htmlFor="pdpj-page-number" className="font-bold">Ke halaman</label>
+              <input id="pdpj-page-number" aria-label="Nomor halaman PDPJ" aria-invalid={!!pageError} aria-describedby={pageError ? "pdpj-page-error" : undefined} type="number" inputMode="numeric" min={1} max={totalPages} step={1} value={pageInput ?? page} onChange={(event) => { setPageInput(event.target.value); setPageError(""); }} disabled={records.isFetching || !records.data?.total} className={`${control} w-24`} />
+              <button type="submit" disabled={records.isFetching || !records.data?.total} className={button}>Buka halaman</button>
+            </form>
+            <div className="flex gap-2">
+              <button type="button" aria-label="Halaman PDPJ sebelumnya" disabled={page <= 1 || records.isFetching} onClick={() => navigatePage(page - 1)} className={button}><ArrowLeft size={16} /></button>
+              <button type="button" aria-label="Halaman PDPJ berikutnya" disabled={page >= totalPages || records.isFetching} onClick={() => navigatePage(page + 1)} className={button}><ArrowRight size={16} /></button>
+            </div>
+          </div>
+          {pageError && <p id="pdpj-page-error" role="alert" className="w-full text-red-700">{pageError}</p>}
+        </footer>
       </section>
       {rowId !== null && !processingLocked && <PdpjRowDetail key={`${reviewId}-${rowId}`} review={review.data} rowId={rowId} actor={actor} onClose={() => setRowId(null)} />}
     </>}

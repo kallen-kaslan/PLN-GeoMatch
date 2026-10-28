@@ -26,6 +26,7 @@ from app.models.upload import BatchStatus, DatasetType, SourceRecord, UploadBatc
 from app.modules.corrections.decisions import router as decisions_router
 from app.modules.corrections.pdpj_updates import pdpj_update_info
 from app.modules.corrections.progress import advance_progress, control_progress
+from app.modules.corrections.results import router as results_router
 from app.modules.corrections.service import (
     CorrectionKind,
     check_process,
@@ -613,3 +614,4 @@ def record_detail(
 
 
 router.include_router(decisions_router)
+router.include_router(results_router)

@@ -1,41 +1,28 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState } from "react";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useSearchParams } from "react-router-dom";
+import { DecisionHistory } from "@/components/corrections/DecisionHistory";
+import { resultsApi, type ProcessHistory } from "@/lib/results";
 import { Link } from "react-router-dom";
 import { api } from "@/lib/api";
 import { History, RotateCw, Trash2, ExternalLink, FileSpreadsheet, MapPin } from "lucide-react";
 
-interface ProcessItem {
-  id: number;
-  process_name: string;
-  radius_meters: number;
-  matching_status: string;
-  review_status: string;
-  total_targets: number;
-  matched_targets: number;
-  unmatched_targets: number;
-  created_at: string;
-}
 
 export default function HistoryPage() {
-  const [processes, setProcesses] = useState<ProcessItem[]>([]);
-  const [loading, setLoading] = useState(true);
+  const queryClient = useQueryClient();
+  const [params, setParams] = useSearchParams();
+  const history = useQuery({ queryKey: ["process-history"], queryFn: ({ signal }) => resultsApi.processes(signal), refetchInterval: 5000 });
+  const processes = history.data ?? [];
+  const loading = history.isPending;
+  const selected = processes.find((item) => item.id === Number(params.get("process_id")));
+  const fetchHistory = () => { setError(null); void history.refetch(); };
+  const setProcesses = (update: ProcessHistory[] | ((previous: ProcessHistory[]) => ProcessHistory[])) => queryClient.setQueryData<ProcessHistory[]>(["process-history"], (previous = []) => typeof update === "function" ? update(previous) : update);
   const [deletingId, setDeletingId] = useState<number | null>(null);
   const [clearingAll, setClearingAll] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [successMsg, setSuccessMsg] = useState<string | null>(null);
 
-  const fetchHistory = useCallback(() => {
-    api.get("/history/processes")
-      .then((res) => {
-        setProcesses(res.data);
-        setError(null);
-      })
-      .catch((err: any) => {
-        setError(err.message || "Gagal memuat riwayat proses.");
-      })
-      .finally(() => {
-        setLoading(false);
-      });
-  }, []);
+  const remove = useMutation({ mutationFn: (path: string) => api.delete(path) });
 
   const handleDeleteProcess = async (processId: number, processName: string) => {
     if (!window.confirm(`Hapus riwayat proses #${processId} ("${processName}") beserta data kandidatnya?`)) {
@@ -45,7 +32,7 @@ export default function HistoryPage() {
     setError(null);
     setSuccessMsg(null);
     try {
-      const res = await api.delete(`/history/processes/${processId}`);
+      const res = await remove.mutateAsync(`/history/processes/${processId}`);
       setSuccessMsg(res.data.message || `Proses #${processId} berhasil dihapus.`);
       setProcesses((prev) => prev.filter((p) => p.id !== processId));
     } catch (err: any) {
@@ -63,7 +50,7 @@ export default function HistoryPage() {
     setError(null);
     setSuccessMsg(null);
     try {
-      const res = await api.delete("/history/processes");
+      const res = await remove.mutateAsync("/history/processes");
       setSuccessMsg(res.data.message || "Semua riwayat berhasil dihapus.");
       setProcesses([]);
     } catch (err: any) {
@@ -72,10 +59,6 @@ export default function HistoryPage() {
       setClearingAll(false);
     }
   };
-
-  useEffect(() => {
-    fetchHistory();
-  }, [fetchHistory]);
 
   return (
     <div className="space-y-6">
@@ -103,13 +86,12 @@ export default function HistoryPage() {
           )}
           <button
             onClick={() => {
-              setLoading(true);
               fetchHistory();
             }}
-            disabled={loading}
+            disabled={history.isFetching}
             className="touch-min px-3.5 py-2 border-2 border-neo-border rounded-sm text-xs font-bold bg-white hover:bg-[#e5e4e7] shadow-[2px_2px_0_#0a0a0a] active:translate-y-0.5 disabled:opacity-50 flex items-center gap-1.5"
           >
-            <RotateCw className={`w-3.5 h-3.5 ${loading ? "animate-spin" : ""}`} />
+            <RotateCw className={`w-3.5 h-3.5 ${history.isFetching ? "animate-spin" : ""}`} />
             <span>Muat Ulang</span>
           </button>
         </div>
@@ -121,7 +103,7 @@ export default function HistoryPage() {
         </div>
       )}
 
-      {error && (
+      {(error || history.isError) && (
         <div className="p-4 border-2 border-[#dc2626] bg-[#fee2e2] text-[#dc2626] rounded-sm text-sm font-semibold">
           {error}
         </div>
@@ -149,9 +131,8 @@ export default function HistoryPage() {
                     <span className="inline-block px-1.5 py-0.5 bg-neo-black text-white text-[10px] font-mono font-bold rounded mr-1.5">
                       #{p.id}
                     </span>
-                    <h3 className="inline text-sm font-black text-neo-black">
-                      {p.process_name}
-                    </h3>
+                    <h3 className="inline text-sm font-black text-neo-black">{p.process_name}</h3>
+                    {p.category && <p className="mt-1 text-xs">{p.filename} | {p.partial ? "Hasil sebagian" : "Pemeriksaan selesai"} | {p.saved_rows} baris tersimpan | {p.not_processed} belum diproses | {p.chosen_count} pilihan aktif</p>}
                   </div>
                   <span className="shrink-0 px-2 py-0.5 border border-neo-border rounded text-[10px] uppercase font-bold bg-[#f1f1f4]">
                     {p.review_status.replace("_", " ")}
@@ -188,7 +169,7 @@ export default function HistoryPage() {
 
                 <div className="pt-2 border-t border-neo-border flex items-center gap-2">
                   <Link
-                    to={`/candidates?process_id=${p.id}`}
+                    to={p.category ? `/peta-koreksi?category=${p.category}&batch_id=${p.batch_id}&process_id=${p.id}` : `/candidates?process_id=${p.id}`}
                     className="touch-min flex-1 flex items-center justify-center gap-1 px-3 py-2 border-2 border-neo-black rounded text-xs font-bold bg-white hover:bg-[#e5e4e7] shadow-[2px_2px_0_#0a0a0a] active:translate-y-0.5"
                     title="Buka Peta & Review Kandidat"
                   >
@@ -203,6 +184,7 @@ export default function HistoryPage() {
                     <FileSpreadsheet className="w-3.5 h-3.5 text-neo-accent" />
                     Hasil
                   </Link>
+                  {p.category && <button type="button" onClick={() => setParams({ process_id: String(p.id) })} className="text-xs font-bold underline">Riwayat pilihan</button>}
                   <button
                     onClick={() => handleDeleteProcess(p.id, p.process_name)}
                     disabled={deletingId === p.id}
@@ -237,6 +219,7 @@ export default function HistoryPage() {
                     <td className="p-3 border-r border-neo-border font-bold">#{p.id}</td>
                     <td className="p-3 border-r border-neo-border font-semibold text-neo-black">
                       {p.process_name}
+                      {p.category && <p className="mt-1 text-xs">{p.filename} | {p.partial ? "Hasil sebagian" : "Pemeriksaan selesai"} | {p.saved_rows} baris tersimpan | {p.not_processed} belum diproses | {p.chosen_count} pilihan aktif</p>}
                     </td>
                     <td className="p-3 border-r border-neo-border text-gray-600">
                       {new Date(p.created_at).toLocaleString("id-ID")}
@@ -255,7 +238,7 @@ export default function HistoryPage() {
                     <td className="p-3 text-center">
                       <div className="flex justify-center items-center gap-1.5">
                         <Link
-                          to={`/candidates?process_id=${p.id}`}
+                          to={p.category ? `/peta-koreksi?category=${p.category}&batch_id=${p.batch_id}&process_id=${p.id}` : `/candidates?process_id=${p.id}`}
                           className="px-2.5 py-1.5 min-h-[34px] flex items-center gap-1 border border-neo-border rounded text-[11px] font-bold bg-white hover:bg-[#e5e4e7] shadow-[0_1px_0_#0a0a0a]"
                           title="Buka Peta & Review Kandidat"
                         >
@@ -270,6 +253,7 @@ export default function HistoryPage() {
                           <FileSpreadsheet className="w-3 h-3 text-neo-accent" />
                           Hasil
                         </Link>
+                        {p.category && <button type="button" onClick={() => setParams({ process_id: String(p.id) })} className="text-xs font-bold underline">Riwayat pilihan</button>}
                         <button
                           onClick={() => handleDeleteProcess(p.id, p.process_name)}
                           disabled={deletingId === p.id}
@@ -287,6 +271,7 @@ export default function HistoryPage() {
           </div>
         </>
       )}
+      {selected?.category && <DecisionHistory key={selected.id} kind={selected.category} processId={selected.id} />}
     </div>
   );
 }

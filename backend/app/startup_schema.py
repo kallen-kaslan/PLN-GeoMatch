@@ -45,6 +45,7 @@ def prepare_database(connection: Connection) -> None:
     from app.master_schema import upgrade_master_catalog
     from app.pdpj_progress_schema import upgrade_pdpj_progress
     from app.pdpj_publication_schema import upgrade_pdpj_publications
+    from app.pdpj_results_schema import upgrade_pdpj_results
     from app.pdpj_schema import upgrade_pdpj_validation
     from app.performance_schema import upgrade_performance
     from app.schema_compatibility import upgrade_foundations
@@ -59,6 +60,7 @@ def prepare_database(connection: Connection) -> None:
     upgrade_master_catalog(connection)
     apply_once(connection, "pdpj", "f6ac81d43e20", upgrade_pdpj_validation)
     apply_once(connection, "pdpj_progress", "a91d72f04c63", upgrade_pdpj_progress)
+    apply_once(connection, "pdpj_results", "e35fb6148a07", upgrade_pdpj_results)
     apply_once(
         connection, "pdpj_publications", "b02c83e15d74", upgrade_pdpj_publications
     )

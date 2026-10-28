@@ -66,4 +66,8 @@ Pengiriman `candidate_id: null` membatalkan pilihan. Pembacaan riwayat selalu me
 
 Pengujian backend mencakup penggunaan snapshot tanpa pembacaan master, batas radius, satu pilihan aktif, penggantian/pembatalan, snapshot audit, idempotensi, revisi lama, cakupan yang salah, pencarian berjalan, perluasan radius, versi historis, pelindungan endpoint lama, migrasi, dan reset dengan foreign key aktif. Pengujian browser memakai API dan database sementara untuk tooltip, titik bertumpuk, seluruh titik di luar halaman tabel, kedua kategori, kartu kandidat, pilihan dan riwayat, perluasan/pengurangan radius, tampilan historis, serta mobile ketika renderer tidak tersedia.
 
-Tahap 5 berikutnya adalah **Hasil Koreksi** per kategori dan ekspor berdasarkan pilihan aktif, dengan perbandingan data sebelum/sesudah serta riwayat kandidat. Halaman hasil lama belum diganti pada tahap ini.
+**Hasil Koreksi** per kategori dan ekspor pilihan aktif sudah tersedia melalui
+tautan **Lihat Hasil Koreksi**, termasuk hasil sebagian. Riwayat Proses membaca
+pilihan dan jumlah baris tersimpan dari pemeriksaan yang sama. Perbandingan
+target/kandidat, ekspor, dan jejak perubahan dijelaskan di
+[hasil-koreksi.md](hasil-koreksi.md). Hasil dari alur lama tetap tersedia.

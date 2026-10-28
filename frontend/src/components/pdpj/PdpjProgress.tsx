@@ -15,6 +15,8 @@ export function PdpjProgress({ review, autoStart, saving = false, onBusyChange }
   const queryClient = useQueryClient();
   const generation = useRef(0);
   const activeRequest = useRef<Promise<PdpjReview> | null>(null);
+  const lastResultsRefresh = useRef(0);
+  const resultsRefreshTimer = useRef<number | undefined>(undefined);
   const [working, setWorking] = useState(false);
   const [stopping, setStopping] = useState(false);
   const [error, setError] = useState("");
@@ -33,12 +35,30 @@ export function PdpjProgress({ review, autoStart, saving = false, onBusyChange }
 
   const publish = useCallback(async (result: PdpjReview, refresh = true) => {
     setLive((old) => newestCheckpoint(old, result, revision));
-    await queryClient.cancelQueries({ queryKey: ["pdpj", result.id] });
     // A slow response must never replace a newer pause/resume checkpoint.
     queryClient.setQueryData<PdpjSummary>(["pdpj", result.id, "summary"], (old) => old && newestCheckpoint<PdpjReview>(old, result, revision) === result ? { ...old, ...result } : old);
     queryClient.setQueryData<PdpjReview[]>(["pdpj", "reviews", result.batch_id], (old) => old?.map((item) => item.id === result.id && newestCheckpoint(item, result, revision) === result ? result : item));
-    if (refresh) void queryClient.invalidateQueries({ queryKey: ["pdpj", result.id] });
+    if (refresh) {
+      const force = result.status === "completed" || result.processing?.state !== "running";
+      const refreshResults = () => {
+        resultsRefreshTimer.current = undefined;
+        lastResultsRefresh.current = Date.now();
+        void queryClient.invalidateQueries({ queryKey: ["pdpj", result.id] }, { cancelRefetch: force });
+      };
+      const remaining = 3000 - (Date.now() - lastResultsRefresh.current);
+      if (force || remaining <= 0) {
+        window.clearTimeout(resultsRefreshTimer.current);
+        refreshResults();
+      } else if (resultsRefreshTimer.current === undefined) {
+        resultsRefreshTimer.current = window.setTimeout(refreshResults, remaining);
+      }
+    }
   }, [queryClient]);
+
+  useEffect(() => {
+    lastResultsRefresh.current = Date.now();
+    return () => window.clearTimeout(resultsRefreshTimer.current);
+  }, []);
 
   const monitor = useProcessMonitor({ queryKey: ["process-monitor", "pdpj", review.id], queryFn: () => pdpjApi.progress(review.id),
     checkpoint, revision, enabled: !!progress && (checkpoint.status !== "completed" || serverActive), publish });

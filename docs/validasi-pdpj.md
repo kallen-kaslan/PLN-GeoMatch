@@ -13,6 +13,19 @@ Menu **Data PDPJ** (`/pdpj`) sekarang terpisah dari Data Master dan Data Koreksi
 7. Setelah masalah selesai, pilih **Selesaikan validasi PDPJ**. Tindakan ini menyetujui seluruh baris yang sudah lengkap dan mengunci pemeriksaan. Popup keberhasilan baru muncul setelah penyimpanan berhasil.
 8. Buka Data Koreksi, pilih PDPJ yang sudah selesai divalidasi sebagai acuan pengecualian master, lalu lanjutkan alur koreksi yang tersedia.
 
+Di bawah tabel, pilih **10, 25, 50, atau 100 baris per halaman**. Isi **Ke halaman**
+lalu tekan Enter atau **Buka halaman** untuk melompat langsung. Nomor halaman
+mengikuti jumlah hasil pencarian/filter. Mengganti pencarian, filter, sumber,
+versi pemeriksaan, atau jumlah baris mengembalikan tampilan ke halaman pertama.
+
+Halaman yang jauh mengambil nomor baris melalui indeks sebelum memuat isi
+baris terpilih; data awal lengkap hanya dimuat saat membuka detail. Migrasi
+`e35fb6148a07` menambahkan indeks urutan dan status tanpa mengubah nilai data
+atau keputusan. Saat pemrosesan cepat, progres checkpoint tetap langsung
+ditampilkan, sedangkan tabel/ringkasan diperbarui paling sering setiap tiga
+detik. Jeda dan penyelesaian meminta pembaruan segera. Pemuatan yang masih
+berjalan tidak terus dibatalkan oleh setiap checkpoint baru.
+
 ## Progres, penghentian, dan kelanjutan pemeriksaan otomatis
 
 Halaman PDPJ menampilkan tahap aktif, persentase keseluruhan, jumlah baris yang
@@ -37,6 +50,14 @@ menjeda proses. **Lanjutkan pemeriksaan** memakai pemeriksaan, sumber master,
 dan posisi terakhir yang sama. Hasil tersimpan tidak diproses ulang atau digandakan.
 Validasi akhir juga memiliki posisi tersimpan tersendiri, termasuk pemeriksaan
 IDPEL berulang antarbagian.
+
+Pencarian rekomendasi menggunakan indeks gabungan berkas dan IDPEL, tanpa
+mengurutkan seluruh sumber master di SQL. Hanya observasi yang cocok yang
+diurutkan sebelum disimpan, sehingga urutan dan seluruh bukti sumber tetap
+sama. Normalisasi tersimpan dengan versi yang sesuai dipakai ulang untuk
+baris valid; sumber lama atau tidak valid tetap diekstrak dari nilai asli agar
+kesalahan parsing tetap tercatat. Waktu transaksi beserta commit dicatat
+sebagai tahap `pdpj.advance`, tanpa mencatat nilai IDPEL atau isi sumber.
 
 Halaman mengirim permintaan bagian berikutnya secara berurutan selama proses
 berjalan. Jika halaman ditutup, koneksi terputus, atau backend berhenti, bagian

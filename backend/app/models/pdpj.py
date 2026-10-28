@@ -45,7 +45,17 @@ class PdpjReview(Base):
 
 class PdpjRow(Base):
     __tablename__ = "pdpj_rows"
-    __table_args__ = (UniqueConstraint("review_id", "source_record_id"),)
+    __table_args__ = (
+        UniqueConstraint("review_id", "source_record_id"),
+        Index("ix_pdpj_rows_review_row_number_id", "review_id", "row_number", "id"),
+        Index(
+            "ix_pdpj_rows_review_existence_row_number_id",
+            "review_id",
+            "existence",
+            "row_number",
+            "id",
+        ),
+    )
 
     id: Mapped[int] = mapped_column(primary_key=True)
     review_id: Mapped[int] = mapped_column(ForeignKey("pdpj_reviews.id"), index=True)

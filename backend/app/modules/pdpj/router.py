@@ -6,7 +6,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 from sqlalchemy import and_, case, func, or_
 from sqlalchemy.exc import SQLAlchemyError
-from sqlalchemy.orm import Session, object_session
+from sqlalchemy.orm import Session, defer, object_session
 
 from app.database import get_db
 from app.models.pdpj import PdpjChange, PdpjRecommendation, PdpjReview, PdpjRow
@@ -348,16 +348,24 @@ def list_rows(
         query = query.filter(
             func.json_array_length(PdpjRow.issues) == 0, PdpjRow.exception.is_(False)
         )
-    total = query.count()
+    total = query.with_entities(func.count(PdpjRow.id)).scalar() or 0
+    page_ids = (
+        query.with_entities(PdpjRow.id)
+        .order_by(PdpjRow.row_number, PdpjRow.id)
+        .offset(skip)
+        .limit(limit)
+        .subquery()
+    )
+    page_rows = (
+        db.query(PdpjRow)
+        .join(page_ids, page_ids.c.id == PdpjRow.id)
+        .options(defer(PdpjRow.original_fields))
+        .order_by(PdpjRow.row_number, PdpjRow.id)
+        .all()
+    )
     return {
         "total": total,
-        "items": [
-            row_info(row)
-            for row in query.order_by(PdpjRow.row_number)
-            .offset(skip)
-            .limit(limit)
-            .all()
-        ],
+        "items": [row_info(row) for row in page_rows],
     }
 
 

@@ -201,4 +201,6 @@ Pengujian browser memakai API dan SQLite sementara. Skenarionya mencakup impor k
 
 Perintah pengujian tetap mengikuti [validasi-pdpj.md](validasi-pdpj.md). Integrasi database diuji dengan SQLite; PostgreSQL/PostGIS dan pekerja Celery yang benar-benar terhubung ke broker belum dijalankan pada lingkungan ini.
 
-Tahap 4 sudah diimplementasikan pada [peta-koreksi.md](peta-koreksi.md): seluruh titik sesuai kategori, tooltip hover, pemilihan target dari tabel/titik, pengaturan radius, pemakaian kandidat tersimpan, serta pilihan aktif dan riwayatnya. Tahap berikutnya adalah Hasil Koreksi dan ekspor per kategori.
+Peta tersedia sesuai [peta-koreksi.md](peta-koreksi.md). Pilihan aktif langsung
+tersedia di [Hasil Koreksi dan Riwayat Proses](hasil-koreksi.md), termasuk hasil
+sebagian, perbandingan target/kandidat, ekspor CSV, dan seluruh riwayat perubahan.

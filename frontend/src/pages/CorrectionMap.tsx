@@ -72,7 +72,7 @@ function MapWorkspace({ kind, batchParam, processParam, generationParam, changeP
   });
   const choose = useMutation({
     mutationFn: (candidate: number | null) => correctionApi.choose(kind, process!, selected!, { generation: generation!, expected_revision: choice.data!.revision, candidate_id: candidate, actor: actor.trim(), reason: reason.trim(), request_key: crypto.randomUUID() }),
-    onSuccess: (result) => { client.setQueryData(choiceKey, result); setReason(""); setNotice(result.current?.candidate_id ? "Pilihan kandidat tersimpan." : "Pilihan dibatalkan. Riwayat tetap tersimpan."); },
+    onSuccess: (result) => { client.setQueryData(choiceKey, result); setReason(""); setNotice(result.current?.candidate_id ? "Pilihan kandidat tersimpan." : "Pilihan dibatalkan. Riwayat tetap tersimpan."); void client.invalidateQueries({ queryKey: ["process-history"] }); void client.invalidateQueries({ queryKey: ["correction-results", process] }); void client.invalidateQueries({ queryKey: ["correction-decisions", process] }); },
     onError: () => { void client.invalidateQueries({ queryKey: choiceKey }); void client.invalidateQueries({ queryKey: ["correction-check", kind, process] }); },
   });
   const select = useCallback((id: number) => { if (choose.isPending || expand.isPending) return; setSelected(id); setRequested(null); setCandidatePage(1); setReason(""); setNotice(""); }, [choose.isPending, expand.isPending]);
@@ -95,6 +95,7 @@ function MapWorkspace({ kind, batchParam, processParam, generationParam, changeP
         <label className="flex flex-col gap-1 text-xs font-bold">Pemeriksaan<select disabled={choose.isPending || expand.isPending} aria-label="Pemeriksaan peta" value={process ?? ""} onChange={(event) => changeParams({ category: kind, batch_id: String(batch), process_id: event.target.value })} className={control}><option value="" disabled>Pilih pemeriksaan</option>{checks.data?.map((item) => <option key={item.process_id} value={item.process_id}>#{item.process_id} · PDPJ #{item.pdpj_review_id}</option>)}</select></label>
       </div>
       <Link className="inline-block text-xs font-bold underline" to={`/koreksi/${descriptor.slug}${batch ? `?batch_id=${batch}${process ? `&process_id=${process}` : ""}` : ""}`}>Buka data dan riwayat pemeriksaan</Link>
+      {process && <div className="flex flex-wrap gap-4 text-xs font-bold"><Link to={`/result?category=${kind}&process_id=${process}`} className="underline">Lihat Hasil Koreksi</Link><Link to={`/history?process_id=${process}`} className="underline">Lihat Riwayat Proses</Link></div>}
       {dataError && <p role="alert" className="text-sm text-red-700">{message(dataError)}</p>}
       {!process && !checks.isPending && <p className="text-sm">Belum ada pemeriksaan. Selesaikan pemeriksaan pada Data Koreksi untuk menampilkan peta.</p>}
       {check.data && batch && check.data.batch_id !== batch && <p role="alert" className="text-red-700">Pemeriksaan tidak sesuai dengan berkas terpilih.</p>}
