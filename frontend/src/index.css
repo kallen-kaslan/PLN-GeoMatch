@@ -129,3 +129,77 @@ html, body, #root {
     scroll-behavior: auto !important;
   }
 }
+
+/* Spatial Panel Animations (Login/Register) */
+@keyframes geo-pulse {
+  0% { transform: scale(1); opacity: 0.8; }
+  50% { transform: scale(1.6); opacity: 0.2; }
+  100% { transform: scale(2.2); opacity: 0; }
+}
+
+@keyframes geo-travel {
+  from { stroke-dashoffset: 610; }
+  to { stroke-dashoffset: 0; }
+}
+
+@keyframes geo-breathe {
+  0%, 100% { opacity: 0.14; }
+  50% { opacity: 0.35; }
+}
+
+@keyframes geo-fade-in {
+  from { opacity: 0; transform: translateY(10px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+.geo-pulse-ring {
+  transform-origin: 388px 322px;
+  animation: geo-pulse 3s cubic-bezier(0.215, 0.61, 0.355, 1) infinite;
+}
+
+.geo-pulse-delay {
+  animation-delay: 1.5s;
+}
+
+.geo-travel {
+  animation: geo-travel 8s linear infinite;
+}
+
+.geo-breathe {
+  animation: geo-breathe 4s ease-in-out infinite;
+}
+
+.geo-breathe-alt {
+  animation-delay: 2s;
+}
+
+.geo-coord-label {
+  animation: geo-fade-in 1.2s ease-out forwards;
+}
+
+.geo-coord-alt {
+  animation-delay: 0.4s;
+}
+
+@keyframes geo-pulse-light {
+  0% { transform: scale(1); opacity: 0.5; }
+  50% { transform: scale(1.8); opacity: 0.15; }
+  100% { transform: scale(2.5); opacity: 0; }
+}
+
+@keyframes geo-fade-card {
+  from { opacity: 0; transform: translateY(6px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+.geo-pulse-light {
+  transform-origin: 480px 180px;
+  animation: geo-pulse-light 4s cubic-bezier(0.215, 0.61, 0.355, 1) infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .geo-pulse-ring, .geo-travel, .geo-breathe, .geo-coord-label, .geo-pulse-light {
+    animation: none !important;
+  }
+}
+
