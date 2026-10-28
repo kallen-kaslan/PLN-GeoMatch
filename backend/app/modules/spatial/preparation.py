@@ -7,7 +7,7 @@ from sqlalchemy.orm import Session
 from app.models.master_sisa import MasterSisaRecord, MasterSnapshot
 from app.models.pdpj import PdpjRow
 from app.models.upload import BatchStatus, DatasetType, SourceRecord, UploadBatch
-from app.modules.pdpj.service import completed_review
+from app.modules.pdpj.service import completed_review, pending_pdpj_records
 from app.modules.upload.normalization import extract_standard_fields
 from app.performance import timed
 
@@ -48,6 +48,11 @@ def process_master_sisa_exclusion(
                 .filter(PdpjRow.review_id == review.id)
                 .yield_per(400)
                 if idpel
+            )
+            excluded.update(
+                record.idpel
+                for record in pending_pdpj_records(db, review)
+                if record.idpel
             )
         for record in (
             []
@@ -131,8 +136,13 @@ def resolve_master_snapshot(
     if snapshot_id is not None:
         snapshot = db.get(MasterSnapshot, snapshot_id)
     else:
-        snapshot = db.query(MasterSnapshot).order_by(MasterSnapshot.id.desc()).first()
-    if snapshot is None:
+        snapshot = (
+            db.query(MasterSnapshot)
+            .filter(MasterSnapshot.ready.is_(True))
+            .order_by(MasterSnapshot.id.desc())
+            .first()
+        )
+    if snapshot is None or not snapshot.ready:
         raise ValueError(
             "Master Sisa belum disiapkan; bentuk master dan siapkan snapshot terlebih dahulu"
         )

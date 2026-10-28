@@ -3,10 +3,12 @@
 from collections import Counter
 from collections.abc import Iterator
 from datetime import UTC, datetime
+from time import monotonic
 from typing import Any
 
 from fastapi import HTTPException
 from sqlalchemy import func, or_
+from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
 
 from app.models.pdpj import PdpjChange, PdpjRecommendation, PdpjReview, PdpjRow
@@ -59,6 +61,14 @@ def get_review(db: Session, review_id: int, revision: int | None = None) -> Pdpj
     if review is None:
         raise HTTPException(404, "Pemeriksaan PDPJ tidak ditemukan")
     if revision is not None:
+        if review.processing and (
+            review.processing["state"] == "running"
+            or not review.processing["processed_rows"]
+        ):
+            raise HTTPException(
+                409,
+                "Jeda pemeriksaan dan tunggu bagian aktif tersimpan sebelum meninjau hasil.",
+            )
         if review.status != "in_progress":
             raise HTTPException(
                 409,
@@ -74,20 +84,44 @@ def get_review(db: Session, review_id: int, revision: int | None = None) -> Pdpj
 def completed_review(
     db: Session, batch_id: int, review_id: int | None = None
 ) -> PdpjReview:
-    """Pin one completed validation; never fall back from an unfinished latest review."""
+    """Pin an approved version, or resolve the latest publication of the current review."""
     review = (
         db.get(PdpjReview, review_id)
         if review_id is not None
         else db.query(PdpjReview)
-        .filter(PdpjReview.batch_id == batch_id)
+        .filter(PdpjReview.batch_id == batch_id, PdpjReview.source_review_id.is_(None))
         .order_by(PdpjReview.id.desc())
         .first()
     )
+    if review is not None and review_id is None and review.status != "completed":
+        review = (
+            db.query(PdpjReview)
+            .filter(
+                PdpjReview.source_review_id == review.id,
+                PdpjReview.status == "completed",
+            )
+            .order_by(PdpjReview.id.desc())
+            .first()
+        )
     if review is None or review.batch_id != batch_id or review.status != "completed":
         raise ValueError(
             "Selesaikan validasi PDPJ terlebih dahulu melalui menu Data PDPJ"
         )
     return review
+
+
+def pending_pdpj_records(db: Session, review: PdpjReview) -> Iterator[SourceRecord]:
+    """Reserve the raw remainder pinned at publication, independently of later progress."""
+    if review.source_review_id is not None and review.publication:
+        yield from (
+            db.query(SourceRecord)
+            .filter(
+                SourceRecord.batch_id == review.batch_id,
+                SourceRecord.id > review.publication["last_source_id"],
+            )
+            .order_by(SourceRecord.id)
+            .yield_per(400)
+        )
 
 
 def normalized(record: SourceRecord, batch: UploadBatch) -> dict[str, Any]:
@@ -300,9 +334,13 @@ def validation_chunks(db: Session, review: PdpjReview) -> Iterator[list[PdpjRow]
 
 @timed("pdpj.create_review")
 def create_review(
-    db: Session, batch_id: int, master_batch_ids: list[int] | None
+    db: Session,
+    batch_id: int,
+    master_batch_ids: list[int] | None,
+    *,
+    incremental: bool = False,
 ) -> PdpjReview:
-    """Create a validation snapshot and leave every source row untouched."""
+    """Pin sources and persist a checkpoint before processing any source rows."""
     lock_review_session(db)
     batch = (
         db.query(UploadBatch)
@@ -334,7 +372,7 @@ def create_review(
     ).with_for_update().all()
     previous = (
         db.query(PdpjReview)
-        .filter(PdpjReview.batch_id == batch_id)
+        .filter(PdpjReview.batch_id == batch_id, PdpjReview.source_review_id.is_(None))
         .order_by(PdpjReview.id.desc())
         .first()
     )
@@ -345,40 +383,140 @@ def create_review(
                 "Selesaikan pemeriksaan yang sedang berjalan sebelum mengganti sumber master",
             )
         return previous
-    if (
-        db.query(SourceRecord.id).filter(SourceRecord.batch_id == batch_id).first()
-        is None
-    ):
+    total = db.query(SourceRecord).filter(SourceRecord.batch_id == batch_id).count()
+    if not total:
         raise HTTPException(422, "Berkas PDPJ tidak memiliki baris data")
-    review = PdpjReview(batch_id=batch_id, master_batch_ids=ids)
+    now = datetime.now(UTC).replace(tzinfo=None).isoformat()
+    review = PdpjReview(
+        batch_id=batch_id,
+        master_batch_ids=ids,
+        processing={
+            "state": "running",
+            "stage": "matching",
+            "total_rows": total,
+            "processed_rows": 0,
+            "validated_rows": 0,
+            "last_source_id": 0,
+            "last_row_number": None,
+            "last_validated_id": 0,
+            "previous_review_id": previous.id if previous else None,
+            "started_at": now,
+            "updated_at": now,
+            "elapsed_seconds": 0.0,
+            "error": None,
+        },
+    )
     db.add(review)
-    db.flush()
-    last_id, number = 0, 2
-    while True:
-        records = (
-            db.query(SourceRecord)
-            .filter(SourceRecord.batch_id == batch_id, SourceRecord.id > last_id)
-            .order_by(SourceRecord.id)
-            .limit(400)
+    db.commit()
+    # Preserve the synchronous contract for existing integrations. The UI uses
+    # incremental mode and requests exactly one durable chunk at a time.
+    if not incremental:
+        while review.processing and review.processing["state"] == "running":
+            review = advance_review(db, review.id, review.revision)
+    return review
+
+
+def processing_review(db: Session, review_id: int) -> PdpjReview:
+    """Serialize checkpoints, stop requests, and competing browser sessions."""
+    lock_review_session(db)
+    review = (
+        db.query(PdpjReview)
+        .filter(PdpjReview.id == review_id)
+        .with_for_update()
+        .populate_existing()
+        .first()
+    )
+    if review is None:
+        raise HTTPException(404, "Pemeriksaan PDPJ tidak ditemukan")
+    return review
+
+
+def control_processing(db: Session, review_id: int, state: str) -> PdpjReview:
+    """Pause after the active transaction, or resume the exact saved snapshot."""
+    review = processing_review(db, review_id)
+    if (
+        review.status == "completed"
+        or not review.processing
+        or review.processing["state"] == "ready"
+    ):
+        return review
+    review.processing = {
+        **review.processing,
+        "state": state,
+        "error": None,
+        "updated_at": datetime.now(UTC).replace(tzinfo=None).isoformat(),
+    }
+    review.revision += 1
+    db.commit()
+    return review
+
+
+def validate_processing_rows(
+    db: Session, review: PdpjReview, rows: list[PdpjRow]
+) -> None:
+    """Validate one chunk, including duplicate identities across chunk boundaries."""
+    identity = PdpjRow.current_fields["idpel"].as_string()
+    identities = {row.current_fields.get("idpel") for row in rows} - {None, ""}
+    counts = Counter(
+        dict(
+            db.query(identity, func.count(PdpjRow.id))
+            .filter(PdpjRow.review_id == review.id, identity.in_(identities))
+            .group_by(identity)
             .all()
         )
-        if not records:
-            break
+    )
+    recommendation_identity = PdpjRecommendation.fields["idpel"].as_string()
+    recommendations = Counter(
+        {
+            (row_id, idpel): count
+            for row_id, idpel, count in db.query(
+                PdpjRecommendation.row_id,
+                recommendation_identity,
+                func.count(PdpjRecommendation.id),
+            )
+            .filter(PdpjRecommendation.row_id.in_([row.id for row in rows]))
+            .group_by(PdpjRecommendation.row_id, recommendation_identity)
+            .all()
+        }
+    )
+    for row in rows:
+        refresh_row(row, counts, recommendations)
+
+
+def match_processing_chunk(
+    db: Session, review: PdpjReview, progress: dict[str, Any], chunk_size: int = 400
+) -> None:
+    """Persist full matching results together with their source cursor."""
+    batch = pdpj_batch(db, review.batch_id)
+    previous_id = progress["previous_review_id"]
+    records = (
+        db.query(SourceRecord)
+        .filter(
+            SourceRecord.batch_id == batch.id,
+            SourceRecord.id > progress["last_source_id"],
+        )
+        .order_by(SourceRecord.id)
+        .limit(min(VALIDATION_CHUNK_ROWS, chunk_size))
+        .all()
+    )
+    if not records and progress["processed_rows"] != progress["total_rows"]:
+        raise ValueError("Jumlah baris sumber tidak sesuai checkpoint")
+    if records:
         source_ids = [record.id for record in records]
         previous_rows = (
             {
                 row.source_record_id: row
                 for row in db.query(PdpjRow)
                 .filter(
-                    PdpjRow.review_id == previous.id,
+                    PdpjRow.review_id == previous_id,
                     PdpjRow.source_record_id.in_(source_ids),
                 )
                 .all()
             }
-            if previous
+            if previous_id
             else {}
         )
-        pending = []
+        pending: list[dict[str, Any]] = []
         for record in records:
             fields = normalized(record, batch)
             prior = previous_rows.get(record.id)
@@ -386,7 +524,8 @@ def create_review(
                 {
                     "review_id": review.id,
                     "source_record_id": record.id,
-                    "row_number": record.row_number or number,
+                    "row_number": record.row_number
+                    or progress["processed_rows"] + len(pending) + 2,
                     "original_fields": fields,
                     "current_fields": with_reference_fields(
                         prior.current_fields, record.data or {}, batch.column_mapping
@@ -396,7 +535,6 @@ def create_review(
                     "existence": "empty",
                 }
             )
-            number += 1
         db.bulk_insert_mappings(PdpjRow.__mapper__, pending)
         rows = (
             db.query(PdpjRow)
@@ -427,16 +565,79 @@ def create_review(
                     },
                 )
         add_recommendations(db, review, rows)
+        validate_processing_rows(db, review, rows)
         db.flush()
-        for row in rows:
-            db.expunge(row)
-        last_id = records[-1].id
-    # Duplicate counts and existence are global to the review, including rows
-    # crossing ingestion chunks. Only the row objects are processed in batches.
-    for _rows in validation_chunks(db, review):
-        pass
-    db.commit()
-    return review
+        progress["last_source_id"] = records[-1].id
+        progress["last_row_number"] = rows[-1].row_number
+        progress["processed_rows"] += len(rows)
+    if progress["processed_rows"] == progress["total_rows"]:
+        progress["stage"] = "validating"
+
+
+def advance_review(
+    db: Session, review_id: int, revision: int, chunk_size: int = 400
+) -> PdpjReview:
+    """Commit results and their cursor atomically; a failed chunk is retried whole."""
+    review = processing_review(db, review_id)
+    if review.revision != revision:
+        raise HTTPException(
+            409, "Progres telah berubah. Muat ulang sebelum melanjutkan."
+        )
+    if not review.processing or review.processing["state"] == "ready":
+        return review
+    if review.processing["state"] != "running":
+        raise HTTPException(409, "Proses dijeda. Pilih Lanjutkan pemeriksaan.")
+    progress = dict(review.processing)
+    started = monotonic()
+    try:
+        if progress["stage"] == "matching":
+            match_processing_chunk(db, review, progress, chunk_size)
+        else:
+            rows = (
+                db.query(PdpjRow)
+                .filter(
+                    PdpjRow.review_id == review.id,
+                    PdpjRow.id > progress["last_validated_id"],
+                )
+                .order_by(PdpjRow.id)
+                .limit(min(VALIDATION_CHUNK_ROWS, chunk_size))
+                .all()
+            )
+            validate_processing_rows(db, review, rows)
+            if not rows and progress["validated_rows"] != progress["total_rows"]:
+                raise ValueError("Jumlah hasil tidak sesuai checkpoint validasi")
+            if rows:
+                progress["last_validated_id"] = rows[-1].id
+                progress["validated_rows"] += len(rows)
+            if progress["validated_rows"] == progress["total_rows"]:
+                progress.update(state="ready", stage="done")
+        progress["elapsed_seconds"] += monotonic() - started
+        progress["updated_at"] = datetime.now(UTC).replace(tzinfo=None).isoformat()
+        review.processing = progress
+        review.revision += 1
+        db.commit()
+        return review
+    except Exception as exc:
+        db.rollback()
+        # Keep the earlier committed cursor, never the failed in-memory cursor.
+        try:
+            saved = processing_review(db, review_id)
+            saved.processing = {
+                **(saved.processing or {}),
+                "state": "failed",
+                "error": "Bagian terakhir belum tersimpan. Lanjutkan untuk mencoba kembali.",
+                "updated_at": datetime.now(UTC).replace(tzinfo=None).isoformat(),
+            }
+            saved.revision += 1
+            db.commit()
+        except SQLAlchemyError:
+            db.rollback()
+        if isinstance(exc, SQLAlchemyError):
+            raise
+        raise HTTPException(
+            500,
+            "Pemeriksaan terhenti. Hasil sebelumnya tetap tersimpan; muat ulang dan lanjutkan.",
+        ) from exc
 
 
 def record_change(
@@ -572,8 +773,20 @@ def complete_validation(
     *,
     exception_reason: str | None = None,
     expected_unresolved: int | None = None,
-) -> int:
-    """Finalize only clean rows or explicit exceptions; completion is immutable."""
+) -> tuple[int, PdpjReview]:
+    """Approve a fixed version while keeping a partial review's cursor resumable."""
+    latest = (
+        db.query(PdpjReview)
+        .filter(PdpjReview.source_review_id == review.id)
+        .order_by(PdpjReview.id.desc())
+        .first()
+    )
+    if (
+        latest
+        and latest.publication
+        and latest.publication["source_revision"] + 1 == review.revision
+    ):
+        return 0, latest
     total = added = 0
     for rows in validation_chunks(db, review):
         changes = []
@@ -612,7 +825,7 @@ def complete_validation(
                     }
                 )
         if changes:
-            db.bulk_insert_mappings(PdpjChange, changes)
+            db.bulk_insert_mappings(PdpjChange.__mapper__, changes)
     if not total:
         raise HTTPException(409, "Pemeriksaan PDPJ tidak memiliki baris data")
     if expected_unresolved is not None and added != expected_unresolved:
@@ -620,9 +833,28 @@ def complete_validation(
             409,
             "Jumlah masalah berubah. Muat ulang pemeriksaan dan tinjau kembali sebelum melanjutkan.",
         )
-    review.status = "completed"
-    review.completed_at = datetime.now(UTC).replace(tzinfo=None)
-    review.completed_by = actor
+    db.flush()
+    if review.processing and review.processing["state"] != "ready":
+        from app.modules.pdpj.publications import publish_saved_rows
+
+        published = publish_saved_rows(db, review, actor, total)
+    else:
+        review.status = "completed"
+        review.completed_at = datetime.now(UTC).replace(tzinfo=None)
+        review.completed_by = actor
+        versions = (
+            db.query(PdpjReview)
+            .filter(PdpjReview.source_review_id == review.id)
+            .count()
+        )
+        if versions:
+            review.publication = {
+                "version": versions + 1,
+                "row_count": total,
+                "total_rows": total,
+                "is_partial": False,
+            }
+        published = review
     review.revision += 1
     db.commit()
-    return added
+    return added, published

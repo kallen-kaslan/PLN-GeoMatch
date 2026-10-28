@@ -130,14 +130,24 @@ def choose_candidate(
                 409, "Kunci permintaan sudah dipakai untuk pilihan berbeda"
             )
         return choice_history(db, process_id, record_id)
+    latest = (
+        db.query(MatchingRun)
+        .filter_by(process_id=process_id)
+        .order_by(MatchingRun.generation.desc())
+        .first()
+    )
+    incremental = bool(latest and latest.processing)
+    writable_generation = (
+        latest.generation if incremental and latest else process.current_generation
+    )
     if (
-        req.generation != process.current_generation
+        req.generation != writable_generation
         or process.review_status == ReviewStatus.FINALIZED
     ):
         raise HTTPException(
             409, "Pilihan hanya dapat diubah pada hasil terbaru yang belum final"
         )
-    if (
+    if not incremental and (
         db.query(MatchingRun)
         .filter(
             MatchingRun.process_id == process_id,
@@ -146,13 +156,15 @@ def choose_candidate(
         .first()
     ):
         raise HTTPException(409, "Tunggu pencarian selesai sebelum memilih kandidat")
-    run = selected_run(db, process, req.generation)
+    run = selected_run(db, process, req.generation, include_partial=incremental)
     assert run is not None
     target = (
         db.query(CorrectionTarget)
         .filter_by(run_id=run.id, source_record_id=record_id)
-        .one()
+        .one_or_none()
     )
+    if target is None:
+        raise HTTPException(409, "Baris ini belum selesai diperiksa dan disimpan")
     history = choice_history(db, process_id, record_id)
     if history["revision"] != req.expected_revision:
         raise HTTPException(

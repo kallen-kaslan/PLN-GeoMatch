@@ -89,6 +89,9 @@ class MatchingRun(Base):
     failure_code: Mapped[str | None] = cast(
         Mapped[str | None], Column(String(40), nullable=True)
     )
+    processing: Mapped[dict[str, Any] | None] = cast(
+        Mapped[dict[str, Any] | None], Column(JSON, nullable=True)
+    )
     radius_meters: Mapped[float] = mapped_column(Float, nullable=False)
     max_candidates: Mapped[int | None] = cast(
         Mapped[int | None], Column(Integer, nullable=True)

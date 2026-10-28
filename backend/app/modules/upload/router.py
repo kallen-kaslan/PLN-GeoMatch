@@ -327,6 +327,15 @@ def reset_database(db: DbSession) -> dict[str, str]:
         db.query(CorrectionTarget).delete()
         db.query(CorrectionAttempt).delete()
         db.query(CorrectionCheck).delete()
+        from app.models.master_sisa import (
+            MasterPreparation,
+            MasterPreparationExcluded,
+            MasterPreparationIdentity,
+        )
+
+        db.query(MasterPreparationExcluded).delete()
+        db.query(MasterPreparationIdentity).delete()
+        db.query(MasterPreparation).delete()
         db.query(PdpjChange).delete()
         db.query(PdpjRecommendation).delete()
         db.query(PdpjRow).delete()

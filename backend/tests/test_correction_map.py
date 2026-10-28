@@ -11,11 +11,14 @@ from app.correction_map_schema import upgrade_correction_map
 from app.models.correction_decision import CorrectionDecision
 from app.models.matching import MatchCandidate
 from app.modules.corrections import router
+from app.modules.corrections.writer import SearchWriter
 from tests.test_corrections import check, reference, upload  # noqa: F401
 
 
 @pytest.fixture
-def mapped(client: TestClient, request: pytest.FixtureRequest) -> tuple[str, dict, list[dict]]:
+def mapped(
+    client: TestClient, request: pytest.FixtureRequest
+) -> tuple[str, dict, list[dict]]:
     review_id = request.getfixturevalue("reference")
     kind = "idpel_kosong"
     batch = upload(
@@ -313,6 +316,166 @@ def test_pending_search_blocks_choice_and_reset_obeys_foreign_keys(
     )
     assert client.post("/upload/reset").status_code == 200
     assert db_session.query(CorrectionDecision).count() == 0
+
+
+@pytest.mark.parametrize("kind", ["idpel_kosong", "idpel_tidak_ketemu"])
+@pytest.mark.parametrize("state", ["running", "paused", "failed"])
+def test_saved_rows_can_be_chosen_before_completion_and_survive_resume(
+    client: TestClient,
+    db_session: Session,
+    request: pytest.FixtureRequest,
+    monkeypatch: pytest.MonkeyPatch,
+    kind: str,
+    state: str,
+) -> None:
+    review_id = request.getfixturevalue("reference")
+    batch = upload(
+        client,
+        kind,
+        "IDPEL,NAMA,LAT,LON\n"
+        + "".join(
+            f"{700 + i if kind == 'idpel_tidak_ketemu' else ''},Target {i},-6.2,106.8\n"
+            for i in range(5)
+        ),
+    )
+    started = client.post(
+        f"/corrections/{kind}/checks",
+        json={
+            "batch_id": batch,
+            "pdpj_review_id": review_id,
+            "radius_meters": 10,
+            "actor": "Petugas",
+            "request_key": "partial_map_start",
+            "incremental": True,
+        },
+    )
+    assert started.status_code == 200, started.json()
+    check = started.json()
+    process = check["process_id"]
+    base = f"/corrections/{kind}/checks/{process}"
+
+    def advance(run: dict) -> dict:
+        response = client.post(
+            base + "/advance",
+            json={
+                "run_id": run["id"],
+                "revision": run["processing"]["revision"],
+                "chunk_size": 2,
+            },
+        )
+        assert response.status_code == 200, response.json()
+        return response.json()
+
+    prepared = advance(check["latest_run"])
+    saved = advance(prepared)
+    assert saved["processing"]["processed_rows"] == 2
+    if state == "paused":
+        assert (
+            client.post(base + "/pause", json={"run_id": saved["id"]}).status_code
+            == 200
+        )
+    elif state == "failed":
+        with monkeypatch.context() as patch:
+            patch.setattr(
+                SearchWriter, "flush", Mock(side_effect=RuntimeError("Interrupted"))
+            )
+            failed = client.post(
+                base + "/advance",
+                json={
+                    "run_id": saved["id"],
+                    "revision": saved["processing"]["revision"],
+                    "chunk_size": 2,
+                },
+            )
+        assert failed.status_code == 500
+    scope = {"process_id": process, "generation": saved["generation"]}
+    rows = client.get(
+        f"/corrections/{kind}/records", params={**scope, "saved_only": True}
+    ).json()
+    assert rows["total"] == 2
+    assert all(row["search_status"] == "matched" for row in rows["items"])
+    assert client.get(f"/corrections/{kind}/records", params=scope).json()["total"] == 5
+    record = rows["items"][0]["id"]
+    detail = details(client, kind, process, record)
+    candidate = detail["candidates"][0]["id"]
+    choice_url = base + f"/records/{record}/choice"
+    request = body(candidate)
+    chosen = client.post(choice_url, json=request)
+    assert chosen.status_code == 200, chosen.json()
+    assert chosen.json()["current"]["candidate"]["observations"]
+    assert client.post(choice_url, json=request).json()["revision"] == 1
+    assert (
+        client.post(
+            choice_url, json=body(candidate, key="partial_stale_choice")
+        ).status_code
+        == 409
+    )
+    assert client.get(base).json()["current_generation"] == 0
+    resumed = client.post(base + "/resume", json={"run_id": saved["id"]}).json()
+    assert resumed["processing"]["processed_rows"] == 2
+    run = advance(resumed)
+    assert run["processing"]["processed_rows"] == 4
+    for _ in range(8):
+        if run["status"] == "completed":
+            break
+        run = advance(run)
+    assert run["status"] == "completed"
+    assert run["id"] == saved["id"]
+    assert client.get(base).json()["current_generation"] == 1
+    assert client.get(choice_url).json() == chosen.json()
+    assert db_session.get(MatchCandidate, candidate).is_accepted == 1
+    assert (
+        client.get(
+            f"/corrections/{kind}/records", params={**scope, "saved_only": True}
+        ).json()["total"]
+        == 5
+    )
+
+
+def test_partial_retry_keeps_old_versions_read_only_and_rejects_unsaved_rows(
+    client: TestClient, mapped: tuple
+) -> None:
+    kind, checked, rows = mapped
+    process, record = checked["process_id"], rows[0]["id"]
+    old = details(client, kind, process, record)["candidates"][0]["id"]
+    base = f"/corrections/{kind}/checks/{process}"
+    retried = client.post(
+        base + "/retry",
+        json={
+            "latest_run_id": checked["latest_run"]["id"],
+            "radius_meters": 100,
+            "actor": "Petugas",
+            "request_key": "partial_map_retry",
+            "incremental": True,
+        },
+    )
+    assert retried.status_code == 200, retried.json()
+    run = retried.json()["latest_run"]
+    for _ in range(2):
+        response = client.post(
+            base + "/advance",
+            json={
+                "run_id": run["id"],
+                "revision": run["processing"]["revision"],
+                "chunk_size": 1,
+            },
+        )
+        assert response.status_code == 200, response.json()
+        run = response.json()
+    assert run["processing"]["processed_rows"] == 1
+    choice_url = base + f"/records/{record}/choice"
+    assert client.post(choice_url, json=body(old)).status_code == 409
+    assert client.post(choice_url, json=body(old, generation=2)).status_code == 404
+    assert (
+        client.post(
+            base + f"/records/{rows[1]['id']}/choice", json=body(old, generation=2)
+        ).status_code
+        == 409
+    )
+    current = details(client, kind, process, record)["candidates"][0]["id"]
+    chosen = client.post(choice_url, json=body(current, generation=2))
+    assert chosen.status_code == 200, chosen.json()
+    assert chosen.json()["current"]["generation"] == 2
 
 
 def test_choice_schema_upgrade_is_additive_idempotent(db_session: Session) -> None:

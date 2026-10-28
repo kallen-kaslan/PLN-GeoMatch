@@ -3,8 +3,10 @@
 import math
 from bisect import bisect_left, bisect_right
 from collections import defaultdict
+from time import monotonic
 from typing import Any, cast
 
+from sqlalchemy import false, or_
 from sqlalchemy.orm import Session
 
 from app.models.correction import CorrectionCheck, utc_now
@@ -19,7 +21,7 @@ from app.models.pdpj import PdpjRow
 from app.models.upload import BatchStatus, SourceRecord, UploadBatch
 from app.modules.corrections.service import CORRECTION_TYPES, reference_tokens
 from app.modules.corrections.writer import SearchWriter
-from app.modules.pdpj.service import completed_review
+from app.modules.pdpj.service import completed_review, pending_pdpj_records
 from app.modules.spatial.engine import (
     calculate_haversine_distance,
     lock_matching_session,
@@ -35,9 +37,15 @@ from app.performance import timed
 
 @timed("corrections.match_and_store")
 def run_correction_matching(
-    db: Session, process_id: int, target_batch_id: int, run_id: int | None
+    db: Session,
+    process_id: int,
+    target_batch_id: int,
+    run_id: int | None,
+    *,
+    chunk_size: int | None = None,
 ) -> dict[str, Any]:
     """Publish target outcomes and candidates together, preserving prior generations."""
+    started = monotonic()
     lock_matching_session(db)
     process = (
         db.query(ReconciliationProcess)
@@ -85,6 +93,21 @@ def run_correction_matching(
         raise ValueError("Pemeriksaan ini telah digantikan versi yang lebih baru")
     run.status = process.matching_status = ProcessStatus.RUNNING
     run.failure_code = None
+    progress = (
+        dict(run.processing) if chunk_size is not None and run.processing else None
+    )
+    records_query = (
+        db.query(SourceRecord)
+        .filter(SourceRecord.batch_id == target_batch_id)
+        .order_by(SourceRecord.id)
+    )
+    records = (
+        records_query.filter(SourceRecord.id > progress["last_source_id"])
+        .limit(chunk_size)
+        .all()
+        if progress
+        else records_query.yield_per(100)
+    )
     pdpj_batch = db.get(UploadBatch, review.batch_id)
     assert pdpj_batch is not None
     identities: dict[str, list[dict[str, Any]]] = defaultdict(list)
@@ -117,17 +140,43 @@ def run_correction_matching(
             coordinates[(round(fields["lat"], 7), round(fields["lon"], 7))].append(
                 row.row_number
             )
-    master_ids = {
-        value
-        for (value,) in db.query(SourceRecord.idpel)
-        .filter(
-            SourceRecord.batch_id.in_(review.master_batch_ids),
-            SourceRecord.idpel.isnot(None),
+    # Pending source identities/references are reserved in this version too.
+    # Their evidence is explicitly marked as awaiting PDPJ validation.
+    for source in pending_pdpj_records(db, review):
+        fields = extract_standard_fields(source.data or {}, pdpj_batch.column_mapping)
+        evidence = {
+            "pdpj_row_id": None,
+            "row_number": source.row_number,
+            "fields": fields,
+            "pending_validation": True,
+        }
+        if fields.get("idpel"):
+            identities[fields["idpel"]].append(evidence)
+        for kind, values in reference_tokens(
+            fields, source.data or {}, pdpj_batch.column_mapping
+        ).items():
+            for value in values:
+                references[(kind, value)].append(evidence)
+    target_fields = (
+        [
+            extract_standard_fields(record.data or {}, batch.column_mapping)
+            for record in records
+        ]
+        if progress
+        else []
+    )
+    master_identity_query = db.query(SourceRecord.idpel).filter(
+        SourceRecord.batch_id.in_(review.master_batch_ids),
+        SourceRecord.idpel.isnot(None),
+    )
+    if progress:
+        master_identity_query = master_identity_query.filter(
+            SourceRecord.idpel.in_(
+                {fields["idpel"] for fields in target_fields if fields["idpel"]}
+            )
         )
-        .distinct()
-        .yield_per(400)
-    }
-    eligible = (
+    master_ids = {value for (value,) in master_identity_query.distinct().yield_per(400)}
+    eligible_query = (
         db.query(MasterSisaRecord)
         .join(SourceRecord, SourceRecord.id == MasterSisaRecord.source_record_id)
         .filter(
@@ -136,22 +185,39 @@ def run_correction_matching(
             MasterSisaRecord.longitude.isnot(None),
         )
         .order_by(MasterSisaRecord.latitude, MasterSisaRecord.id)
-        .all()
     )
-    records = (
-        db.query(SourceRecord)
-        .filter(SourceRecord.batch_id == target_batch_id)
-        .order_by(SourceRecord.id)
-        .yield_per(100)
-    )
-    matched = total_targets = 0
+    latitude_delta = math.degrees(run.radius_meters / 6371000) + 1e-9
+    if progress:
+        # Use the existing snapshot/latitude index instead of loading the entire
+        # master again for each checkpoint. The exact distance check stays below.
+        target_latitudes = {
+            fields["lat"]
+            for fields in target_fields
+            if fields["lat"] is not None and fields["lon"] is not None
+        }
+        eligible_query = eligible_query.filter(
+            or_(
+                *(
+                    MasterSisaRecord.latitude.between(
+                        latitude - latitude_delta, latitude + latitude_delta
+                    )
+                    for latitude in target_latitudes
+                )
+            )
+            if target_latitudes
+            else false()
+        )
+    eligible = eligible_query.all()
+    matched = progress["matched_rows"] if progress else 0
+    total_targets = progress["processed_rows"] if progress else 0
+    last_source_id, last_row_number = 0, None
     writer = SearchWriter(db)
     # A latitude band is a conservative spherical bound. Full source snapshots
     # are loaded only for real candidates, then reused across nearby targets.
     latitudes = [cast(float, master.latitude) for master in eligible]
-    latitude_delta = math.degrees(run.radius_meters / 6371000) + 1e-9
     for record in records:
         total_targets += 1
+        last_source_id, last_row_number = record.id, record.row_number
         fields = extract_standard_fields(record.data or {}, batch.column_mapping)
         errors = validate_fields(fields, batch.dataset_type)
         fields.pop("validation_errors", None)
@@ -257,6 +323,26 @@ def run_correction_matching(
             matched += 1
         writer.outcome(outcome)
     writer.flush()
+    if progress is not None:
+        if last_source_id:
+            progress.update(
+                last_source_id=last_source_id, last_row_number=last_row_number
+            )
+        elif total_targets != progress["total_rows"]:
+            raise ValueError("Jumlah baris koreksi tidak sesuai checkpoint")
+        progress.update(
+            processed_rows=total_targets,
+            matched_rows=matched,
+            elapsed_seconds=progress["elapsed_seconds"] + monotonic() - started,
+            updated_at=utc_now().isoformat(),
+            revision=progress["revision"] + 1,
+        )
+        if total_targets == progress["total_rows"]:
+            progress["stage"] = "validating"
+        run.processing = progress
+        run.total_targets, run.matched_targets = progress["total_rows"], matched
+        db.commit()
+        return {"process_id": process_id, "status": "running"}
     run.status = process.matching_status = ProcessStatus.COMPLETED
     run.total_targets = process.total_targets = total_targets
     run.matched_targets = process.matched_targets = matched
