@@ -7,7 +7,11 @@ export interface PdpjReview {
   id: number; batch_id: number; master_batch_ids: number[]; status: "in_progress" | "completed";
   revision: number; created_at: string; completed_at: string | null; completed_by: string;
   processing: PdpjProcessing | null;
+  source_review_id: number | null;
+  publication: PdpjPublication | null;
 }
+export interface PdpjPublication { version: number; row_count: number; total_rows: number; is_partial: boolean; source_revision?: number }
+export interface PdpjCompletion extends PdpjReview { published_review: PdpjReview }
 export interface PdpjProcessing {
   state: "running" | "paused" | "failed" | "ready";
   stage: "matching" | "validating" | "done";
@@ -18,6 +22,7 @@ export interface PdpjProcessing {
 export interface PdpjSummary extends PdpjReview {
   summary: { total_rows: number; found: number; not_found: number; empty: number; invalid: number; incomplete_coordinates: number; exceptions: number; unresolved: number; ready: number };
   masters: MasterBatch[];
+  publications: PdpjReview[];
 }
 export interface PdpjRow {
   id: number; source_record_id: number; row_number: number; fields: Fields;
@@ -47,7 +52,7 @@ export const pdpjApi = {
   batch: async (id: number) => (await api.get<MasterBatchPreview>(`/pdpj/batches/${id}`)).data,
   reviews: async (id: number) => (await api.get<PdpjReview[]>(`/pdpj/batches/${id}/reviews`)).data,
   start: async (batchId: number, masterIds?: number[]) => (await api.post<PdpjReview>("/pdpj/reviews", { batch_id: batchId, master_batch_ids: masterIds, incremental: true })).data,
-  advance: async (id: number, revision: number) => (await api.post<PdpjReview>(`/pdpj/reviews/${id}/advance`, { revision })).data,
+  advance: async (id: number, revision: number) => (await api.post<PdpjReview>(`/pdpj/reviews/${id}/advance`, { revision, chunk_size: 100 })).data,
   pause: async (id: number) => (await api.post<PdpjReview>(`/pdpj/reviews/${id}/pause`)).data,
   resume: async (id: number) => (await api.post<PdpjReview>(`/pdpj/reviews/${id}/resume`)).data,
   summary: async (id: number) => (await api.get<PdpjSummary>(`/pdpj/reviews/${id}`)).data,
@@ -56,7 +61,7 @@ export const pdpjApi = {
   edit: async (id: number, rowId: number, body: { revision: number; actor: string; reason: string; fields: Fields }) => (await api.patch(`/pdpj/reviews/${id}/rows/${rowId}`, body)).data,
   apply: async (id: number, rowId: number, body: { revision: number; actor: string; reason: string; recommendation_id: number; fields: string[]; overwrite: boolean }) => (await api.post(`/pdpj/reviews/${id}/rows/${rowId}/apply`, body)).data,
   decide: async (id: number, rowId: number, body: { revision: number; actor: string; reason: string; action: "reviewed" | "exception" | "reopen" }) => (await api.post(`/pdpj/reviews/${id}/rows/${rowId}/decision`, body)).data,
-  complete: async (id: number, revision: number, actor: string) => (await api.post<PdpjReview>(`/pdpj/reviews/${id}/complete`, { revision, actor })).data,
+  complete: async (id: number, revision: number, actor: string) => (await api.post<PdpjCompletion>(`/pdpj/reviews/${id}/complete`, { revision, actor })).data,
   completeWithExceptions: async (id: number, body: { revision: number; actor: string; reason: string; expected_unresolved: number; confirmed: true }) =>
-    (await api.post<PdpjReview>(`/pdpj/reviews/${id}/complete-with-exceptions`, body)).data,
+    (await api.post<PdpjCompletion>(`/pdpj/reviews/${id}/complete-with-exceptions`, body)).data,
 };

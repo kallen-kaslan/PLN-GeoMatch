@@ -24,13 +24,14 @@ def test_stop_reload_and_resume_from_saved_rows(page: Page, servers: tuple[str, 
     review_id = int(page.url.split("review_id=")[1])
     path = f"{api}/pdpj/reviews/{review_id}"
     saved = httpx.get(path).json()
-    assert 400 <= saved["processing"]["processed_rows"] < 2401
+    assert 100 <= saved["processing"]["processed_rows"] < 2401
     assert saved["processing"]["state"] == "paused"
     original = httpx.get(path + "/rows").json()["items"][0]
     page.reload()
     expect(progress.get_by_role("button", name="Lanjutkan pemeriksaan", exact=True)).to_be_visible()
     assert httpx.get(path).json()["processing"] == saved["processing"]
-    expect(page.get_by_role("button", name="Selesaikan validasi PDPJ", exact=True)).to_be_disabled()
+    page.get_by_label("Petugas untuk riwayat", exact=True).fill("Petugas Progres")
+    expect(page.get_by_role("button", name="Selesaikan validasi data tersimpan", exact=True)).to_be_enabled()
     page.get_by_role("button", name="Lanjutkan pemeriksaan", exact=True).click()
     expect(progress.get_by_role("progressbar")).to_have_attribute("value", "100", timeout=30000)
     expect(progress.get_by_role("status")).to_have_text("Menunggu tinjauan petugas")
@@ -64,7 +65,7 @@ def test_connection_loss_keeps_checkpoint_and_reload_can_continue(page: Page, se
     expect(progress.get_by_role("alert")).to_be_visible()
     review_id = int(page.url.split("review_id=")[1])
     path = f"{api}/pdpj/reviews/{review_id}"
-    assert httpx.get(path).json()["processing"]["processed_rows"] == 800
+    assert httpx.get(path).json()["processing"]["processed_rows"] == 200
     page.unroute("**/pdpj/reviews/*/advance", interrupt)
     page.reload()
     page.get_by_role("button", name="Lanjutkan pemeriksaan", exact=True).click()

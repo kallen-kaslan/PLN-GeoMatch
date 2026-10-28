@@ -35,6 +35,12 @@ class PdpjReview(Base):
     processing: Mapped[dict[str, Any] | None] = cast(
         Mapped[dict[str, Any] | None], Column(JSON, nullable=True)
     )
+    source_review_id: Mapped[int | None] = cast(
+        Mapped[int | None], Column(Integer, nullable=True, index=True)
+    )
+    publication: Mapped[dict[str, Any] | None] = cast(
+        Mapped[dict[str, Any] | None], Column(JSON, nullable=True)
+    )
 
 
 class PdpjRow(Base):

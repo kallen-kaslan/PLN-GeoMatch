@@ -6,6 +6,7 @@ from typing import Annotated, Any, Literal
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 from sqlalchemy import and_, func, or_
+from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
 
 from app.config import settings
@@ -23,6 +24,8 @@ from app.models.matching import (
 from app.models.pdpj import PdpjReview
 from app.models.upload import BatchStatus, DatasetType, SourceRecord, UploadBatch
 from app.modules.corrections.decisions import router as decisions_router
+from app.modules.corrections.pdpj_updates import pdpj_update_info
+from app.modules.corrections.progress import advance_progress, control_progress
 from app.modules.corrections.service import (
     CorrectionKind,
     check_process,
@@ -34,6 +37,7 @@ from app.modules.corrections.service import (
 from app.modules.master.router import batch_info
 from app.modules.spatial.pipeline import execute_pipeline
 from app.modules.upload.normalization import extract_standard_fields, validate_fields
+from app.modules.upload.storage import database_write_error
 from app.tasks.spatial_tasks import (
     execute_batch_reconciliation_pipeline,
     mark_process_failed,
@@ -60,6 +64,7 @@ class SearchRequest(BaseModel):
     radius_meters: float = Field(100, gt=0, le=100000)
     actor: str = Field(min_length=1, max_length=80)
     request_key: str = Field(min_length=8, max_length=64, pattern=r"^[A-Za-z0-9_-]+$")
+    incremental: bool = False
 
     @field_validator("actor")
     @classmethod
@@ -79,6 +84,15 @@ class RetryCheck(SearchRequest):
     latest_run_id: int = Field(gt=0)
 
 
+class ProgressControl(BaseModel):
+    run_id: int = Field(gt=0)
+
+
+class ProgressStep(ProgressControl):
+    revision: int = Field(ge=1)
+    chunk_size: int = Field(100, ge=1, le=400)
+
+
 def run_info(run: MatchingRun) -> dict[str, Any]:
     """Expose actual state of each immutable search attempt."""
     return {
@@ -91,6 +105,7 @@ def run_info(run: MatchingRun) -> dict[str, Any]:
         "matched_targets": run.matched_targets,
         "created_at": run.created_at,
         "completed_at": run.completed_at,
+        "processing": run.processing,
     }
 
 
@@ -108,6 +123,7 @@ def check_info(db: Session, kind: CorrectionKind, process_id: int) -> dict[str, 
         "batch_id": process.target_batch_id,
         "category": check.category,
         "pdpj_review_id": check.pdpj_review_id,
+        "pdpj_update": pdpj_update_info(db, process_id, check.pdpj_review_id),
         "status": process.matching_status.value,
         "current_generation": process.current_generation,
         "master_snapshot_id": process.master_snapshot_id,
@@ -175,7 +191,7 @@ def record_scope(
                 404, "Pemeriksaan tidak menggunakan berkas yang dipilih"
             )
         batch_id = process.target_batch_id
-        run = selected_run(db, process, generation)
+        run = selected_run(db, process, generation, include_partial=True)
     elif generation is not None:
         raise HTTPException(422, "Pilih pemeriksaan untuk melihat versi pencarian")
     query = (
@@ -230,10 +246,28 @@ def record_info(
 
 @router.get("/ready-pdpj")
 def ready_pdpj(db: DbSession) -> list[dict[str, Any]]:
-    """Offer only files whose latest review is complete, without hiding unfinished rechecks."""
+    """Offer approved versions of each file's latest working review."""
     latest: dict[int, PdpjReview] = {}
-    for review in db.query(PdpjReview).order_by(PdpjReview.id.desc()).all():
+    for review in (
+        db.query(PdpjReview)
+        .filter(PdpjReview.source_review_id.is_(None))
+        .order_by(PdpjReview.id.desc())
+        .all()
+    ):
         latest.setdefault(review.batch_id, review)
+    approved: list[PdpjReview] = []
+    for review in latest.values():
+        if review.status == "completed":
+            approved.append(review)
+        approved.extend(
+            db.query(PdpjReview)
+            .filter(
+                PdpjReview.source_review_id == review.id,
+                PdpjReview.status == "completed",
+            )
+            .order_by(PdpjReview.id.desc())
+            .all()
+        )
     return [
         {
             "review_id": review.id,
@@ -242,10 +276,11 @@ def ready_pdpj(db: DbSession) -> list[dict[str, Any]]:
             "completed_by": review.completed_by,
             "completed_at": review.completed_at,
             "master_batch_ids": review.master_batch_ids,
+            "source_review_id": review.source_review_id,
+            "publication": review.publication,
         }
-        for review in latest.values()
-        if review.status == "completed"
-        and (batch := db.get(UploadBatch, review.batch_id)) is not None
+        for review in approved
+        if (batch := db.get(UploadBatch, review.batch_id)) is not None
     ]
 
 
@@ -311,9 +346,10 @@ def start_check(kind: CorrectionKind, req: StartCheck, db: DbSession) -> dict[st
         req.radius_meters,
         req.request_key,
         req.actor,
+        req.incremental,
     )
     run_id, process_id = run.id, process.id
-    mode = dispatch(db, process, run, fresh)
+    mode = "incremental" if run.processing else dispatch(db, process, run, fresh)
     return {
         **check_info(db, kind, process_id),
         "requested_run_id": run_id,
@@ -340,14 +376,49 @@ def rerun_check(
         req.radius_meters,
         req.request_key,
         req.actor,
+        req.incremental,
     )
     run_id = run.id
-    mode = dispatch(db, process, run, fresh)
+    mode = "incremental" if run.processing else dispatch(db, process, run, fresh)
     return {
         **check_info(db, kind, process_id),
         "requested_run_id": run_id,
         "execution_mode": mode,
     }
+
+
+@router.post("/{kind}/checks/{process_id}/advance")
+def advance_check(
+    kind: CorrectionKind, process_id: int, req: ProgressStep, db: DbSession
+) -> dict[str, Any]:
+    try:
+        return run_info(
+            advance_progress(
+                db, kind, process_id, req.run_id, req.revision, req.chunk_size
+            )
+        )
+    except SQLAlchemyError as exc:
+        raise database_write_error(db, exc, "pemrosesan koreksi") from exc
+
+
+@router.post("/{kind}/checks/{process_id}/pause")
+def pause_check(
+    kind: CorrectionKind, process_id: int, req: ProgressControl, db: DbSession
+) -> dict[str, Any]:
+    try:
+        return run_info(control_progress(db, kind, process_id, req.run_id, "paused"))
+    except SQLAlchemyError as exc:
+        raise database_write_error(db, exc, "jeda koreksi") from exc
+
+
+@router.post("/{kind}/checks/{process_id}/resume")
+def resume_check(
+    kind: CorrectionKind, process_id: int, req: ProgressControl, db: DbSession
+) -> dict[str, Any]:
+    try:
+        return run_info(control_progress(db, kind, process_id, req.run_id, "running"))
+    except SQLAlchemyError as exc:
+        raise database_write_error(db, exc, "kelanjutan koreksi") from exc
 
 
 @router.get("/{kind}/summary")
@@ -402,11 +473,14 @@ def list_records(
     generation: int | None = Query(None, ge=1),
     q: str = Query("", max_length=120),
     status: RecordFilter = "all",
+    saved_only: bool = False,
     skip: int = Query(0, ge=0),
     limit: int = Query(25, ge=1, le=100),
 ) -> dict[str, Any]:
     """Filter rows, rather than candidate records, so no-result targets remain visible."""
     query, _ = record_scope(db, kind, batch_id, process_id, generation)
+    if saved_only:
+        query = query.filter(CorrectionTarget.id.is_not(None))
     if q.strip():
         pattern = (
             "%"

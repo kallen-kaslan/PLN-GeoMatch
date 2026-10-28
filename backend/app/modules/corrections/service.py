@@ -98,9 +98,22 @@ def check_process(
 
 
 def selected_run(
-    db: Session, process: ReconciliationProcess, generation: int | None
+    db: Session,
+    process: ReconciliationProcess,
+    generation: int | None,
+    *,
+    include_partial: bool = False,
 ) -> MatchingRun | None:
-    """Only publish completed attempts; queued searches cannot masquerade as results."""
+    """Read committed incremental outcomes without publishing an unfinished run."""
+    if include_partial and generation is None:
+        latest = (
+            db.query(MatchingRun)
+            .filter_by(process_id=process.id)
+            .order_by(MatchingRun.generation.desc())
+            .first()
+        )
+        if latest is not None and latest.processing:
+            return latest
     number = generation if generation is not None else process.current_generation
     if not number:
         return None
@@ -111,7 +124,9 @@ def selected_run(
     )
     if run is None:
         raise HTTPException(404, "Versi pemeriksaan tidak ditemukan")
-    if run.status != ProcessStatus.COMPLETED:
+    if run.status != ProcessStatus.COMPLETED and not (
+        include_partial and run.processing
+    ):
         raise HTTPException(409, "Hasil versi pemeriksaan ini belum selesai")
     return run
 
@@ -167,6 +182,7 @@ def create_check(
     radius: float,
     request_key: str,
     actor: str,
+    incremental: bool = False,
 ) -> tuple[ReconciliationProcess, MatchingRun, bool]:
     """Persist the requested operation before dispatch, with idempotent submission."""
     lock_review_session(db)
@@ -222,6 +238,10 @@ def create_check(
     )
     db.flush()
     run = reserve_run(db, process, request_key, actor, radius)
+    if incremental:
+        from app.modules.corrections.progress import initialize_progress
+
+        initialize_progress(db, process, run)
     db.commit()
     return process, run, True
 
@@ -234,6 +254,7 @@ def retry_check(
     radius: float,
     request_key: str,
     actor: str,
+    incremental: bool = False,
 ) -> tuple[ReconciliationProcess, MatchingRun, bool]:
     """Use an optimistic attempt ID and serialize competing retry requests."""
     lock_review_session(db)
@@ -269,5 +290,9 @@ def retry_check(
             409, "Pemeriksaan telah berubah. Muat ulang sebelum memeriksa ulang."
         )
     run = reserve_run(db, process, request_key, actor, radius)
+    if incremental:
+        from app.modules.corrections.progress import initialize_progress
+
+        initialize_progress(db, process, run)
     db.commit()
     return process, run, True

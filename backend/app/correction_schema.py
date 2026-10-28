@@ -27,3 +27,6 @@ def upgrade_corrections(connection: Connection) -> None:
         CorrectionCandidateEvidence,
     ):
         cast(Table, model.__table__).create(connection, checkfirst=True)
+    from app.correction_progress_schema import upgrade_correction_progress
+
+    upgrade_correction_progress(connection)

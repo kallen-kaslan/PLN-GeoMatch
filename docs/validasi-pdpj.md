@@ -22,6 +22,14 @@ Persentase dihitung dari pekerjaan tersimpan pada dua tahap: pencocokan dan
 validasi akhir. Selesai pencocokan berarti 50%; 100% baru ditampilkan setelah
 validasi akhir seluruh baris tersimpan.
 
+Persentase ditampilkan hingga dua angka desimal; kemajuan positif di bawah
+0,01% ditandai `<0,01%`. UI meminta 100 baris per bagian agar pembaruan lebih
+sering, dan langsung menampilkan checkpoint dari respons penyimpanan tanpa
+menunggu pemuatan ulang seluruh tabel. Selama pencocokan berlangsung, panel
+menjelaskan bahwa validasi akhir baru dimulai setelah pencocokan seluruh data
+selesai. Animasi menandai pemrosesan/penyimpanan bagian aktif, penghentian yang
+menunggu penyimpanan, serta penyimpanan versi hasil yang disetujui petugas.
+
 Pemeriksaan otomatis menyimpan hasil per bagian, maksimal 400 baris. Data baris,
 rekomendasi, riwayat bawaan, dan penanda posisi disimpan dalam transaksi yang
 sama. Tombol **Hentikan sementara** menunggu bagian aktif selesai disimpan lalu
@@ -34,9 +42,41 @@ Halaman mengirim permintaan bagian berikutnya secara berurutan selama proses
 berjalan. Jika halaman ditutup, koneksi terputus, atau backend berhenti, bagian
 yang sudah berhasil disimpan tetap tersedia di database. Buka kembali halaman
 dan pilih **Lanjutkan pemeriksaan**. Bagian yang terputus sebelum transaksi
-berhasil disimpan akan dicoba ulang seluruhnya. Hasil parsial ditandai dan belum
-dapat diedit, diselesaikan, atau dipakai sebagai PDPJ selesai pada Data Koreksi.
+berhasil disimpan akan dicoba ulang seluruhnya. Saat proses dijeda, hasil yang
+sudah tersimpan dapat ditinjau, diperbaiki, dan disetujui secara bertahap.
 Setelah pemeriksaan otomatis selesai, status menjadi **Menunggu tinjauan petugas**.
+
+### Menyelesaikan validasi data tersimpan sambil melanjutkan PDPJ
+
+Setelah **Hentikan sementara** selesai menyimpan bagian aktif, tombol
+**Selesaikan validasi data tersimpan** aktif jika ada data, petugas sudah diisi,
+dan masalah pada data tersimpan sudah diperbaiki atau diberi pengecualian
+beralasan. Pengecualian massal juga tersedia untuk data tersimpan.
+
+Penyelesaian sebagian menyimpan versi kumulatif yang tetap: baris, rekomendasi,
+riwayat, sumber master, jumlah baris disetujui, dan posisi sumber saat publikasi.
+Versi ini langsung tersedia di Data Koreksi. Pemeriksaan asal tetap dijeda
+dengan checkpoint yang sama. **Lanjutkan pemeriksaan** melanjutkan bagian yang
+belum diproses; persetujuan tidak mengulang hasil tersimpan atau menutup berkas.
+Pengulangan persetujuan tanpa perubahan mengembalikan versi yang sama.
+
+Setiap proses koreksi menyimpan ID versi PDPJ yang dipilih. Penambahan hasil
+atau perubahan pada PDPJ asal tidak mengubah versi, kandidat, atau keputusan
+koreksi yang sudah tersimpan. Untuk memakai hasil tambahan, pilih versi terbaru
+dan buat pemeriksaan koreksi baru. IDPEL dari bagian sumber yang masih menunggu
+pemrosesan tetap dicadangkan dan tidak menjadi kandidat koreksi; benturan dengan
+baris sumber yang masih menunggu validasi ditandai pada detail koreksi.
+
+Jika hasil PDPJ terbaru menambahkan identitas atau referensi yang berbenturan
+dengan keputusan koreksi lama, Data Koreksi menampilkan versi terbaru dan daftar
+keputusan yang perlu ditinjau ulang. Keputusan dan riwayat sebelumnya tetap utuh.
+Penyelesaian setelah seluruh proses tuntas tetap mengunci pemeriksaan asal.
+
+Migrasi `b02c83e15d74` menambahkan asal dan metadata versi tanpa mengubah
+pemeriksaan lama. Endpoint penyelesaian mengembalikan `published_review` sebagai
+versi yang boleh dipakai untuk koreksi; pada penyelesaian sebagian, `id` utama
+tetap menunjuk pemeriksaan yang dapat dilanjutkan. Ringkasan pemeriksaan asal
+menyertakan daftar `publications` yang sudah disetujui.
 
 UI mengirim `incremental: true` ke `POST /pdpj/reviews` untuk membuat checkpoint
 tanpa menunggu seluruh baris. `POST /pdpj/reviews/{id}/advance` memproses satu

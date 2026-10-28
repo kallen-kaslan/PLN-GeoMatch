@@ -12,7 +12,9 @@ from app.models.correction import CorrectionCheck
 def reject_correction_legacy_write(db: Session, process_id: int) -> None:
     """Correction choices must pass scoped revision and audit checks."""
     if db.get(CorrectionCheck, process_id) is not None:
-        raise HTTPException(409, "Gunakan alur Peta Koreksi untuk pemeriksaan kategori baru")
+        raise HTTPException(
+            409, "Gunakan alur Peta Koreksi untuk pemeriksaan kategori baru"
+        )
 
 
 def apply_candidate_filters(
@@ -168,11 +170,17 @@ def prepare_master_sisa(req: PrepareMasterSisaRequest, db: DbSession):
     Hasilnya adalah Master Sisa.
     """
     try:
-        review = completed_review(db, req.pdpj_batch_id, req.pdpj_review_id) if req.pdpj_batch_id is not None else None
+        review = (
+            completed_review(db, req.pdpj_batch_id, req.pdpj_review_id)
+            if req.pdpj_batch_id is not None
+            else None
+        )
         if req.pdpj_review_id is not None and review is None:
             raise ValueError("Pilih berkas PDPJ yang sesuai pemeriksaan")
         return process_master_sisa_exclusion(
-            db=db, master_batch_id=req.master_batch_id, pdpj_batch_id=req.pdpj_batch_id,
+            db=db,
+            master_batch_id=req.master_batch_id,
+            pdpj_batch_id=req.pdpj_batch_id,
             pdpj_review_id=review.id if review else None,
         )
     except ValueError as e:
@@ -239,6 +247,7 @@ def list_master_snapshots(db: DbSession) -> list[dict]:
             "created_at": snapshot.created_at,
         }
         for snapshot in db.query(MasterSnapshot)
+        .filter(MasterSnapshot.ready.is_(True))
         .order_by(MasterSnapshot.id.desc())
         .all()
     ]
@@ -419,9 +428,7 @@ def submit_bulk_candidate_decision(req: BulkDecisionRequest, db: DbSession):
 
 
 @router.post("/candidates/{candidate_id}/decision")
-def submit_candidate_decision(
-    candidate_id: int, req: DecisionRequest, db: DbSession
-):
+def submit_candidate_decision(candidate_id: int, req: DecisionRequest, db: DbSession):
     cand = db.query(MatchCandidate).filter(MatchCandidate.id == candidate_id).first()
     if not cand:
         raise HTTPException(status_code=404, detail="Kandidat tidak ditemukan")

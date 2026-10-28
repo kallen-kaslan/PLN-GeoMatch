@@ -20,6 +20,69 @@ Sidebar memiliki submenu untuk kedua kategori. Tautan lama `/upload` diarahkan k
 
 Pemeriksaan selesai tidak berarti semua baris sudah memiliki kandidat atau sudah dipilih hasilnya. Baris bermasalah tetap terlihat dan mempunyai alasan hasil.
 
+## Progres dan penyimpanan bertahap
+
+Kedua kategori menampilkan panel progres dengan persentase desimal, tahap aktif,
+jumlah baris koreksi tersimpan, validasi akhir tersimpan, baris sumber terakhir,
+durasi, dan waktu pembaruan. Tahapnya adalah persiapan master, pemeriksaan benturan
+dan kandidat, validasi hasil tersimpan, lalu penyimpanan penyelesaian pemeriksaan.
+Animasi tetap berjalan selama bagian aktif diproses/disimpan dan saat menunggu jeda.
+
+UI meminta maksimal 100 baris per bagian. Kandidat, bukti sumber, hasil baris,
+dan checkpoint disimpan dalam transaksi yang sama. **Hentikan sementara koreksi**
+menunggu transaksi aktif selesai, lalu menjeda pengiriman bagian berikutnya.
+**Lanjutkan pemeriksaan koreksi** memakai run dan snapshot sumber yang sama,
+termasuk setelah halaman dibuka ulang atau koneksi terputus. Jika satu bagian
+gagal disimpan, hasil bagian sebelumnya tetap tersedia dan bagian gagal dicoba
+ulang tanpa menggandakan kandidat.
+
+Tabel, ringkasan, filter, dan detail langsung membaca hasil bagian yang sudah
+tersimpan, termasuk saat proses berjalan, dijeda, atau terhenti. Versi terbaru
+ditampilkan sebagai **hasil sementara** sampai validasi akhir dan penyelesaian
+berhasil disimpan. Hanya baris yang belum diproses berstatus **Belum diperiksa**.
+Versi lama yang sudah selesai tetap tersedia melalui pilihan versi hasil.
+Setelah ada baris tersimpan, **Buka Peta Koreksi** tersedia untuk versi tersebut.
+Pemilihan kandidat dapat dilakukan pada baris tersimpan dalam versi terbaru,
+termasuk saat pemeriksaan berjalan, dijeda, atau terhenti. Baris yang belum
+diproses belum ditawarkan di peta. Pemeriksaan berikutnya melanjutkan checkpoint
+yang sama dan mempertahankan seluruh pilihan kandidat yang sudah disimpan.
+
+Persiapan master juga bertahap: satu permintaan menyimpan maksimal 2.000 baris
+pekerjaan, dibaca dalam blok maksimal 400 baris. Panel menampilkan jumlah sumber
+master yang dibaca, berkas aktif, normalisasi tersimpan yang dipakai ulang,
+IDPEL unik, pemeriksaan pengecualian PDPJ, master gabungan tersimpan, dan master
+sisa tersedia. Progres keseluruhan mencakup pekerjaan persiapan tersebut.
+
+Persiapan memakai normalisasi unggahan yang sesuai versinya, lalu menyimpan
+penunjuk observasi terpilih per IDPEL di database. Seluruh riwayat observasi tetap
+berada pada sumber asli; bukti lengkap baru dibaca untuk kandidat yang ditemukan.
+Karena itu persiapan tidak menampung seluruh riwayat jutaan baris di RAM atau
+menyalinnya lagi ke setiap baris master gabungan. Aturan periode terbaru,
+prioritas Prabayar/Pascabayar, pelengkapan dari DIL, dan pengecualian PDPJ tetap
+dipertahankan.
+
+Snapshot belum selesai ditandai tidak siap dan tidak ditawarkan untuk pencarian.
+Setelah siap, snapshot dapat digunakan ulang untuk pemeriksaan lain dengan
+sumber, mapping, periode, versi normalisasi, dan versi PDPJ yang sama. Snapshot
+dengan sumber berbeda tidak dipakai sebagai pengganti. Jeda, kegagalan, dan buka
+ulang halaman mempertahankan checkpoint persiapan, termasuk pembentukan master
+sisa. Migrasi `d24ea5037f96` menambahkan penyimpanan persiapan tanpa mengubah
+snapshot atau keputusan koreksi lama.
+
+Validasi akhir memeriksa jumlah kandidat dan bukti terhadap setiap hasil baris,
+kemudian menyimpan checkpoint validasinya. Persentase tidak mencapai 100% sebelum
+status penyelesaian berhasil disimpan. Hasil bagian yang sudah tersimpan dapat
+digunakan di tabel dan peta sebelum seluruh run lolos validasi; hasil tersebut
+diberi penanda sementara. Perluasan radius menunggu pemeriksaan selesai agar
+kelanjutan baris tetap memakai sumber, radius, dan versi yang sama.
+
+UI mengirim `incremental: true` pada pembuatan/pemeriksaan ulang, lalu memanggil
+`POST /corrections/{kind}/checks/{id}/advance` dengan `run_id`, revisi checkpoint,
+dan ukuran bagian. Endpoint `/pause` dan `/resume` mengontrol run yang sama.
+Permintaan dengan revisi atau run lama ditolak. Pemanggil lama tanpa flag tersebut
+tetap menggunakan dispatch dan kontrak pemrosesan sebelumnya. Migrasi
+`c13d94f26e85` menambahkan checkpoint tanpa mengubah run historis.
+
 ## Pemeriksaan benturan dan kategori
 
 Pemeriksaan memakai nilai PDPJ **saat ini** dari versi validasi selesai yang dipilih, termasuk perbaikan manual sebelumnya.

@@ -1,13 +1,14 @@
 """Bounded bulk writes correlated by target/rank, independent of RETURNING order."""
 
-from typing import Any
+from typing import Any, cast
 
-from sqlalchemy import insert
+from sqlalchemy import Table, insert
 from sqlalchemy.orm import Session
 
 from app.models.correction import CorrectionCandidateEvidence, CorrectionTarget
 from app.models.matching import MatchCandidate
 from app.models.upload import SourceRecord
+from app.modules.spatial.master_evidence import candidate_observations
 
 CANDIDATE_WRITE_ROWS = 400
 OUTCOME_WRITE_ROWS = 100
@@ -36,22 +37,26 @@ class SearchWriter:
 
     def flush_outcomes(self) -> None:
         if self.outcomes:
-            self.db.execute(insert(CorrectionTarget.__table__), self.outcomes)
+            self.db.execute(
+                insert(cast(Table, CorrectionTarget.__table__)), self.outcomes
+            )
             self.outcomes.clear()
 
     def flush_candidates(self) -> None:
         if not self.candidates:
             return
         wanted = {source_id for _, source_id in self.sources.values()}
-        originals = dict(
-            self.db.query(SourceRecord.id, SourceRecord.data)
+        originals = {
+            source_id: data or {}
+            for source_id, data in self.db.query(SourceRecord.id, SourceRecord.data)
             .filter(SourceRecord.id.in_(wanted))
             .all()
-        )
+        }
         if set(originals) != wanted:
             raise ValueError("Observasi sumber kandidat tidak lengkap")
+        observations = candidate_observations(self.db, originals)
         returned = self.db.execute(
-            insert(MatchCandidate.__table__).returning(
+            insert(cast(Table, MatchCandidate.__table__)).returning(
                 MatchCandidate.id, MatchCandidate.target_record_id, MatchCandidate.rank
             ),
             self.candidates,
@@ -67,14 +72,17 @@ class SearchWriter:
                     "fields": {
                         key: value
                         for key, value in data.items()
-                        if key != "source_observations"
+                        if key
+                        not in {"source_observations", "source_observation_batches"}
                     },
-                    "observations": data.get("source_observations", []),
+                    "observations": observations[source_id],
                 }
             )
         if len(evidence) != len(self.candidates):
             raise ValueError("Penyimpanan kandidat tidak lengkap")
-        self.db.execute(insert(CorrectionCandidateEvidence.__table__), evidence)
+        self.db.execute(
+            insert(cast(Table, CorrectionCandidateEvidence.__table__)), evidence
+        )
         self.candidates.clear()
         self.sources.clear()
 

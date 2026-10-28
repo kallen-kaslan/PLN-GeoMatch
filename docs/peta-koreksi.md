@@ -1,6 +1,15 @@
 # Tahap 4: Peta Koreksi
 
-Halaman `/peta-koreksi` melanjutkan [Data Koreksi](data-koreksi.md). Halaman ini tersedia melalui sidebar dan tautan **Buka Peta Koreksi** pada pemeriksaan yang sudah mempunyai hasil. Kategori, berkas, pemeriksaan, dan versi hasil tetap menjadi cakupan eksplisit.
+Halaman `/peta-koreksi` melanjutkan [Data Koreksi](data-koreksi.md). Halaman ini tersedia melalui sidebar dan tautan **Buka Peta Koreksi** setelah ada baris pemeriksaan yang tersimpan, tanpa menunggu seluruh pemeriksaan selesai. Kategori, berkas, pemeriksaan, dan versi hasil tetap menjadi cakupan eksplisit.
+
+Untuk pemeriksaan bertahap, peta memakai versi terbaru dan hanya memuat baris
+yang sudah disimpan (`saved_only=true`). Jumlah tersedia dan jumlah seluruh
+baris ditampilkan. Kandidat pada baris tersebut dapat ditinjau dan dipilih saat
+pemeriksaan berjalan, dijeda, atau terhenti. Baris baru otomatis tersedia setelah
+checkpoint bertambah. Pilihan tetap tersimpan saat pemeriksaan dilanjutkan dari
+Data Koreksi; proses, versi, kandidat lama, dan riwayat pilihan dipertahankan.
+Baris belum diperiksa belum masuk tahap peta. Perluasan radius menunggu seluruh
+pemeriksaan selesai; radius dalam cakupan tersimpan tetap dapat digunakan.
 
 ## Interaksi
 
@@ -32,7 +41,12 @@ Migrasi `a4b19c7e6201` menambahkan tabel `correction_decisions`. Setiap perubaha
 
 Kejadian dengan revisi tertinggi merupakan keadaan pilihan aktif. Setiap target mempunyai paling banyak satu pilihan aktif dalam satu pemeriksaan. Mengganti atau membatalkan pilihan memerlukan alasan. Histori sebelumnya tidak ditimpa. Pemilihan kandidat dari target, kategori, pemeriksaan, atau versi lain ditolak. Permintaan dengan revisi lama juga ditolak; UI memuat ulang pilihan agar pengguna dapat meninjau perubahan.
 
-Saat pencarian baru masih antre/berjalan, perubahan pilihan ditolak. Endpoint keputusan massal/tunggal, pencarian ulang, dan finalisasi pada alur lama tidak dapat dipakai untuk melewati audit kategori koreksi baru. Alur target lama tetap tersedia melalui rutenya.
+Pada pemeriksaan bertahap, perubahan pilihan hanya diterima untuk baris yang
+sudah tersimpan pada versi terbaru. Versi historis tetap hanya dapat dibaca.
+Pencarian lama tanpa checkpoint yang masih antre/berjalan tetap menolak
+perubahan pilihan. Endpoint keputusan massal/tunggal, pencarian ulang, dan
+finalisasi pada alur lama tidak dapat dipakai untuk melewati audit kategori
+koreksi baru. Alur target lama tetap tersedia melalui rutenya.
 
 Identitas petugas masih memakai label pengguna seperti tahap PDPJ. Aturan satu IDPEL master untuk beberapa target berbeda belum ditetapkan; tahap ini membatasi satu pilihan per target, belum keunikan IDPEL di seluruh hasil.
 

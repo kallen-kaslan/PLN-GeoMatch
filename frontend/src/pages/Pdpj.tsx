@@ -9,17 +9,18 @@ import { CompleteWithExceptionsDialog } from "@/components/pdpj/CompleteWithExce
 import { PdpjProgress } from "@/components/pdpj/PdpjProgress";
 import type { ApiError } from "@/lib/api";
 import { MASTER_TYPES, displayValue, masterApi, type ImportResult } from "@/lib/master";
-import { existenceLabel, pdpjApi, reviewLabel, type PdpjStatus, type PdpjSummary } from "@/lib/pdpj";
+import { existenceLabel, pdpjApi, reviewLabel, type PdpjCompletion, type PdpjStatus, type PdpjSummary } from "@/lib/pdpj";
 import { useAppStore } from "@/store/app";
 
 const control = "rounded-sm border-2 border-neo-border bg-white px-3 py-2 text-sm disabled:opacity-50";
 const button = buttonClass.secondary;
 const count = (value: number | undefined) => value === undefined ? "—" : value.toLocaleString("id-ID");
 
-function CompletionDialog({ onClose }: { onClose: () => void }) {
+function CompletionDialog({ result, onClose }: { result: PdpjCompletion; onClose: () => void }) {
   const dialog = useRef<HTMLDialogElement>(null);
   useEffect(() => { const element = dialog.current; element?.showModal(); return () => element?.close(); }, []);
-  return <dialog ref={dialog} onCancel={onClose} aria-labelledby="pdpj-complete-title" className="fixed inset-0 m-auto w-[calc(100%-2rem)] max-w-md space-y-4 rounded-sm border-2 border-neo-border bg-white p-6 shadow-[5px_5px_0_#0a0a0a] backdrop:bg-black/50"><CheckCircle2 size={32} className="text-green-700" /><h2 id="pdpj-complete-title" className="text-lg font-black">PDPJ selesai divalidasi</h2><p className="text-sm">Pemeriksaan tersimpan. Data PDPJ ini siap dipakai sebagai acuan pengecualian pada proses koreksi.</p><div className="flex flex-wrap gap-3"><button type="button" onClick={onClose} className={button}>Lihat hasil validasi</button><Link to="/upload" className={buttonClass.primary}>Buka Data Koreksi</Link></div></dialog>;
+  const partial = result.published_review.id !== result.id;
+  return <dialog ref={dialog} onCancel={onClose} aria-labelledby="pdpj-complete-title" className="fixed inset-0 m-auto w-[calc(100%-2rem)] max-w-md space-y-4 rounded-sm border-2 border-neo-border bg-white p-6 shadow-[5px_5px_0_#0a0a0a] backdrop:bg-black/50"><CheckCircle2 size={32} className="text-green-700" /><h2 id="pdpj-complete-title" className="text-lg font-black">{partial ? "Data tersimpan selesai divalidasi" : "PDPJ selesai divalidasi"}</h2><p className="text-sm">{partial ? `Versi ${result.published_review.publication?.version} dengan ${count(result.published_review.publication?.row_count)} baris siap dipakai untuk koreksi. Pemrosesan PDPJ dapat dilanjutkan dari posisi terakhir.` : "Pemeriksaan tersimpan. Data PDPJ ini siap dipakai sebagai acuan pengecualian pada proses koreksi."}</p><div className="flex flex-wrap gap-3"><button type="button" onClick={onClose} className={button}>{partial ? "Kembali ke proses PDPJ" : "Lihat hasil validasi"}</button><Link to="/upload" className={buttonClass.primary}>Buka Data Koreksi</Link></div></dialog>;
 }
 
 export default function PdpjPage() {
@@ -38,8 +39,9 @@ export default function PdpjPage() {
   const [page, setPage] = useState(1);
   const [rowId, setRowId] = useState<number | null>(null);
   const [notice, setNotice] = useState("");
-  const [completion, setCompletion] = useState(false);
+  const [completion, setCompletion] = useState<PdpjCompletion | null>(null);
   const [bulkReview, setBulkReview] = useState<PdpjSummary | null>(null);
+  const [bulkSaving, setBulkSaving] = useState(false);
   const [autoRunId, setAutoRunId] = useState<number | null>(null);
 
   const batches = useQuery({ queryKey: ["pdpj", "batches"], queryFn: pdpjApi.batches });
@@ -64,9 +66,15 @@ export default function PdpjPage() {
       void queryClient.invalidateQueries({ queryKey: ["pdpj"] });
     },
   });
-  const finish = useMutation<unknown, ApiError | Error>({
+  const approved = (result: PdpjCompletion) => {
+    setBulkReview(null); setCompletion(result);
+    setNotice(result.published_review.id !== result.id ? "Versi data tersimpan siap digunakan untuk koreksi. PDPJ tetap bisa dilanjutkan." : "PDPJ selesai divalidasi dan siap digunakan untuk proses koreksi.");
+    void queryClient.invalidateQueries({ queryKey: ["pdpj"] });
+    void queryClient.invalidateQueries({ queryKey: ["corrections"] });
+  };
+  const finish = useMutation<PdpjCompletion, ApiError | Error>({
     mutationFn: () => pdpjApi.complete(reviewId!, review.data!.revision, actor.trim()),
-    onSuccess: () => { setCompletion(true); setNotice("PDPJ selesai divalidasi dan siap digunakan untuk proses koreksi."); void queryClient.invalidateQueries({ queryKey: ["pdpj"] }); },
+    onSuccess: approved,
   });
 
   const changeBatch = (id: number) => {
@@ -81,6 +89,7 @@ export default function PdpjPage() {
   const failure = batches.isError || reviews.isError || review.isError || records.isError || masters.isError;
   const totalPages = Math.max(1, Math.ceil((records.data?.total ?? 0) / 25));
   const processingIncomplete = !!review.data?.processing && review.data.processing.state !== "ready";
+  const processingLocked = !!review.data?.processing && (review.data.processing.state === "running" || review.data.processing.processed_rows === 0);
   return <div className="space-y-5 sm:space-y-6">
     <header className="flex flex-col justify-between gap-4 border-b border-neo-border pb-4 sm:flex-row sm:items-center"><div><h1 className="fluid-h1 flex items-center gap-2 font-black"><FileCheck2 size={26} />Data PDPJ</h1><p className="mt-1 text-xs text-neo-border sm:text-sm">Periksa IDPEL ke seluruh master, lengkapi data, lalu selesaikan validasi sebelum koreksi.</p></div><div className="flex gap-2"><button type="button" aria-label="Muat ulang PDPJ" onClick={() => { void queryClient.invalidateQueries({ queryKey: ["pdpj"] }); void queryClient.invalidateQueries({ queryKey: ["masters", "all-ready"] }); }} className={button}><RefreshCw size={16} /></button><button type="button" onClick={() => { setShowImport(true); setResumeId(null); }} disabled={showImport} className={buttonClass.primary}><Plus size={16} />Unggah PDPJ</button></div></header>
     {notice && <p role="status" className="rounded-sm border-2 border-green-700 bg-green-50 p-4 text-sm text-green-800">{notice}</p>}
@@ -96,31 +105,30 @@ export default function PdpjPage() {
       {start.isError && <p role="alert" className="text-sm text-red-700">{(start.error as unknown as ApiError).message}</p>}
     </section>
     {review.data && <>
-      <PdpjProgress key={review.data.id} review={review.data} autoStart={autoRunId === review.data.id} />
+      <PdpjProgress key={review.data.id} review={review.data} autoStart={autoRunId === review.data.id} saving={finish.isPending || bulkSaving} />
+      {review.data.source_review_id !== null && <p className="rounded-sm border-2 border-blue-700 bg-blue-50 p-4 text-sm text-blue-900">Versi {review.data.publication?.version} yang disetujui: {count(review.data.publication?.row_count)} dari {count(review.data.publication?.total_rows)} baris. Versi ini tetap menjadi acuan bagi koreksi yang sudah menggunakannya. <Link to={`/pdpj?batch_id=${batchId}&review_id=${review.data.source_review_id}`} className="font-bold underline">Kembali ke pemrosesan PDPJ</Link></p>}
+      {!!review.data.publications?.length && <section aria-label="Versi PDPJ untuk koreksi" className="space-y-3 rounded-sm border-2 border-green-700 bg-green-50 p-4 text-sm"><h2 className="font-black">Versi yang sudah disetujui untuk koreksi</h2>{review.data.publications.map((item) => <p key={item.id}><Link to={`/pdpj?batch_id=${batchId}&review_id=${item.id}`} className="font-bold underline">Versi {item.publication?.version} · {count(item.publication?.row_count)} / {count(item.publication?.total_rows)} baris</Link> · {item.completed_by}</p>)}<Link to="/upload" className={button}>Buka Data Koreksi</Link></section>}
       <section aria-label="Ringkasan pemeriksaan PDPJ" className="grid grid-cols-2 gap-3 xl:grid-cols-3">{[
         ["Total baris", review.data.summary.total_rows, "bg-white"], ["IDPEL ditemukan", review.data.summary.found, "bg-green-50"],
         ["IDPEL tidak ditemukan", review.data.summary.not_found, "bg-red-50"], ["IDPEL kosong / format bermasalah", review.data.summary.empty + review.data.summary.invalid, "bg-amber-50"],
         ["Koordinat belum lengkap", review.data.summary.incomplete_coordinates, "bg-amber-50"], ["Masalah belum selesai", review.data.summary.unresolved, "bg-red-50"],
       ].map(([label, value, color]) => <div key={String(label)} className={`rounded-sm border-2 border-neo-border p-3 shadow-[2px_2px_0_#0a0a0a] sm:p-4 ${color}`}><p className="text-[10px] font-bold uppercase tracking-wide text-neo-border">{label}</p><p className="mt-2 text-2xl font-black">{count(Number(value))}</p></div>)}</section>
-      <section className="space-y-4 rounded-sm border-2 border-neo-border bg-white p-4 shadow-[3px_3px_0_#0a0a0a] sm:p-5"><div className="flex flex-col justify-between gap-3 sm:flex-row sm:items-center"><div><h2 className="text-sm font-black">Hasil pemeriksaan · {reviewLabel(review.data.status, review.data.processing)}</h2><p className="mt-1 text-xs text-neo-border">{review.data.masters.length} sumber tersimpan · {count(review.data.summary.ready)} baris siap · {count(review.data.summary.exceptions)} pengecualian</p></div>{review.data.status === "completed" ? <Link to="/upload" className={button}><CheckCircle2 size={16} />Lanjut ke Data Koreksi</Link> : <button type="button" onClick={() => finish.mutate()} disabled={processingIncomplete || review.data.summary.unresolved > 0 || !actor.trim() || finish.isPending || review.isFetching} className={buttonClass.success}>{finish.isPending && <LoaderCircle size={16} className="animate-spin" />}Selesaikan validasi PDPJ</button>}</div>
+      <section className="space-y-4 rounded-sm border-2 border-neo-border bg-white p-4 shadow-[3px_3px_0_#0a0a0a] sm:p-5"><div className="flex flex-col justify-between gap-3 sm:flex-row sm:items-center"><div><h2 className="text-sm font-black">Hasil pemeriksaan · {reviewLabel(review.data.status, review.data.processing)}</h2><p className="mt-1 text-xs text-neo-border">{review.data.masters.length} sumber tersimpan · {count(review.data.summary.ready)} baris siap · {count(review.data.summary.exceptions)} pengecualian</p></div>{review.data.status === "completed" ? <Link to="/upload" className={button}><CheckCircle2 size={16} />Lanjut ke Data Koreksi</Link> : <button type="button" onClick={() => finish.mutate()} disabled={processingLocked || review.data.summary.total_rows === 0 || review.data.summary.unresolved > 0 || !actor.trim() || finish.isPending || review.isFetching} className={buttonClass.success}>{finish.isPending && <LoaderCircle size={16} className="animate-spin" />}{processingIncomplete ? "Selesaikan validasi data tersimpan" : "Selesaikan validasi PDPJ"}</button>}</div>
         <p className="text-xs text-neo-border">IDPEL ditemukan belum berarti datanya lengkap. Penyelesaian menyetujui seluruh baris lengkap; baris bermasalah memerlukan perbaikan atau alasan pengecualian.</p>
         {review.data.status !== "completed" && <div className="space-y-3 rounded-sm border border-amber-600 bg-amber-50 p-3 text-xs text-amber-950">
           {!actor.trim() && <p>Isi <strong>Petugas untuk riwayat</strong> agar tindakan penyimpanan dan penyelesaian aktif.</p>}
-          {review.data.summary.unresolved > 0 && <><p>Ada {count(review.data.summary.unresolved)} baris yang masih perlu ditindaklanjuti. Anda dapat mencatat pengecualian massal dengan alasan agar proses koreksi tetap berjalan.</p><button type="button" disabled={processingIncomplete || review.isFetching || finish.isPending} onClick={() => setBulkReview(review.data!)} className={buttonClass.warning}>Lanjutkan dengan pengecualian massal</button></>}
+          {review.data.summary.unresolved > 0 && <><p>Ada {count(review.data.summary.unresolved)} baris yang masih perlu ditindaklanjuti. Anda dapat mencatat pengecualian massal dengan alasan agar proses koreksi tetap berjalan.</p><button type="button" disabled={processingLocked || review.isFetching || finish.isPending} onClick={() => setBulkReview(review.data!)} className={buttonClass.warning}>Lanjutkan dengan pengecualian massal</button></>}
         </div>}
         {review.data.status === "completed" && <p className="rounded-sm border border-green-700 bg-green-50 p-3 text-xs text-green-900">Diselesaikan oleh {review.data.completed_by}. Pemeriksaan ini terkunci; gunakan Periksa ulang PDPJ untuk pemeriksaan berikutnya.</p>}
         <details className="text-xs"><summary className="cursor-pointer font-semibold">Lihat sumber master pemeriksaan ini</summary><ul className="mt-2 list-disc space-y-1 pl-4">{review.data.masters.map((item) => <li key={item.id} className="break-words">{item.dataset_type.toUpperCase()} · {item.filename}{item.source_sheet ? ` · Sheet ${item.source_sheet}` : ""}</li>)}</ul></details>
         {finish.error && <p role="alert" className="text-sm text-red-700">{finish.error.message}</p>}
         <div className="flex flex-col gap-3 sm:flex-row"><input type="search" aria-label="Cari data PDPJ" placeholder="Cari IDPEL, nama, atau nomor meter…" value={search} onChange={(event) => { setSearch(event.target.value); setPage(1); }} className={`${control} min-w-0 flex-1`} /><select aria-label="Filter pemeriksaan PDPJ" value={status} onChange={(event) => { setStatus(event.target.value as PdpjStatus); setPage(1); }} className={control}>{[["all", "Semua kondisi"], ["found", "IDPEL ditemukan"], ["not_found", "IDPEL tidak ditemukan"], ["empty", "IDPEL kosong"], ["invalid", "Format IDPEL bermasalah"], ["incomplete", "Koordinat belum lengkap"], ["unresolved", "Masalah belum selesai"], ["ready", "Siap diselesaikan"], ["exception", "Dengan pengecualian"]].map(([key, label]) => <option key={key} value={key}>{label}</option>)}</select></div>
-        <div className="overflow-x-auto rounded-sm border border-neo-border"><table className="w-full min-w-[900px] text-left text-xs"><thead className="bg-gray-100"><tr>{["Baris", "IDPEL / Nama", "Keberadaan IDPEL", "Koordinat", "Rekomendasi", "Review", "Detail"].map((label) => <th key={label} className="p-3">{label}</th>)}</tr></thead><tbody>{records.isPending ? <tr><td colSpan={7} className="p-8 text-center">Memuat hasil pemeriksaan…</td></tr> : records.isError ? <tr><td colSpan={7} className="p-8 text-center text-red-700">Hasil belum dapat dimuat.</td></tr> : records.data?.items.length ? records.data.items.map((row) => <tr key={row.id} className={`border-t border-gray-200 ${row.id === rowId ? "bg-amber-50" : "hover:bg-neo-white"}`}><td className="p-3 font-mono">{row.row_number}</td><td className="p-3"><p className="font-mono font-bold">{displayValue(row.fields.idpel)}</p><p className="mt-1 max-w-48 truncate">{displayValue(row.fields.nama)}</p></td><td className={`p-3 font-semibold ${row.existence === "found" ? "text-green-800" : "text-red-700"}`}>{existenceLabel[row.existence]}</td><td className="p-3"><p className="font-mono">{displayValue(row.fields.lat)}, {displayValue(row.fields.lon)}</p><p className="mt-1 text-[10px]">{row.coordinates_complete ? "Lengkap" : "Belum lengkap"}</p></td><td className="p-3">{row.recommendation_count} sumber</td><td className="p-3">{row.exception ? "Pengecualian beralasan" : row.issues.length ? `${row.issues.length} masalah` : row.reviewed ? "Sudah ditinjau" : "Siap disetujui"}{!!row.warnings?.length && <p className="mt-1 text-[10px] text-blue-800">IDPEL berulang · boleh dilanjutkan</p>}</td><td className="p-3"><button type="button" aria-label={`Detail PDPJ baris ${row.row_number}`} disabled={processingIncomplete} onClick={() => setRowId(row.id)} className={button}>Detail</button></td></tr>) : <tr><td colSpan={7} className="p-8 text-center">Tidak ada baris sesuai filter.</td></tr>}</tbody></table></div>
+        <div className="overflow-x-auto rounded-sm border border-neo-border"><table className="w-full min-w-[900px] text-left text-xs"><thead className="bg-gray-100"><tr>{["Baris", "IDPEL / Nama", "Keberadaan IDPEL", "Koordinat", "Rekomendasi", "Review", "Detail"].map((label) => <th key={label} className="p-3">{label}</th>)}</tr></thead><tbody>{records.isPending ? <tr><td colSpan={7} className="p-8 text-center">Memuat hasil pemeriksaan…</td></tr> : records.isError ? <tr><td colSpan={7} className="p-8 text-center text-red-700">Hasil belum dapat dimuat.</td></tr> : records.data?.items.length ? records.data.items.map((row) => <tr key={row.id} className={`border-t border-gray-200 ${row.id === rowId ? "bg-amber-50" : "hover:bg-neo-white"}`}><td className="p-3 font-mono">{row.row_number}</td><td className="p-3"><p className="font-mono font-bold">{displayValue(row.fields.idpel)}</p><p className="mt-1 max-w-48 truncate">{displayValue(row.fields.nama)}</p></td><td className={`p-3 font-semibold ${row.existence === "found" ? "text-green-800" : "text-red-700"}`}>{existenceLabel[row.existence]}</td><td className="p-3"><p className="font-mono">{displayValue(row.fields.lat)}, {displayValue(row.fields.lon)}</p><p className="mt-1 text-[10px]">{row.coordinates_complete ? "Lengkap" : "Belum lengkap"}</p></td><td className="p-3">{row.recommendation_count} sumber</td><td className="p-3">{row.exception ? "Pengecualian beralasan" : row.issues.length ? `${row.issues.length} masalah` : row.reviewed ? "Sudah ditinjau" : "Siap disetujui"}{!!row.warnings?.length && <p className="mt-1 text-[10px] text-blue-800">IDPEL berulang · boleh dilanjutkan</p>}</td><td className="p-3"><button type="button" aria-label={`Detail PDPJ baris ${row.row_number}`} disabled={processingLocked} onClick={() => setRowId(row.id)} className={button}>Detail</button></td></tr>) : <tr><td colSpan={7} className="p-8 text-center">Tidak ada baris sesuai filter.</td></tr>}</tbody></table></div>
         <footer className="flex flex-wrap items-center justify-between gap-3 text-xs"><p>{count(records.data?.total)} baris sesuai filter · Halaman {page} dari {totalPages}</p><div className="flex gap-2"><button type="button" aria-label="Halaman PDPJ sebelumnya" disabled={page <= 1 || records.isFetching} onClick={() => setPage((previous) => previous - 1)} className={button}><ArrowLeft size={16} /></button><button type="button" aria-label="Halaman PDPJ berikutnya" disabled={page >= totalPages || records.isFetching} onClick={() => setPage((previous) => previous + 1)} className={button}><ArrowRight size={16} /></button></div></footer>
       </section>
-      {rowId !== null && !processingIncomplete && <PdpjRowDetail key={`${reviewId}-${rowId}`} review={review.data} rowId={rowId} actor={actor} onClose={() => setRowId(null)} />}
+      {rowId !== null && !processingLocked && <PdpjRowDetail key={`${reviewId}-${rowId}`} review={review.data} rowId={rowId} actor={actor} onClose={() => setRowId(null)} />}
     </>}
-    {bulkReview && <CompleteWithExceptionsDialog review={bulkReview} actor={actor} onActorChange={setActor} onClose={() => setBulkReview(null)} onCompleted={() => {
-      setBulkReview(null); setCompletion(true); setNotice("PDPJ selesai dengan pengecualian tercatat dan siap digunakan untuk proses koreksi.");
-      void queryClient.invalidateQueries({ queryKey: ["pdpj"] });
-    }} />}
-    {completion && <CompletionDialog onClose={() => setCompletion(false)} />}
+    {bulkReview && <CompleteWithExceptionsDialog review={bulkReview} actor={actor} onActorChange={setActor} onClose={() => setBulkReview(null)} onCompleted={approved} onPendingChange={setBulkSaving} />}
+    {completion && <CompletionDialog result={completion} onClose={() => setCompletion(null)} />}
   </div>;
 }

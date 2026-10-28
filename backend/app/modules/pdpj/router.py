@@ -4,7 +4,7 @@ from typing import Annotated, Any, Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, ConfigDict, Field, field_validator
-from sqlalchemy import and_, func, or_
+from sqlalchemy import and_, case, func, or_
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
 
@@ -39,6 +39,7 @@ class StartReview(BaseModel):
 
 class ProcessingStep(BaseModel):
     revision: int = Field(ge=1)
+    chunk_size: int = Field(400, ge=1, le=400)
 
 
 class ReviewAction(BaseModel):
@@ -97,6 +98,8 @@ def review_info(review: PdpjReview) -> dict[str, Any]:
         "completed_at": review.completed_at,
         "completed_by": review.completed_by,
         "processing": review.processing,
+        "source_review_id": review.source_review_id,
+        "publication": review.publication,
     }
 
 
@@ -177,7 +180,10 @@ def list_reviews(batch_id: int, db: DbSession) -> list[dict[str, Any]]:
         review_info(review)
         for review in db.query(PdpjReview)
         .filter(PdpjReview.batch_id == batch_id)
-        .order_by(PdpjReview.id.desc())
+        .order_by(
+            case((PdpjReview.source_review_id.is_(None), 0), else_=1),
+            PdpjReview.id.desc(),
+        )
         .all()
     ]
 
@@ -198,7 +204,7 @@ def advance_processing(
 ) -> dict[str, Any]:
     """Process one bounded transaction and return its durable checkpoint."""
     try:
-        return review_info(advance_review(db, review_id, req.revision))
+        return review_info(advance_review(db, review_id, req.revision, req.chunk_size))
     except SQLAlchemyError as exc:
         raise database_write_error(db, exc, "pemeriksaan PDPJ") from exc
 
@@ -264,6 +270,13 @@ def review_summary(review_id: int, db: DbSession) -> dict[str, Any]:
             for batch in db.query(UploadBatch)
             .filter(UploadBatch.id.in_(review.master_batch_ids))
             .order_by(UploadBatch.id)
+            .all()
+        ],
+        "publications": [
+            review_info(item)
+            for item in db.query(PdpjReview)
+            .filter(PdpjReview.source_review_id == review.id)
+            .order_by(PdpjReview.id.desc())
             .all()
         ],
     }
@@ -455,8 +468,8 @@ def finish_review(review_id: int, req: ReviewAction, db: DbSession) -> dict[str,
     """Finalize clean rows together; exceptions must already carry explicit reasons."""
     try:
         review = get_review(db, review_id, req.revision)
-        complete_validation(db, review, req.actor)
-        return review_info(review)
+        _, published = complete_validation(db, review, req.actor)
+        return {**review_info(review), "published_review": review_info(published)}
     except HTTPException:
         db.rollback()
         raise
@@ -471,14 +484,18 @@ def finish_with_exceptions(
     """Finalize after an explicit, audited deferral of all remaining problem rows."""
     try:
         review = get_review(db, review_id, req.revision)
-        added = complete_validation(
+        added, published = complete_validation(
             db,
             review,
             req.actor,
             exception_reason=req.reason,
             expected_unresolved=req.expected_unresolved,
         )
-        return {**review_info(review), "exceptions_added": added}
+        return {
+            **review_info(review),
+            "exceptions_added": added,
+            "published_review": review_info(published),
+        }
     except HTTPException:
         db.rollback()
         raise
