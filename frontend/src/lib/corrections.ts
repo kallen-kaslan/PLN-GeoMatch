@@ -1,6 +1,7 @@
 import { api } from "@/lib/api";
 import type { CorrectionKind, MasterBatch, MasterBatchPreview } from "@/lib/master";
 import type { Fields, PdpjPublication } from "@/lib/pdpj";
+import { newestCheckpoint } from "@/lib/progress";
 
 export const CORRECTION_TYPES: { key: CorrectionKind; slug: string; label: string }[] = [
   { key: "idpel_tidak_ketemu", slug: "idpel-tidak-ketemu", label: "IDPEL Tidak Ketemu" },
@@ -30,7 +31,18 @@ export interface MasterPreparationProgress {
   pdpj_total?: number; pdpj_rows?: number; materialized_rows?: number; eligible_rows?: number; excluded_rows?: number;
 }
 export interface CorrectionRun { activity?: import("./progress").ProcessActivity; id: number; generation: number; status: "queued" | "running" | "completed" | "failed"; failure_code?: string | null; radius_meters: number; total_targets: number; matched_targets: number; created_at: string; completed_at: string | null; processing?: CorrectionProcessing | null }
-export interface CorrectionCheck { process_id: number; batch_id: number; category: CorrectionKind; pdpj_review_id: number; status: CorrectionRun["status"]; current_generation: number; master_snapshot_id: number | null; latest_run: CorrectionRun; runs: CorrectionRun[]; requested_run_id?: number; execution_mode?: string; pdpj_update?: { review_id: number; publication: PdpjPublication | null; conflicts: { record_id: number; codes: string[] }[] } | null }
+export interface PdpjUpdate { review_id: number; publication: PdpjPublication | null; conflicts: { record_id: number; codes: string[] }[]; conflicts_checked?: boolean; decision_revision?: number }
+export interface CorrectionCheck { process_id: number; batch_id: number; category: CorrectionKind; pdpj_review_id: number; status: CorrectionRun["status"]; current_generation: number; master_snapshot_id: number | null; latest_run: CorrectionRun; runs: CorrectionRun[]; requested_run_id?: number; execution_mode?: string; pdpj_update?: PdpjUpdate | null }
+
+export function mergeCheckProgress(previous: CorrectionCheck | undefined, next: CorrectionCheck): CorrectionCheck {
+  if (!previous || previous.process_id !== next.process_id) return next;
+  if (previous.latest_run.generation > next.latest_run.generation) return previous;
+  if (previous.latest_run.id !== next.latest_run.id) return next;
+  const latest = newestCheckpoint(previous.latest_run, next.latest_run, (run) => run.processing?.revision ?? 0);
+  return { ...next, latest_run: latest, status: latest.status,
+    current_generation: latest.status === "completed" ? latest.generation : Math.max(previous.current_generation, next.current_generation),
+    runs: next.runs.map((run) => run.id === latest.id ? latest : run) };
+}
 export interface CorrectionScope { batch_id?: number; process_id?: number; generation?: number }
 export interface CorrectionSummary { total_rows: number; not_checked: number; pdpj_conflicts: number; matched: number; no_candidates: number; invalid_data: number; incomplete_coordinates: number; identity_found: number; identity_not_found: number; eligible_searched: number; generation: number | null }
 export interface CorrectionRow {
@@ -53,8 +65,9 @@ export const correctionApi = {
   readyPdpj: async () => (await api.get<ReadyPdpj[]>("/corrections/ready-pdpj")).data,
   batches: async (kind: CorrectionKind) => (await api.get<MasterBatch[]>(`/corrections/${kind}/batches`)).data,
   batch: async (kind: CorrectionKind, id: number) => (await api.get<MasterBatchPreview>(`/corrections/${kind}/batches/${id}`)).data,
-  checks: async (kind: CorrectionKind, id: number) => (await api.get<CorrectionCheck[]>(`/corrections/${kind}/checks`, { params: { batch_id: id } })).data,
-  check: async (kind: CorrectionKind, id: number) => (await api.get<CorrectionCheck>(`/corrections/${kind}/checks/${id}`)).data,
+  checks: async (kind: CorrectionKind, id: number, signal?: AbortSignal) => (await api.get<CorrectionCheck[]>(`/corrections/${kind}/checks`, { params: { batch_id: id, include_update_conflicts: false }, signal })).data,
+  check: async (kind: CorrectionKind, id: number, signal?: AbortSignal) => (await api.get<CorrectionCheck>(`/corrections/${kind}/checks/${id}`, { params: { include_update_conflicts: false }, signal })).data,
+  pdpjUpdate: async (kind: CorrectionKind, id: number, signal?: AbortSignal) => (await api.get<PdpjUpdate | null>(`/corrections/${kind}/checks/${id}/pdpj-update`, { signal })).data,
   start: async (kind: CorrectionKind, body: CheckRequest) => (await api.post<CorrectionCheck>(`/corrections/${kind}/checks`, body)).data,
   retry: async (kind: CorrectionKind, id: number, body: RetryRequest) => (await api.post<CorrectionCheck>(`/corrections/${kind}/checks/${id}/retry`, body)).data,
   advance: async (kind: CorrectionKind, id: number, run: CorrectionRun) => (await api.post<CorrectionRun>(`/corrections/${kind}/checks/${id}/advance`, { run_id: run.id, revision: run.processing!.revision, chunk_size: 100 })).data,

@@ -9,6 +9,7 @@ import { displayValue, type CorrectionKind } from "@/lib/master";
 import { PDPJ_FIELDS } from "@/lib/pdpj";
 import type { ApiError } from "@/lib/api";
 import { useAppStore } from "@/store/app";
+import { usePdpjUpdate } from "@/hooks/usePdpjUpdate";
 
 const control = "min-w-0 rounded-sm border-2 border-neo-border bg-white px-3 py-2 text-sm disabled:opacity-50";
 const button = buttonClass.secondary;
@@ -48,6 +49,7 @@ function MapWorkspace({ kind, batchParam, processParam, generationParam, changeP
   const checks = useQuery({ queryKey: ["correction-checks", kind, batch], queryFn: () => correctionApi.checks(kind, batch!), enabled: Boolean(batch) });
   const process = processParam ?? checks.data?.[0]?.process_id;
   const check = useQuery({ queryKey: ["correction-check", kind, process], queryFn: () => correctionApi.check(kind, process!), enabled: Boolean(process), refetchInterval: (query) => ["queued", "running"].includes(query.state.data?.latest_run.status ?? "") ? 1500 : false });
+  const pdpjUpdate = usePdpjUpdate(kind, check.data);
   const latestGeneration = check.data?.latest_run.processing ? check.data.latest_run.generation : check.data?.current_generation;
   const generation = generationParam ?? latestGeneration;
   const run = check.data?.runs.find((item) => item.generation === generation && (item.status === "completed" || item.processing));
@@ -86,7 +88,7 @@ function MapWorkspace({ kind, batchParam, processParam, generationParam, changeP
   const dataError = batches.error || checks.error || check.error || rows.error;
   const noCoordinates = (rows.data ?? []).filter((row) => !coordinates(row.fields)).length;
   return <div className="space-y-5">
-    {check.data?.pdpj_update && <aside aria-label="Pembaruan versi PDPJ" className="space-y-2 rounded-sm border-2 border-amber-700 bg-amber-50 p-4 text-sm text-amber-950"><p>Hasil PDPJ yang lebih baru tersedia. Peta ini tetap memakai versi PDPJ #{check.data.pdpj_review_id} yang dipilih saat pemeriksaan dimulai.</p>{check.data.pdpj_update.conflicts.length > 0 && <p role="alert" className="font-bold">{check.data.pdpj_update.conflicts.length.toLocaleString("id-ID")} keputusan berbenturan dengan PDPJ terbaru dan perlu ditinjau ulang.</p>}<Link to={`/koreksi/${descriptor.slug}?batch_id=${batch}&process_id=${process}`} className="font-bold underline">Tinjau versi PDPJ dan hasil koreksi</Link></aside>}
+    {pdpjUpdate.update && <aside aria-label="Pembaruan versi PDPJ" className="space-y-2 rounded-sm border-2 border-amber-700 bg-amber-50 p-4 text-sm text-amber-950"><p>Hasil PDPJ yang lebih baru tersedia. Peta ini tetap memakai versi PDPJ #{check.data?.pdpj_review_id} yang dipilih saat pemeriksaan dimulai.</p>{pdpjUpdate.pending && <p role="status">Memeriksa benturan pilihan dengan PDPJ terbaru...</p>}{pdpjUpdate.error && <p role="alert">Benturan PDPJ terbaru belum dapat diperiksa. <button type="button" className="underline" onClick={pdpjUpdate.retry}>Coba lagi</button></p>}{pdpjUpdate.update.conflicts.length > 0 && <p role="alert" className="font-bold">{pdpjUpdate.update.conflicts.length.toLocaleString("id-ID")} keputusan berbenturan dengan PDPJ terbaru dan perlu ditinjau ulang.</p>}<Link to={`/koreksi/${descriptor.slug}?batch_id=${batch}&process_id=${process}`} className="font-bold underline">Tinjau versi PDPJ dan hasil koreksi</Link></aside>}
     <header><p className="text-xs font-bold uppercase text-neo-border">Rekonsiliasi pelanggan</p><h1 className="mt-1 text-2xl font-black">Peta Koreksi</h1><p className="mt-2 text-sm">Pilih target dari tabel atau titik, tampilkan kandidat dalam radius, lalu simpan pilihan.</p></header>
     <section className={panel} aria-label="Filter peta koreksi">
       <div className="grid gap-3 md:grid-cols-3">

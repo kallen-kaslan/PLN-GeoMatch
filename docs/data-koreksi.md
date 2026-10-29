@@ -36,6 +36,15 @@ termasuk setelah halaman dibuka ulang atau koneksi terputus. Jika satu bagian
 gagal disimpan, hasil bagian sebelumnya tetap tersedia dan bagian gagal dicoba
 ulang tanpa menggandakan kandidat.
 
+Setelah jeda dikonfirmasi tersimpan dan tidak ada permintaan server aktif,
+pilihan PDPJ, radius untuk pemeriksaan baru, dan **Pemeriksaan baru** dapat
+digunakan. Pilih PDPJ versi terbaru lalu **Jalankan pemeriksaan** untuk membuat
+proses baru dengan acuan tersebut. Proses lama tetap dijeda pada checkpoint,
+PDPJ, radius, kandidat, dan keputusan sebelumnya. **Periksa ulang** pada proses
+yang sama tetap menunggu penyelesaian; gunakan panel progres untuk melanjutkan
+proses lama. Selama bagian aktif diproses/disimpan atau status jeda belum
+terkonfirmasi, pilihan sumber dan pembuatan proses baru tetap terkunci.
+
 Refresh memulihkan aktivitas server beserta checkpoint melalui
 `GET /corrections/{kind}/checks/{id}/progress` setiap dua detik. Animasi dan
 tombol mengikuti permintaan yang masih aktif, termasuk persiapan master,
@@ -44,6 +53,26 @@ halaman lama sudah ditutup, tampil **Menunggu dilanjutkan dari hasil tersimpan**
 Tombol lanjut tidak mengirim pekerjaan baru selama bagian sebelumnya masih
 aktif. Jeda dari halaman baru menunggu bagian itu selesai disimpan. Pemantauan
 ringan ini tidak menjalankan ulang master atau ringkasan setiap dua detik.
+
+Halaman mengikat berkas dan pemeriksaan terpilih di URL agar refresh tidak
+berpindah ke pemeriksaan lain. Pilihan PDPJ dan radius untuk pemeriksaan baru
+juga mengikuti parameter `pdpj_review_id` dan `radius_meters`; ini hanya draf
+formulir, tidak mengganti sumber/radius pemeriksaan tersimpan. Nama petugas
+dipertahankan per kategori dalam `sessionStorage` selama sesi tab browser.
+Jika penyimpanan browser tidak tersedia, nama petugas tetap dapat diisi manual.
+Selama status pemeriksaan dipulihkan, formulir menampilkan indikator pemulihan
+dan menonaktifkan aksi. Tabel/ringkasan menunggu cakupan versi terpilih siap,
+sehingga tidak sempat menampilkan hasil tanpa pemeriksaan sebagai hasil terbaru.
+
+Daftar/detail pemeriksaan di frontend memakai `include_update_conflicts=false`
+untuk memuat status dan checkpoint tanpa memindai seluruh PDPJ. Informasi versi
+PDPJ terbaru tetap tersedia. Benturan keputusan dimuat terpisah melalui
+`GET /corrections/{kind}/checks/{id}/pdpj-update`, dengan indikator pemeriksaan
+dan tombol coba lagi jika gagal. Hasil pemeriksaan benturan disimpan di cache
+berdasarkan proses, versi PDPJ terbaru, dan revisi keputusan; polling progres
+tidak menghitung ulang benturan tersebut. Jalur API lama tetap memuat benturan
+lengkap secara bawaan. Respons status yang terlambat tidak menimpa checkpoint
+dengan revisi/aktivitas lebih baru.
 
 Aktivitas nyata dibedakan dari status checkpoint: SQLite memakai kunci berkas
 antarproses, PostgreSQL memakai advisory lock pada koneksi khusus. Kunci
