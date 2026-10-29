@@ -17,11 +17,15 @@ Tidak ada penyalinan data atau pemilihan kandidat otomatis saat halaman dibuka.
 5. Gunakan pencarian atau filter: kandidat dipilih, semua baris, belum ada pilihan
    aktif, pilihan dibatalkan, atau belum diproses. Ringkasan menghitung seluruh
    pemeriksaan dan tidak berubah karena pencarian maupun pagination tabel.
-6. **Ekspor hasil CSV** mengekspor sesuai pencarian/filter, secara bawaan hanya
-   pilihan aktif. CSV memuat kolom target sebelum koreksi dan kandidat terpilih
-   secara terpisah, jarak, versi/revisi, petugas, waktu UTC, alasan, dan bukti sumber.
+6. **Ekspor hasil XLSX** mengekspor sesuai pencarian/filter, secara bawaan hanya
+   pilihan aktif. Format polos seperti tabel sumber: nama kolom di baris pertama,
+   data mulai baris kedua, tanpa warna, penebalan, filter otomatis, atau pembekuan
+   baris. Lebar kolom disesuaikan agar judul mudah dibaca.
 7. **Buka Riwayat Proses** menampilkan rekap pemeriksaan serta riwayat keputusan.
    Tautan peta pada proses koreksi membawa kategori, berkas, dan pemeriksaan yang tepat.
+   Tombol **XLSX** pada proses mengunduh hasil pilihan aktif secara langsung.
+   **Unduh riwayat XLSX** pada panel riwayat mengunduh seluruh perubahan proses,
+   atau hanya target yang sedang dipilih, termasuk penggantian dan pembatalan.
 
 Halaman hasil tanpa ID memilih pemeriksaan yang mempunyai pilihan tersimpan
 terbaru, kemudian mengikat ID tersebut di URL. Kategori bisa diganti melalui
@@ -34,7 +38,7 @@ tab. Pemeriksaan dari alur lama tetap memakai tampilan dan ekspor lama.
 - Pembatalan mengosongkan pilihan aktif; keputusan sebelumnya tetap ada dalam
   riwayat. Belum ada pilihan aktif mencakup target yang dibatalkan atau belum dipilih.
 - Satu keputusan menyimpan data target dan snapshot kandidat/bukti saat dipilih.
-  Halaman hasil dan CSV membacanya kembali tanpa mengambil ulang master atau
+  Halaman hasil dan XLSX membacanya kembali tanpa mengambil ulang master atau
   mengubah sel asli unggahan.
 - Jumlah target diambil dari berkas sumber. Baris tersimpan dan hasil pencarian
   dibaca dari versi pemeriksaan, termasuk saat `current_generation` masih nol.
@@ -47,10 +51,42 @@ tab. Pemeriksaan dari alur lama tetap memakai tampilan dan ekspor lama.
 - Riwayat mencatat pemilihan, penggantian, pembatalan, revisi, versi, petugas,
   alasan, dan waktu. Hasil tidak mencampur keputusan dari pemeriksaan/kategori lain.
 
-CSV mempertahankan teks IDPEL pada berkas. Saat mengimpor ke spreadsheet,
-pilih tipe teks untuk kolom IDPEL agar nol di depan tetap terlihat. Sel teks
-yang berpotensi ditafsirkan sebagai formula diberi awalan apostrof pada ekspor;
-nilai tersimpan di database tetap utuh.
+## Susunan XLSX
+
+Sheet utama **Hasil Koreksi** memuat kolom berikut secara berurutan:
+
+| Kolom | Isi |
+| --- | --- |
+| `noagenda` | Nomor agenda target asli sesuai mapping; tidak diganti nomor meter |
+| `idpelanggan` | IDPEL kandidat yang disetujui; kosong untuk baris tanpa pilihan aktif |
+| `verif` | Nilai verif target asli; tidak diubah menjadi status persetujuan |
+| `jenispelanggan` | Jenis pelanggan kandidat; memakai nilai target jika tidak tersedia |
+| `latitudey` | Latitude target sebelum koreksi |
+| `longitudex` | Longitude target sebelum koreksi |
+| `sumber file (sheet)` | Nama berkas dan sheet observasi dengan koordinat kandidat pilihan |
+| `sel (baris ke berapa)` | Nomor baris asli pada sheet master tersebut, termasuk baris header |
+| `x_acc` | Longitude (bujur/X) kandidat yang disetujui |
+| `y_acc` | Latitude (lintang/Y) kandidat yang disetujui |
+
+Jika beberapa observasi memiliki koordinat yang sama, sumber utama kandidat
+dipakai bila identitas barisnya tersedia dan koordinatnya cocok. Jika koordinat
+berasal dari pelengkapan sumber lain, seluruh bukti dengan pasangan koordinat
+yang cocok dicantumkan, dipisahkan baris baru. Sumber dengan koordinat berbeda
+tidak ditampilkan sebagai sumber koordinat yang disetujui. Sumber yang tidak
+tercatat dibiarkan kosong, tidak ditebak dari master saat ini.
+
+Sheet **Data Target** menyimpan IDPEL awal, atribut, koordinat, nama file/sheet,
+dan baris target. **Observasi Sumber** memuat seluruh bukti kandidat dengan
+penanda `koordinat_dipakai`. **Keputusan Aktif** menyertakan status, versi,
+revisi, petugas, waktu UTC, alasan, dan jarak. **Informasi** menjelaskan kolom
+serta cakupan filter/pencarian ekspor. Ekspor riwayat menggunakan sheet
+**Riwayat Pilihan**: sepuluh kolom utama ditambah baris target, IDPEL awal,
+status, versi, revisi, petugas, waktu UTC, dan alasan pada setiap kejadian.
+
+IDPEL, nomor agenda, dan koordinat ditulis sebagai teks XLSX agar nol di depan
+dan digit desimal tetap utuh tanpa pembulatan tambahan. Teks seperti `=SUM(...)`
+tetap teks, tidak dijalankan sebagai formula. Nilai tersimpan tidak diubah.
+XLSX ditulis per baris; keluaran besar memakai file sementara sebelum dikirim.
 
 ## API
 
@@ -58,13 +94,15 @@ nilai tersimpan di database tetap utuh.
 | --- | --- |
 | `GET /corrections/{kind}/checks/{id}/results` | Ringkasan dan hasil dengan pencarian, filter, pagination |
 | `GET /corrections/{kind}/checks/{id}/results/history` | Jejak keputusan, opsional `record_id` |
-| `GET /corrections/{kind}/checks/{id}/results/export` | CSV sesuai pencarian dan filter |
+| `GET /corrections/{kind}/checks/{id}/results/export` | XLSX sesuai pencarian dan filter |
+| `GET /corrections/{kind}/checks/{id}/results/history/export` | XLSX seluruh riwayat, opsional `record_id` |
 | `GET /history/processes` | Rekap proses lama dan koreksi, termasuk pilihan serta progres sebagian |
 
 Hasil dan ekspor menerima `generation` opsional: pilihan yang terbaca adalah
 revisi terakhir sampai versi tersebut. Riwayat tetap memuat seluruh perubahan.
 Endpoint ringkasan/ekspor lama `/process/{id}/summary` dan `/process/{id}/export`
-meneruskan proses koreksi ke sumber hasil yang sama; proses lama tetap kompatibel.
+meneruskan proses koreksi ke sumber hasil yang sama. Proses lama menerima
+`format=xlsx` dari UI; pemanggil CSV lama tetap kompatibel tanpa parameter ini.
 
 Frontend memperbarui hasil dan riwayat secara berkala; penyimpanan pilihan
 menginvalidasi cache agar hasil langsung dibaca saat berpindah dari peta.
