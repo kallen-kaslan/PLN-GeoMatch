@@ -1,16 +1,12 @@
 """Read saved correction choices, including partial runs and earlier search versions."""
 
-import csv
-import io
-import json
-from collections.abc import Iterator
 from typing import Annotated, Any, Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import StreamingResponse
 from sqlalchemy import and_, func, or_
 from sqlalchemy.orm import Query as OrmQuery
-from sqlalchemy.orm import Session, load_only
+from sqlalchemy.orm import Session, load_only, undefer
 from sqlalchemy.sql.selectable import Subquery
 
 from app.database import get_db
@@ -24,7 +20,19 @@ from app.models.matching import (
 )
 from app.models.upload import SourceRecord, UploadBatch
 from app.modules.corrections.decisions import decision_info
+from app.modules.corrections.export_data import (
+    coordinate_sources,
+    result_columns,
+    source_label,
+    target_columns,
+    text,
+)
 from app.modules.corrections.service import CorrectionKind, check_process
+from app.modules.corrections.spreadsheet import (
+    RESULT_HEADERS,
+    RESULT_WIDTHS,
+    Spreadsheet,
+)
 from app.modules.upload.normalization import extract_standard_fields
 
 router = APIRouter()
@@ -309,12 +317,106 @@ def result_history(
     }
 
 
-def csv_cell(value: Any) -> Any:
-    if isinstance(value, str) and value.lstrip().startswith(
-        ("=", "+", "-", "@", "\t", "\r")
-    ):
-        return "'" + value
-    return value if value is not None else ""
+def export_info(
+    book: Spreadsheet, batch: UploadBatch, process_id: int, generation: int, scope: str
+) -> None:
+    sheet = book.sheet("Informasi", ["Keterangan", "Nilai"], [36, 100])
+    entries: list[list[Any]] = [
+        ["Proses", process_id],
+        ["Berkas target", source_label(batch.filename, batch.source_sheet)],
+        ["Versi pemeriksaan", generation],
+        ["Cakupan ekspor", scope],
+        [
+            "noagenda / verif",
+            "Nilai dari data target; kosong jika sumber tidak mengisinya.",
+        ],
+        [
+            "idpelanggan",
+            "IDPEL kandidat yang dipilih; kosong jika belum dipilih atau dibatalkan.",
+        ],
+        [
+            "jenispelanggan",
+            "Jenis pelanggan kandidat; memakai target jika kandidat tidak mengisinya.",
+        ],
+        [
+            "latitudey / longitudex",
+            "Koordinat target awal, terpisah dari koordinat kandidat.",
+        ],
+        [
+            "sumber file (sheet) / sel",
+            "Observasi master berkoordinat sama dengan kandidat pilihan. Beberapa sumber dipisahkan baris baru.",
+        ],
+        [
+            "x_acc / y_acc",
+            "Koordinat kandidat yang disetujui: x_acc adalah longitude (bujur), y_acc adalah latitude (lintang).",
+        ],
+        [
+            "Data Target",
+            "Identitas, koordinat, berkas, dan baris target sebelum koreksi.",
+        ],
+        [
+            "Observasi Sumber",
+            "Seluruh bukti kandidat. koordinat_dipakai menandai sumber koordinat pilihan.",
+        ],
+        [
+            "Tipe data",
+            "IDPEL, nomor agenda, dan koordinat memakai teks untuk menjaga nol di depan dan digit desimal.",
+        ],
+        [
+            "Riwayat",
+            "Pemilihan, penggantian, dan pembatalan tetap tersimpan. Waktu menggunakan UTC.",
+        ],
+    ]
+    for values in entries:
+        book.append(sheet, values)
+
+
+def evidence_sheet(book: Spreadsheet) -> Any:
+    return book.sheet(
+        "Observasi Sumber",
+        [
+            "baris_target",
+            "revisi_pilihan",
+            "idpelanggan",
+            "jenispelanggan",
+            "latitudey",
+            "longitudex",
+            "sumber file (sheet)",
+            "sel (baris ke berapa)",
+            "koordinat_dipakai",
+        ],
+        [18, 18, 22, 22, 24, 24, 58, 26, 22],
+    )
+
+
+def append_evidence(
+    book: Spreadsheet,
+    sheet: Any,
+    source: SourceRecord,
+    decision: CorrectionDecision | None,
+) -> None:
+    if decision is None or decision.candidate_id is None:
+        return
+    candidate = decision.candidate
+    selected_sources = coordinate_sources(candidate)
+    for observation in candidate.get("observations", []):
+        fields = observation.get("fields", {})
+        book.append(
+            sheet,
+            [
+                source.row_number,
+                decision.revision,
+                text(fields.get("idpel")),
+                fields.get("jenis_pel"),
+                text(fields.get("lat")),
+                text(fields.get("lon")),
+                source_label(
+                    observation.get("filename"), observation.get("source_sheet")
+                ),
+                observation.get("row_number"),
+                "Ya" if observation in selected_sources else "Tidak",
+            ],
+        )
 
 
 def export_results(
@@ -325,98 +427,131 @@ def export_results(
     q: str = "",
     status: ResultFilter = "selected",
 ) -> StreamingResponse:
-    _, _process, run = result_scope(db, kind, process_id, generation)
-    bind = db.get_bind()
-    run_id = run.id
-
-    def content() -> Iterator[str]:
-        yield "\ufeff"
-        buffer = io.StringIO(newline="")
-        writer = csv.writer(buffer)
-
-        def line(values: list[Any]) -> str:
-            buffer.seek(0)
-            buffer.truncate()
-            writer.writerow([csv_cell(value) for value in values])
-            return buffer.getvalue()
-
-        yield line(
-            [
-                "PROSES",
-                "KATEGORI",
-                "BARIS_SUMBER",
-                "STATUS_PILIHAN",
-                "HASIL_PEMERIKSAAN",
-                "IDPEL_SEBELUM",
-                "NAMA_SEBELUM",
-                "LAT_SEBELUM",
-                "LON_SEBELUM",
-                "IDPEL_DIPILIH",
-                "NAMA_DIPILIH",
-                "LAT_DIPILIH",
-                "LON_DIPILIH",
-                "JARAK_METER",
-                "VERSI_PILIHAN",
-                "REVISI_PILIHAN",
-                "PETUGAS",
-                "WAKTU_UTC",
-                "ALASAN",
-                "BUKTI_SUMBER_JSON",
-            ]
-        )
-        with Session(bind) as session:
-            selected_process = session.get(ReconciliationProcess, process_id)
-            selected_run = session.get(MatchingRun, run_id)
-            assert selected_process is not None and selected_run is not None
-            batch = session.get(UploadBatch, selected_process.target_batch_id)
-            assert batch is not None
-            for source, outcome, decision in (
-                result_query(session, selected_process, selected_run, q, status)
-                .order_by(SourceRecord.id)
-                .yield_per(200)
-            ):
-                item = result_info(source, outcome, decision, batch)
-                before = item["target_fields"]
-                candidate = (
-                    decision.candidate
-                    if decision and decision.candidate_id is not None
-                    else {}
-                )
-                fields = candidate.get("fields", {})
-                yield line(
-                    [
-                        process_id,
-                        kind.value,
-                        source.row_number,
-                        item["status"],
-                        item["search_status"],
-                        before.get("idpel"),
-                        before.get("nama"),
-                        before.get("lat"),
-                        before.get("lon"),
-                        fields.get("idpel"),
-                        fields.get("nama"),
-                        fields.get("lat"),
-                        fields.get("lon"),
-                        candidate.get("distance_meters"),
-                        decision.generation if decision else None,
-                        decision.revision if decision else None,
-                        decision.actor if decision else None,
-                        decision.created_at.isoformat() if decision else None,
-                        decision.reason if decision else None,
-                        json.dumps(
-                            candidate.get("observations", []), ensure_ascii=False
-                        ),
-                    ]
-                )
-
-    return StreamingResponse(
-        content(),
-        media_type="text/csv; charset=utf-8",
-        headers={
-            "Content-Disposition": f'attachment; filename="hasil_koreksi_{kind.value}_{process_id}.csv"'
-        },
+    _, process, run = result_scope(db, kind, process_id, generation)
+    batch = db.get(UploadBatch, process.target_batch_id)
+    assert batch is not None
+    book = Spreadsheet()
+    main = book.sheet("Hasil Koreksi", RESULT_HEADERS, RESULT_WIDTHS)
+    targets = book.sheet("Data Target", RESULT_HEADERS[:8], RESULT_WIDTHS[:8])
+    evidence = evidence_sheet(book)
+    audit = book.sheet(
+        "Keputusan Aktif",
+        [
+            "baris_target",
+            "status",
+            "versi_pilihan",
+            "revisi_pilihan",
+            "petugas",
+            "waktu_utc",
+            "alasan",
+            "jarak_meter",
+        ],
+        [18, 24, 18, 18, 28, 30, 60, 18],
     )
+    for source, outcome, decision in (
+        result_query(db, process, run, q, status)
+        .options(undefer(SourceRecord.data))
+        .order_by(SourceRecord.id)
+        .yield_per(200)
+    ):
+        item = result_info(source, outcome, decision, batch)
+        candidate = (
+            decision.candidate if decision and decision.candidate_id is not None else {}
+        )
+        book.append(
+            main, result_columns(source, batch, item["target_fields"], candidate)
+        )
+        book.append(targets, target_columns(source, batch, item["target_fields"]))
+        append_evidence(book, evidence, source, decision)
+        book.append(
+            audit,
+            [
+                source.row_number,
+                item["status"],
+                decision.generation if decision else None,
+                decision.revision if decision else None,
+                decision.actor if decision else None,
+                decision.created_at.isoformat() if decision else None,
+                decision.reason if decision else None,
+                candidate.get("distance_meters"),
+            ],
+        )
+    export_info(
+        book,
+        batch,
+        process_id,
+        run.generation,
+        f"Filter: {status}; pencarian: {q or '(semua)'}",
+    )
+    return book.response(f"hasil_koreksi_{kind.value}_{process_id}.xlsx")
+
+
+@router.get("/{kind}/checks/{process_id}/results/history/export")
+def download_history(
+    kind: CorrectionKind,
+    process_id: int,
+    db: DbSession,
+    record_id: int | None = Query(None, gt=0),
+) -> StreamingResponse:
+    _, process, run = result_scope(db, kind, process_id)
+    batch = db.get(UploadBatch, process.target_batch_id)
+    assert batch is not None
+    query = (
+        db.query(CorrectionDecision, SourceRecord)
+        .join(SourceRecord, SourceRecord.id == CorrectionDecision.target_record_id)
+        .filter(CorrectionDecision.process_id == process_id)
+        .options(load_only(SourceRecord.id, SourceRecord.row_number, SourceRecord.data))
+    )
+    if record_id is not None:
+        query = query.filter(CorrectionDecision.target_record_id == record_id)
+    book = Spreadsheet()
+    main = book.sheet(
+        "Riwayat Pilihan",
+        [
+            *RESULT_HEADERS,
+            "baris_target",
+            "idpelanggan_awal",
+            "status",
+            "versi_pilihan",
+            "revisi_pilihan",
+            "petugas",
+            "waktu_utc",
+            "alasan",
+        ],
+        [*RESULT_WIDTHS, 18, 22, 24, 18, 18, 28, 30, 60],
+    )
+    evidence = evidence_sheet(book)
+    for decision, source in query.order_by(
+        CorrectionDecision.created_at.desc(), CorrectionDecision.id.desc()
+    ).yield_per(200):
+        candidate = decision.candidate if decision.candidate_id is not None else {}
+        book.append(
+            main,
+            [
+                *result_columns(source, batch, decision.target_fields, candidate),
+                source.row_number,
+                text(decision.target_fields.get("idpel")),
+                "Kandidat dipilih"
+                if decision.candidate_id is not None
+                else "Pilihan dibatalkan",
+                decision.generation,
+                decision.revision,
+                decision.actor,
+                decision.created_at.isoformat(),
+                decision.reason,
+            ],
+        )
+        append_evidence(book, evidence, source, decision)
+    export_info(
+        book,
+        batch,
+        process_id,
+        run.generation,
+        "Seluruh riwayat pada target terpilih"
+        if record_id is not None
+        else "Seluruh riwayat proses",
+    )
+    return book.response(f"riwayat_koreksi_{kind.value}_{process_id}.xlsx")
 
 
 @router.get("/{kind}/checks/{process_id}/results/export")

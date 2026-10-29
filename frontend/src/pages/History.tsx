@@ -2,7 +2,7 @@ import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useSearchParams } from "react-router-dom";
 import { DecisionHistory } from "@/components/corrections/DecisionHistory";
-import { resultsApi, type ProcessHistory } from "@/lib/results";
+import { downloadSpreadsheet, resultsApi, type ProcessHistory } from "@/lib/results";
 import { Link } from "react-router-dom";
 import { api } from "@/lib/api";
 import { History, RotateCw, Trash2, ExternalLink, FileSpreadsheet, MapPin } from "lucide-react";
@@ -21,6 +21,13 @@ export default function HistoryPage() {
   const [clearingAll, setClearingAll] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [successMsg, setSuccessMsg] = useState<string | null>(null);
+
+  const download = useMutation({
+    mutationFn: async (process: ProcessHistory) => process.category
+      ? resultsApi.export(process.category, process.id, { q: "", status: "selected" })
+      : (await api.get<Blob>(`/process/${process.id}/export`, { params: { format: "xlsx" }, responseType: "blob" })).data,
+    onSuccess: (blob, process) => downloadSpreadsheet(blob, `hasil_koreksi_proses_${process.id}.xlsx`),
+  });
 
   const remove = useMutation({ mutationFn: (path: string) => api.delete(path) });
 
@@ -97,6 +104,8 @@ export default function HistoryPage() {
         </div>
       </div>
 
+      {download.isError && <p role="alert" className="text-sm text-red-700">File XLSX belum dapat diunduh. Silakan coba lagi.</p>}
+
       {successMsg && (
         <div className="p-3 border-2 border-[#16a34a] bg-[#dcfce7] text-[#16a34a] rounded-sm text-xs font-bold shadow-[2px_2px_0_#16a34a]">
           ✓ {successMsg}
@@ -167,7 +176,7 @@ export default function HistoryPage() {
                   </div>
                 </div>
 
-                <div className="pt-2 border-t border-neo-border flex items-center gap-2">
+                <div className="pt-2 border-t border-neo-border flex flex-wrap items-center gap-2">
                   <Link
                     to={p.category ? `/peta-koreksi?category=${p.category}&batch_id=${p.batch_id}&process_id=${p.id}` : `/candidates?process_id=${p.id}`}
                     className="touch-min flex-1 flex items-center justify-center gap-1 px-3 py-2 border-2 border-neo-black rounded text-xs font-bold bg-white hover:bg-[#e5e4e7] shadow-[2px_2px_0_#0a0a0a] active:translate-y-0.5"
@@ -179,11 +188,12 @@ export default function HistoryPage() {
                   <Link
                     to={`/result?process_id=${p.id}`}
                     className="touch-min flex-1 flex items-center justify-center gap-1 px-3 py-2 border-2 border-neo-black rounded text-xs font-bold bg-neo-black text-white shadow-[2px_2px_0_#ff6b35] active:translate-y-0.5"
-                    title="Lihat Rekapitulasi & Ekspor CSV"
+                    title="Lihat Rekapitulasi & Ekspor XLSX"
                   >
                     <FileSpreadsheet className="w-3.5 h-3.5 text-neo-accent" />
                     Hasil
                   </Link>
+                  <button type="button" aria-label={`Unduh hasil XLSX proses ${p.id}`} disabled={download.isPending || (p.category !== undefined && !p.chosen_count)} onClick={() => download.mutate(p)} className="rounded border border-neo-border bg-white px-2 py-2 text-xs font-bold disabled:opacity-50">{download.isPending && download.variables?.id === p.id ? "Menyiapkan..." : "XLSX"}</button>
                   {p.category && <button type="button" onClick={() => setParams({ process_id: String(p.id) })} className="text-xs font-bold underline">Riwayat pilihan</button>}
                   <button
                     onClick={() => handleDeleteProcess(p.id, p.process_name)}
@@ -248,12 +258,13 @@ export default function HistoryPage() {
                         <Link
                           to={`/result?process_id=${p.id}`}
                           className="px-2.5 py-1.5 min-h-[34px] flex items-center gap-1 border border-neo-border rounded text-[11px] font-bold bg-neo-black text-white shadow-[0_1px_0_#0a0a0a]"
-                          title="Lihat Rekapitulasi & Ekspor CSV"
+                          title="Lihat Rekapitulasi & Ekspor XLSX"
                         >
                           <FileSpreadsheet className="w-3 h-3 text-neo-accent" />
                           Hasil
                         </Link>
-                        {p.category && <button type="button" onClick={() => setParams({ process_id: String(p.id) })} className="text-xs font-bold underline">Riwayat pilihan</button>}
+                        <button type="button" aria-label={`Unduh hasil XLSX proses ${p.id}`} disabled={download.isPending || (p.category !== undefined && !p.chosen_count)} onClick={() => download.mutate(p)} className="rounded border border-neo-border bg-white px-2 py-2 text-xs font-bold disabled:opacity-50">{download.isPending && download.variables?.id === p.id ? "Menyiapkan..." : "XLSX"}</button>
+                  {p.category && <button type="button" onClick={() => setParams({ process_id: String(p.id) })} className="text-xs font-bold underline">Riwayat pilihan</button>}
                         <button
                           onClick={() => handleDeleteProcess(p.id, p.process_name)}
                           disabled={deletingId === p.id}

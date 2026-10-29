@@ -1,9 +1,11 @@
 """Regression coverage for isolation, source mapping, and retained search history."""
 
+import io
 from unittest.mock import Mock
 
 import pytest
 from fastapi.testclient import TestClient
+from openpyxl import load_workbook
 from sqlalchemy.orm import Session
 
 from app.config import settings
@@ -326,6 +328,19 @@ def test_history_api_and_export_stay_in_requested_generation(
         len(client.get(f"/process/{process_id}/export?generation=1").text.splitlines())
         == 3
     )
+    for generation, expected_rows in [(2, 2), (1, 3)]:
+        response = client.get(
+            f"/process/{process_id}/export",
+            params={"format": "xlsx", "generation": generation},
+        )
+        assert response.status_code == 200
+        assert ".xlsx" in response.headers["content-disposition"]
+        book = load_workbook(io.BytesIO(response.content))
+        sheet = book["Hasil Rekonsiliasi"]
+        assert sheet.max_row == expected_rows
+        assert sheet.freeze_panes is None
+        assert sheet["D2"].data_type == "s"
+        book.close()
 
 
 def test_failed_attempt_keeps_previous_results(

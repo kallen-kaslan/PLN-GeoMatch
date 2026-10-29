@@ -52,7 +52,7 @@ function LegacyResultPage({ initialId, onSelect }: { initialId: string; onSelect
   }, [fetchSummary]);
 
   const handleDownload = () => {
-    window.open(`${API_BASE_URL}/process/${processId}/export`, "_blank");
+    window.open(`${API_BASE_URL}/process/${processId}/export?format=xlsx`, "_blank");
   };
 
   const handleReset = async () => {
@@ -170,7 +170,7 @@ function LegacyResultPage({ initialId, onSelect }: { initialId: string; onSelect
             <div>
               <h3 className="font-black text-sm sm:text-base text-neo-black">Unduh Laporan Hasil Rekonsiliasi</h3>
               <p className="text-xs text-neo-border mt-0.5">
-                Download file CSV berisi koordinat target, IDPEL kandidat terpilih, dan keputusan petugas.
+                Unduh file XLSX berisi koordinat target, IDPEL kandidat terpilih, dan keputusan petugas.
               </p>
             </div>
             <div className="flex flex-col sm:flex-row gap-2.5 shrink-0">
@@ -186,7 +186,7 @@ function LegacyResultPage({ initialId, onSelect }: { initialId: string; onSelect
                 className="touch-min px-5 py-2.5 min-h-[44px] border-2 border-neo-border bg-neo-black text-white text-xs font-bold rounded-sm shadow-[2px_2px_0_#ff6b35] hover:bg-[#1a1a1a] transition active:translate-y-0.5 flex items-center justify-center gap-2"
               >
                 <Download size={16} />
-                <span>Unduh File CSV (.CSV)</span>
+                <span>Unduh File XLSX (.xlsx)</span>
               </button>
             </div>
           </div>

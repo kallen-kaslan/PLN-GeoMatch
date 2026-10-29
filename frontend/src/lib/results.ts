@@ -29,7 +29,18 @@ export const resultsApi = {
     (await api.get<{ total: number; items: DecisionEvent[] }>(`/corrections/${kind}/checks/${id}/results/history`, { params: { record_id, skip, limit: 20 }, signal })).data,
   export: async (kind: CorrectionKind, id: number, params: { q: string; status: ResultFilter }) =>
     (await api.get<Blob>(`/corrections/${kind}/checks/${id}/results/export`, { params, responseType: "blob" })).data,
+  exportHistory: async (kind: CorrectionKind, id: number, record_id?: number) =>
+    (await api.get<Blob>(`/corrections/${kind}/checks/${id}/results/history/export`, { params: { record_id }, responseType: "blob" })).data,
 };
+
+export function downloadSpreadsheet(blob: Blob, filename: string): void {
+  const url = URL.createObjectURL(blob);
+  const anchor = document.createElement("a");
+  anchor.href = url;
+  anchor.download = filename;
+  anchor.click();
+  window.setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
 
 export const resultStatus = { selected: "Kandidat dipilih", not_selected: "Belum dipilih", cancelled: "Pilihan dibatalkan", not_processed: "Belum diproses", all: "Semua baris" };
 export const localTime = (value: string) => new Date(/(?:Z|[+-]\d{2}:\d{2})$/.test(value) ? value : `${value}Z`).toLocaleString("id-ID");
