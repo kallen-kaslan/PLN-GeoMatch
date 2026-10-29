@@ -11,6 +11,14 @@
 }
 
 :root {
+  --auth-bg: #F1F0ED;
+  --auth-ink: #15171D;
+  --auth-light-blue: #4F86F7;
+  --auth-ice: #78DDF2;
+  --auth-violet: #9D8CFF;
+  --auth-muted-blue: #6B82CB;
+  --color-neo-accent: var(--auth-light-blue);
+
   /* Neo-brutalism design tokens (PRD §12.1) */
   --geo-bg: #fafafa;
   --geo-text: #0a0a0a;
@@ -120,14 +128,112 @@ html, body, #root {
   background: #ff6b35;
 }
 
+.auth-flip-viewport {
+  perspective: 1200px;
+  perspective-origin: 50% 50%;
+}
+
+.auth-flip-card {
+  position: relative;
+  display: grid;
+  width: 100%;
+  transform-style: preserve-3d;
+  transition: transform 650ms cubic-bezier(0.23, 1, 0.32, 1);
+}
+
+.auth-flip-card.is-flipped {
+  transform: rotateY(180deg);
+}
+
+.auth-flip-face {
+  grid-area: 1 / 1;
+  width: 100%;
+  backface-visibility: hidden;
+  -webkit-backface-visibility: hidden;
+}
+
+.auth-flip-face-inactive {
+  position: absolute;
+  visibility: hidden;
+}
+
+.auth-flip-face-back {
+  transform: rotateY(180deg);
+}
+
+.auth-flip-card.is-flipped .auth-flip-face-back {
+  position: relative;
+  visibility: visible;
+}
+
+.auth-flip-card:not(.is-flipped) .auth-flip-face:not(.auth-flip-face-back) {
+  position: relative;
+  visibility: visible;
+}
+
+/* Fallback for reduced motion */
+@media (prefers-reduced-motion: reduce) {
+  .auth-flip-card {
+    transition: none !important;
+  }
+}
+
 /* Respect reduced motion */
 @media (prefers-reduced-motion: reduce) {
-  *, ::before, ::after {
-    animation-duration: 0.01ms !important;
-    animation-iteration-count: 1 !important;
-    transition-duration: 0.01ms !important;
-    scroll-behavior: auto !important;
+  .geo-pulse-ring, .geo-travel, .geo-breathe, .geo-coord-label, .geo-pulse-light {
+    animation: none !important;
   }
+  .auth-ambient-canvas,
+  .auth-spotlight-card::before,
+  .auth-spotlight-card::after {
+    display: none !important;
+  }
+}
+
+.auth-page {
+  background: var(--auth-bg);
+  color: var(--auth-ink);
+  isolation: isolate;
+}
+
+.auth-ambient-canvas {
+  position: fixed;
+  z-index: 20;
+  inset: 0;
+  width: 100vw;
+  height: 100vh;
+  pointer-events: none;
+}
+
+.auth-spotlight-card {
+  box-shadow: 5px 5px 0 #111111, 7px 7px 0 rgba(107, 130, 203, var(--edge-glow, 0.22));
+  transform-style: preserve-3d;
+}
+
+.auth-spotlight-card::before {
+  position: absolute;
+  z-index: 0;
+  inset: 0;
+  pointer-events: none;
+  content: "";
+  opacity: 0;
+  background: radial-gradient(150px circle at var(--pointer-x) var(--pointer-y), rgba(120, 221, 242, 0.11), rgba(79, 134, 247, 0.06) 42%, transparent 74%);
+  transition: opacity 200ms ease;
+}
+
+.auth-spotlight-card.auth-spotlight-active::before {
+  opacity: 1;
+}
+
+.auth-spotlight-card::after {
+  position: absolute;
+  z-index: 1;
+  pointer-events: none;
+  content: "";
+  inset: 0;
+  border: 1px solid rgba(107, 130, 203, 0.35);
+  opacity: var(--border-alpha, 0);
+  transition: opacity 180ms ease;
 }
 
 /* Spatial Panel Animations (Login/Register) */
@@ -198,6 +304,9 @@ html, body, #root {
 }
 
 @media (prefers-reduced-motion: reduce) {
+  .auth-card-flip-register, .auth-card-flip-login {
+    animation: none !important;
+  }
   .geo-pulse-ring, .geo-travel, .geo-breathe, .geo-coord-label, .geo-pulse-light {
     animation: none !important;
   }
