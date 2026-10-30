@@ -21,6 +21,7 @@ from ...models.correction import (
 )
 from ...models.correction_decision import CorrectionDecision
 from ...models.master_sisa import CleanedMasterRecord, MasterSisaRecord, MasterSnapshot
+from ...models.master_summary import MasterSummaryCache
 from ...models.matching import (
     MatchCandidate,
     MatchingRun,
@@ -321,6 +322,7 @@ def reset_database(db: DbSession) -> dict[str, str]:
         lock_review_session(db)
         archive_keys = [key for (key,) in db.query(UploadFileArchive.storage_key).all()]
         db.query(CoordinateRepair).delete()
+        db.query(MasterSummaryCache).delete()
         db.query(UploadSheetImport).delete()
         db.query(CorrectionDecision).delete()
         db.query(CorrectionCandidateEvidence).delete()

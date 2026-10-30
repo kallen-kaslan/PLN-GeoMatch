@@ -20,6 +20,15 @@ Sidebar memiliki submenu untuk kedua kategori. Tautan lama `/upload` diarahkan k
 
 Pemeriksaan selesai tidak berarti semua baris sudah memiliki kandidat atau sudah dipilih hasilnya. Baris bermasalah tetap terlihat dan mempunyai alasan hasil.
 
+Preview kedua kategori memakai kontrol seperti PDPJ: **10, 25, 50, atau 100
+baris per halaman**, input **Ke halaman**, Enter/**Buka halaman**, jumlah hasil,
+rentang baris, dan halaman aktif/total. Nomor kosong, pecahan, atau di luar
+rentang ditolak. Mengganti berkas, pemeriksaan, versi, pencarian, filter, atau
+jumlah baris mengembalikan preview ke halaman pertama. Preview hanya memuat
+payload ID record pada halaman terpilih; seluruh hasil tetap tersedia melalui
+halaman berikutnya dan filter. Normalisasi yang valid dipakai ulang, sementara
+data lama/bermasalah tetap menggunakan ekstraksi sumber beserta kesalahannya.
+
 ## Progres dan penyimpanan bertahap
 
 Kedua kategori menampilkan panel progres dengan persentase desimal, tahap aktif,
@@ -35,6 +44,12 @@ menunggu transaksi aktif selesai, lalu menjeda pengiriman bagian berikutnya.
 termasuk setelah halaman dibuka ulang atau koneksi terputus. Jika satu bagian
 gagal disimpan, hasil bagian sebelumnya tetap tersedia dan bagian gagal dicoba
 ulang tanpa menggandakan kandidat.
+
+Checkpoint progres diperbarui langsung setelah setiap penyimpanan. Tabel,
+ringkasan, dan detail diperbarui paling sering setiap tiga detik selama proses
+berjalan, tanpa membatalkan pemuatan preview yang masih berlangsung. Jeda,
+kegagalan, dan penyelesaian meminta pembaruan segera. Dengan demikian,
+pemrosesan cepat tidak membuat tabel terus memuat ulang tanpa sempat tampil.
 
 Setelah jeda dikonfirmasi tersimpan dan tidak ada permintaan server aktif,
 pilihan PDPJ, radius untuk pemeriksaan baru, dan **Pemeriksaan baru** dapat

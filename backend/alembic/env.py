@@ -36,6 +36,7 @@ from app.models.correction import (
 )
 from app.models.correction_decision import CorrectionDecision
 from app.models.master_sisa import CleanedMasterRecord, MasterSisaRecord
+from app.models.master_summary import MasterSummaryCache
 from app.models.matching import MatchCandidate, ReconciliationProcess
 from app.models.pdpj import PdpjChange, PdpjRecommendation, PdpjReview, PdpjRow
 from app.models.schema_state import SchemaState
