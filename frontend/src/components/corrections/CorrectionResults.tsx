@@ -4,7 +4,7 @@ import { useMutation, useQuery } from "@tanstack/react-query";
 import { DecisionHistory } from "@/components/corrections/DecisionHistory";
 import type { ApiError } from "@/lib/api";
 import { buttonClass } from "@/lib/button";
-import { CORRECTION_TYPES, searchLabel, type SearchStatus } from "@/lib/corrections";
+import { CORRECTION_TYPES, correctionApi, searchLabel, type SearchStatus } from "@/lib/corrections";
 import { displayValue, masterFieldLabel, type CorrectionKind } from "@/lib/master";
 import { downloadSpreadsheet, localTime, resultsApi, resultStatus, type ProcessHistory, type ResultFilter } from "@/lib/results";
 
@@ -12,26 +12,29 @@ const control = "min-w-0 rounded-sm border-2 border-neo-border bg-white px-3 py-
 const count = (value: number | undefined) => (value ?? 0).toLocaleString("id-ID");
 
 export function CorrectionResults({ process, processes, category }: { process?: ProcessHistory; processes: ProcessHistory[]; category: CorrectionKind }) {
-  const [, setParams] = useSearchParams();
+  const [params, setParams] = useSearchParams();
   const [search, setSearch] = useState("");
   const q = useDeferredValue(search);
   const [status, setStatus] = useState<ResultFilter>("selected");
   const [page, setPage] = useState(1);
   const [recordId, setRecordId] = useState<number | undefined>();
   const descriptor = CORRECTION_TYPES.find((item) => item.key === category)!;
-  const results = useQuery({ queryKey: ["correction-results", process?.id, q, status, page], queryFn: ({ signal }) => resultsApi.rows(category, process!.id, { q, status, skip: (page - 1) * 25, limit: 25 }, signal), enabled: !!process, refetchInterval: 5000 });
+  const versions = useQuery({ queryKey: ["correction-result-versions", category, process?.id, process?.generation], queryFn: ({ signal }) => correctionApi.check(category, process!.id, signal), enabled: !!process, staleTime: 30_000 });
+  const generation = Number(params.get("generation")) || versions.data?.latest_run.generation || process?.generation;
+  const results = useQuery({ queryKey: ["correction-results", process?.id, generation, q, status, page], queryFn: ({ signal }) => resultsApi.rows(category, process!.id, { q, status, skip: (page - 1) * 25, limit: 25, generation }, signal), enabled: !!process && !!generation, refetchInterval: 5000 });
   const summary = results.data?.summary;
   const pages = Math.max(1, Math.ceil((results.data?.total ?? 0) / 25));
-  const download = useMutation({ mutationFn: () => resultsApi.export(category, process!.id, { q, status }), onSuccess: (blob) => {
-    downloadSpreadsheet(blob, `hasil_koreksi_${category}_${process!.id}.xlsx`);
+  const download = useMutation({ mutationFn: () => resultsApi.download(category, process!.id, summary!.generation, summary!.radius_meters, q, status), onSuccess: (file) => {
+    downloadSpreadsheet(file.blob, file.filename);
   } });
-  const mapUrl = `/peta-koreksi?category=${category}&batch_id=${process?.batch_id}&process_id=${process?.id}`;
+  const mapUrl = `/peta-koreksi?category=${category}&batch_id=${process?.batch_id}&process_id=${process?.id}${generation ? `&generation=${generation}` : ""}`;
   return <div className="space-y-5">
     <header className="flex flex-wrap items-center justify-between gap-3"><div><h1 className="fluid-h1 font-black">Hasil Koreksi</h1><p className="mt-1 text-sm">{descriptor.label} · Pilihan yang sudah disimpan dari Peta Koreksi.</p></div><button type="button" onClick={() => void results.refetch()} disabled={!process || results.isFetching} className={buttonClass.secondary}>Muat ulang hasil</button></header>
     <nav aria-label="Kategori hasil koreksi" className="flex flex-wrap gap-2">{CORRECTION_TYPES.map((item) => <Link key={item.key} className={item.key === category ? buttonClass.primary : buttonClass.secondary} to={`/result?category=${item.key}`}>{item.label}</Link>)}</nav>
     <section className="space-y-3 rounded-sm border-2 border-neo-border bg-white p-4"><label className="flex flex-col gap-1 text-xs font-bold">Pemeriksaan hasil<select aria-label="Pemeriksaan hasil koreksi" value={process?.id ?? ""} onChange={(event) => setParams({ category, process_id: event.target.value })} className={control}><option value="" disabled>Pilih pemeriksaan</option>{processes.filter((item) => item.category === category).map((item) => <option key={item.id} value={item.id}>#{item.id} · {item.filename} · {count(item.chosen_count)} pilihan</option>)}</select></label>
-      {process && <div className="flex flex-wrap gap-4 text-xs font-bold"><Link to={mapUrl} className="underline">Buka Peta Koreksi</Link><Link to={`/koreksi/${descriptor.slug}?batch_id=${process.batch_id}&process_id=${process.id}`} className="underline">Lanjutkan pemeriksaan dan tinjau PDPJ</Link><Link to={`/history?process_id=${process.id}`} className="underline">Buka Riwayat Proses</Link></div>}
-      {summary && <p className="text-xs">Pemeriksaan #{summary.process_id} · Berkas {summary.filename} · Acuan PDPJ #{summary.pdpj_review_id} · Versi pemeriksaan {summary.generation}</p>}
+      {process && <label className="flex flex-col gap-1 text-xs font-bold">Versi radius pemeriksaan<select aria-label="Versi radius hasil koreksi" disabled={!versions.data || download.isPending} value={generation ?? ""} onChange={(event) => { setPage(1); setRecordId(undefined); setParams({ category, process_id: String(process.id), generation: event.target.value }); }} className={control}>{versions.data?.runs.map((run) => <option key={run.id} value={run.generation}>{run.radius_meters.toLocaleString("id-ID")} m · Versi {run.generation} · {run.status === "completed" ? "Selesai" : "Hasil sementara"}</option>)}</select></label>}
+      {process && <div className="flex flex-wrap gap-4 text-xs font-bold"><Link to={mapUrl} className="underline">Buka Peta Koreksi</Link><Link to={`/koreksi/${descriptor.slug}?batch_id=${process.batch_id}&process_id=${process.id}`} className="underline">Lanjutkan pemeriksaan dan tinjau PDPJ</Link><Link to={`/history?process_id=${process.id}${generation ? `&generation=${generation}` : ""}`} className="underline">Buka Riwayat Proses</Link></div>}
+      {summary && <p className="text-xs">Pemeriksaan #{summary.process_id} · Berkas {summary.filename} · Acuan PDPJ #{summary.pdpj_review_id} · Versi pemeriksaan {summary.generation} · Radius {summary.radius_meters} m</p>}
       {summary?.partial && <p role="status" className="border border-amber-700 bg-amber-50 p-3 text-sm text-amber-950">Hasil sebagian: {count(summary.saved_rows)} dari {count(summary.total_targets)} baris sudah diperiksa dan tersimpan. Pilihan aktif tetap tersedia saat sisa pemeriksaan dilanjutkan. Status saat ini: {summary.processing_state === "paused" ? "dijeda" : summary.processing_state === "failed" ? "terhenti" : "pemeriksaan belum selesai"}.</p>}
     </section>
     {!process ? <p className="rounded-sm border border-gray-300 bg-white p-5">Belum ada pemeriksaan pada kategori ini. Mulai dari <Link className="font-bold underline" to={`/koreksi/${descriptor.slug}`}>Data Koreksi</Link>.</p> : <>
@@ -44,7 +47,7 @@ export function CorrectionResults({ process, processes, category }: { process?: 
         <footer className="flex flex-wrap items-center justify-between gap-2 text-xs"><span>{count(results.data?.total)} baris · Halaman {page} dari {pages}</span><div className="flex gap-2"><button type="button" className={buttonClass.secondary} disabled={page <= 1 || results.isFetching} onClick={() => setPage(page - 1)}>Hasil sebelumnya</button><button type="button" className={buttonClass.secondary} disabled={page >= pages || results.isFetching} onClick={() => setPage(page + 1)}>Hasil berikutnya</button></div></footer>
       </section>
       {recordId !== undefined && <button type="button" className={buttonClass.secondary} onClick={() => setRecordId(undefined)}>Tampilkan seluruh riwayat</button>}
-      <DecisionHistory key={`${process.id}-${recordId}`} kind={category} processId={process.id} recordId={recordId} />
+      <DecisionHistory key={`${process.id}-${recordId}-${generation}`} kind={category} processId={process.id} recordId={recordId} generation={generation} radius={summary?.radius_meters} />
     </>}
   </div>;
 }

@@ -47,6 +47,8 @@ def initialize_progress(
         "started_at": now,
         "updated_at": now,
         "elapsed_seconds": 0.0,
+        "stage_elapsed_seconds": 0.0,
+        "stage_timed_rows": 0,
         "error": None,
     }
     run.total_targets = total
@@ -174,6 +176,8 @@ def advance_progress(
             409, "Pemeriksaan dijeda. Pilih Lanjutkan pemeriksaan koreksi."
         )
     progress = dict(run.processing)
+    previous_stage = progress["stage"]
+    previous_validated = progress["validated_rows"]
     started = monotonic()
     try:
         if progress["stage"] == "matching":
@@ -204,10 +208,23 @@ def advance_progress(
             process.review_status = ReviewStatus.IN_PROGRESS
             run.completed_at = process.completed_at = utc_now()
             progress.update(state="ready", stage="done")
+        spent = monotonic() - started
         progress.update(
             revision=progress["revision"] + 1,
             updated_at=utc_now().isoformat(),
-            elapsed_seconds=progress["elapsed_seconds"] + monotonic() - started,
+            elapsed_seconds=progress["elapsed_seconds"] + spent,
+            stage_elapsed_seconds=(
+                progress.get("stage_elapsed_seconds", 0.0) + spent
+                if progress["stage"] == previous_stage
+                else 0.0
+            ),
+            stage_timed_rows=(
+                progress.get("stage_timed_rows", 0)
+                + progress["validated_rows"]
+                - previous_validated
+                if progress["stage"] == previous_stage
+                else 0
+            ),
         )
         run.processing = progress
         db.commit()

@@ -2,6 +2,7 @@ import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useSearchParams } from "react-router-dom";
 import { DecisionHistory } from "@/components/corrections/DecisionHistory";
+import { correctionApi } from "@/lib/corrections";
 import { downloadSpreadsheet, resultsApi, type ProcessHistory } from "@/lib/results";
 import { Link } from "react-router-dom";
 import { api } from "@/lib/api";
@@ -15,6 +16,9 @@ export default function HistoryPage() {
   const processes = history.data ?? [];
   const loading = history.isPending;
   const selected = processes.find((item) => item.id === Number(params.get("process_id")));
+  const generation = Number(params.get("generation")) || selected?.generation;
+  const version = useQuery({ queryKey: ["history-radius-version", selected?.id, generation], queryFn: ({ signal }) => correctionApi.check(selected!.category!, selected!.id, signal), enabled: !!selected?.category && !!params.get("generation") });
+  const radius = params.get("generation") ? version.data?.runs.find((run) => run.generation === generation)?.radius_meters : selected?.radius_meters;
   const fetchHistory = () => { setError(null); void history.refetch(); };
   const setProcesses = (update: ProcessHistory[] | ((previous: ProcessHistory[]) => ProcessHistory[])) => queryClient.setQueryData<ProcessHistory[]>(["process-history"], (previous = []) => typeof update === "function" ? update(previous) : update);
   const [deletingId, setDeletingId] = useState<number | null>(null);
@@ -24,9 +28,9 @@ export default function HistoryPage() {
 
   const download = useMutation({
     mutationFn: async (process: ProcessHistory) => process.category
-      ? resultsApi.export(process.category, process.id, { q: "", status: "selected" })
-      : (await api.get<Blob>(`/process/${process.id}/export`, { params: { format: "xlsx" }, responseType: "blob" })).data,
-    onSuccess: (blob, process) => downloadSpreadsheet(blob, `hasil_koreksi_proses_${process.id}.xlsx`),
+      ? resultsApi.download(process.category, process.id, process.generation!, process.radius_meters)
+      : { blob: (await api.get<Blob>(`/process/${process.id}/export`, { params: { format: "xlsx" }, responseType: "blob" })).data, filename: `hasil_koreksi_proses_${process.id}.xlsx` },
+    onSuccess: (file) => downloadSpreadsheet(file.blob, file.filename),
   });
 
   const remove = useMutation({ mutationFn: (path: string) => api.delete(path) });
@@ -282,7 +286,7 @@ export default function HistoryPage() {
           </div>
         </>
       )}
-      {selected?.category && <DecisionHistory key={selected.id} kind={selected.category} processId={selected.id} />}
+      {selected?.category && <><p className="text-sm font-bold">Riwayat pemeriksaan #{selected.id} · Versi {generation} · Radius {radius ?? "…"} m</p><DecisionHistory key={`${selected.id}-${generation}`} kind={selected.category} processId={selected.id} generation={generation} radius={radius} /></>}
     </div>
   );
 }

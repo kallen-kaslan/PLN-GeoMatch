@@ -24,6 +24,7 @@ from app.models.matching import (
 from app.models.pdpj import PdpjReview
 from app.models.upload import BatchStatus, DatasetType, SourceRecord, UploadBatch
 from app.modules.corrections.decisions import router as decisions_router
+from app.modules.corrections.map_summary import radius_summary
 from app.modules.corrections.pdpj_updates import pdpj_update_info
 from app.modules.corrections.progress import advance_progress, control_progress
 from app.modules.corrections.results import router as results_router
@@ -501,6 +502,18 @@ def resume_check(
         return run_info(control_progress(db, kind, process_id, req.run_id, "running"))
     except SQLAlchemyError as exc:
         raise database_write_error(db, exc, "kelanjutan koreksi") from exc
+
+
+@router.get("/{kind}/map-summary")
+def map_summary(
+    kind: CorrectionKind,
+    db: DbSession,
+    process_id: int = Query(gt=0),
+    generation: int | None = Query(None, ge=1),
+    radius_meters: float = Query(gt=0, le=100000, allow_inf_nan=False),
+) -> dict[str, Any]:
+    """Read radius-specific counts and target statuses from persisted candidates."""
+    return radius_summary(db, kind, process_id, generation, radius_meters)
 
 
 @router.get("/{kind}/summary")

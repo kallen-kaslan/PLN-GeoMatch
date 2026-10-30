@@ -1,8 +1,8 @@
 """Real map interactions, stored-radius reuse, choices, and responsive fallback."""
 
 import httpx
+import pytest
 from playwright.sync_api import Page, expect
-
 from test_corrections_browser import prepare, upload
 
 
@@ -71,7 +71,7 @@ def test_map_all_points_hover_selection_and_candidate_pagination(
     expect(candidates.get_by_role("article")).to_have_count(10)
     candidates.get_by_role("button", name="Kandidat berikutnya", exact=True).click()
     expect(candidates.get_by_role("article")).to_have_count(2)
-    page.get_by_role("button", name="Target berikutnya", exact=True).click()
+    page.get_by_role("button", name="Halaman peta berikutnya", exact=True).click()
     page.get_by_label("Cari target peta", exact=True).fill("Tanpa koordinat")
     page.get_by_role("button", name="Pilih target baris 129", exact=True).click()
     expect(show).to_be_disabled()
@@ -126,11 +126,14 @@ def test_choose_replace_radius_expansion_history_and_category_isolation(
     expect(detail).to_contain_text("Pilihan aktif: 003", timeout=10000)
     detail.get_by_text("Riwayat pilihan (2)", exact=True).click()
     expect(detail).to_contain_text("IDPEL 002")
-    page.get_by_label("Radius peta (meter)", exact=True).fill("100")
+    page.get_by_label("Radius perluasan (meter)", exact=True).fill("100")
     page.get_by_role(
         "button", name="Perluas pemeriksaan dan tampilkan kandidat", exact=True
     ).click()
     expect(candidates).to_contain_text("13 kandidat tersimpan", timeout=30000)
+    expect(
+        page.get_by_role("region", name="Progres pemeriksaan koreksi")
+    ).to_have_count(0)
     expect(detail).to_contain_text("Pilihan aktif: 003")
     page.get_by_label("Radius peta (meter)", exact=True).fill("1")
     show.click()
@@ -171,4 +174,57 @@ def test_map_unavailable_keeps_mobile_table_and_choice_flow(
     expect(
         page.get_by_role("region", name="Kandidat target peta", exact=True)
     ).to_contain_text("12 kandidat tersimpan", timeout=20000)
+    assert page.evaluate("document.documentElement.scrollWidth <= window.innerWidth")
+
+
+@pytest.mark.parametrize("kind", ["idpel_kosong", "idpel_tidak_ketemu"])
+def test_map_preview_page_input_sizes_filters_and_mobile(
+    page: Page, servers: tuple[str, str], kind: str
+) -> None:
+    setup_map(page, servers[1], kind=kind, count=105)
+    table = page.get_by_role("region", name="Tabel target peta", exact=True)
+    footer = table.get_by_label("Navigasi halaman peta", exact=True)
+    jump = footer.get_by_label("Nomor halaman peta", exact=True)
+    size = footer.get_by_label("Baris per halaman peta", exact=True)
+    expect(table.get_by_role("row")).to_have_count(26)
+    expect(size).to_have_value("25")
+    jump.fill("4")
+    jump.press("Enter")
+    expect(footer).to_contain_text("Menampilkan 76–100. Halaman 4 dari 5")
+    expect(
+        table.get_by_role("button", name="Pilih target baris 77", exact=True)
+    ).to_be_visible()
+    footer.get_by_role("button", name="Halaman peta berikutnya", exact=True).click()
+    expect(table.get_by_role("row")).to_have_count(7)
+    jump.fill("6")
+    footer.get_by_role("button", name="Buka halaman", exact=True).click()
+    expect(footer.get_by_role("alert")).to_have_text(
+        "Masukkan nomor halaman antara 1 dan 5."
+    )
+    jump.fill("1.5")
+    jump.press("Enter")
+    expect(footer.get_by_role("alert")).to_be_visible()
+    for rows in (50, 100, 10, 25):
+        size.select_option(str(rows))
+        expect(table.get_by_role("row")).to_have_count(rows + 1)
+        expect(jump).to_have_value("1")
+        expect(footer.get_by_role("alert")).to_have_count(0)
+    jump.fill("5")
+    footer.get_by_role("button", name="Buka halaman", exact=True).click()
+    page.get_by_label("Cari target peta", exact=True).fill("Target 105")
+    expect(table.get_by_role("row")).to_have_count(2)
+    expect(jump).to_have_value("1")
+    page.get_by_label("Filter hasil peta", exact=True).select_option("no_candidates")
+    expect(footer).to_contain_text("0 baris sesuai filter")
+    expect(jump).to_be_disabled()
+    page.get_by_label("Cari target peta", exact=True).fill("")
+    page.get_by_label("Filter hasil peta", exact=True).select_option("all")
+    jump.fill("4")
+    jump.press("Enter")
+    page.get_by_label("Radius peta (meter)", exact=True).fill("1")
+    expect(jump).to_have_value("1")
+    expect(footer).to_contain_text("Menampilkan 1–25")
+    page.set_viewport_size({"width": 390, "height": 844})
+    expect(jump).to_be_visible()
+    expect(size).to_be_visible()
     assert page.evaluate("document.documentElement.scrollWidth <= window.innerWidth")

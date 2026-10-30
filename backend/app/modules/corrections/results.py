@@ -288,10 +288,13 @@ def result_history(
     process_id: int,
     db: DbSession,
     record_id: int | None = Query(None, gt=0),
+    generation: int | None = Query(None, ge=1),
     skip: int = Query(0, ge=0),
     limit: int = Query(20, ge=1, le=100),
 ) -> dict[str, Any]:
     check_process(db, kind, process_id)
+    if generation is not None:
+        result_scope(db, kind, process_id, generation)
     query = (
         db.query(CorrectionDecision, SourceRecord.row_number)
         .join(SourceRecord, SourceRecord.id == CorrectionDecision.target_record_id)
@@ -299,6 +302,8 @@ def result_history(
     )
     if record_id is not None:
         query = query.filter(CorrectionDecision.target_record_id == record_id)
+    if generation is not None:
+        query = query.filter(CorrectionDecision.generation <= generation)
     total = query.count()
     return {
         "total": total,
@@ -318,13 +323,15 @@ def result_history(
 
 
 def export_info(
-    book: Spreadsheet, batch: UploadBatch, process_id: int, generation: int, scope: str
+    book: Spreadsheet, batch: UploadBatch, process_id: int, run: MatchingRun, scope: str
 ) -> None:
     sheet = book.sheet("Informasi", ["Keterangan", "Nilai"], [36, 100])
     entries: list[list[Any]] = [
         ["Proses", process_id],
         ["Berkas target", source_label(batch.filename, batch.source_sheet)],
-        ["Versi pemeriksaan", generation],
+        ["Versi pemeriksaan", run.generation],
+        ["Radius pemeriksaan (meter)", run.radius_meters],
+        ["Status pemeriksaan", run.status.value],
         ["Cakupan ekspor", scope],
         [
             "noagenda / verif",
@@ -369,6 +376,14 @@ def export_info(
     ]
     for values in entries:
         book.append(sheet, values)
+
+
+def radius_filename(
+    prefix: str, kind: CorrectionKind, process_id: int, run: MatchingRun
+) -> str:
+    radius = float(run.radius_meters)
+    label = (str(int(radius)) if radius.is_integer() else str(radius)).replace(".", "_")
+    return f"{prefix}_koreksi_{kind.value}_{process_id}_radius_{label}m_v{run.generation}.xlsx"
 
 
 def evidence_sheet(book: Spreadsheet) -> Any:
@@ -434,6 +449,25 @@ def export_results(
     main = book.sheet("Hasil Koreksi", RESULT_HEADERS, RESULT_WIDTHS)
     targets = book.sheet("Data Target", RESULT_HEADERS[:8], RESULT_WIDTHS[:8])
     evidence = evidence_sheet(book)
+    radius_sheet = book.sheet(
+        "Pemeriksaan Radius",
+        [
+            "baris_target",
+            "idpelanggan_awal",
+            "nama",
+            "status_pemeriksaan",
+            "jumlah_kandidat",
+            "radius_meter",
+            "versi_pemeriksaan",
+        ],
+        [18, 22, 36, 28, 20, 20, 22],
+    )
+    choice_radii = {
+        version: radius
+        for version, radius in db.query(
+            MatchingRun.generation, MatchingRun.radius_meters
+        ).filter_by(process_id=process_id)
+    }
     audit = book.sheet(
         "Keputusan Aktif",
         [
@@ -445,8 +479,9 @@ def export_results(
             "waktu_utc",
             "alasan",
             "jarak_meter",
+            "radius_pilihan_meter",
         ],
-        [18, 24, 18, 18, 28, 30, 60, 18],
+        [18, 24, 18, 18, 28, 30, 60, 18, 22],
     )
     for source, outcome, decision in (
         result_query(db, process, run, q, status)
@@ -462,6 +497,18 @@ def export_results(
             main, result_columns(source, batch, item["target_fields"], candidate)
         )
         book.append(targets, target_columns(source, batch, item["target_fields"]))
+        book.append(
+            radius_sheet,
+            [
+                source.row_number,
+                text(item["target_fields"].get("idpel")),
+                item["target_fields"].get("nama"),
+                outcome.search_status if outcome else "not_checked",
+                outcome.candidate_count if outcome else None,
+                run.radius_meters,
+                run.generation,
+            ],
+        )
         append_evidence(book, evidence, source, decision)
         book.append(
             audit,
@@ -474,16 +521,17 @@ def export_results(
                 decision.created_at.isoformat() if decision else None,
                 decision.reason if decision else None,
                 candidate.get("distance_meters"),
+                choice_radii.get(decision.generation) if decision else None,
             ],
         )
     export_info(
         book,
         batch,
         process_id,
-        run.generation,
+        run,
         f"Filter: {status}; pencarian: {q or '(semua)'}",
     )
-    return book.response(f"hasil_koreksi_{kind.value}_{process_id}.xlsx")
+    return book.response(radius_filename("hasil", kind, process_id, run))
 
 
 @router.get("/{kind}/checks/{process_id}/results/history/export")
@@ -492,8 +540,9 @@ def download_history(
     process_id: int,
     db: DbSession,
     record_id: int | None = Query(None, gt=0),
+    generation: int | None = Query(None, ge=1),
 ) -> StreamingResponse:
-    _, process, run = result_scope(db, kind, process_id)
+    _, process, run = result_scope(db, kind, process_id, generation)
     batch = db.get(UploadBatch, process.target_batch_id)
     assert batch is not None
     query = (
@@ -504,6 +553,14 @@ def download_history(
     )
     if record_id is not None:
         query = query.filter(CorrectionDecision.target_record_id == record_id)
+    if generation is not None:
+        query = query.filter(CorrectionDecision.generation <= run.generation)
+    choice_radii = {
+        version: radius
+        for version, radius in db.query(
+            MatchingRun.generation, MatchingRun.radius_meters
+        ).filter_by(process_id=process_id)
+    }
     book = Spreadsheet()
     main = book.sheet(
         "Riwayat Pilihan",
@@ -517,8 +574,9 @@ def download_history(
             "petugas",
             "waktu_utc",
             "alasan",
+            "radius_pilihan_meter",
         ],
-        [*RESULT_WIDTHS, 18, 22, 24, 18, 18, 28, 30, 60],
+        [*RESULT_WIDTHS, 18, 22, 24, 18, 18, 28, 30, 60, 22],
     )
     evidence = evidence_sheet(book)
     for decision, source in query.order_by(
@@ -539,6 +597,7 @@ def download_history(
                 decision.actor,
                 decision.created_at.isoformat(),
                 decision.reason,
+                choice_radii.get(decision.generation),
             ],
         )
         append_evidence(book, evidence, source, decision)
@@ -546,12 +605,15 @@ def download_history(
         book,
         batch,
         process_id,
-        run.generation,
-        "Seluruh riwayat pada target terpilih"
-        if record_id is not None
-        else "Seluruh riwayat proses",
+        run,
+        ("Riwayat target terpilih" if record_id is not None else "Riwayat proses")
+        + (
+            f" hingga versi {run.generation}"
+            if generation is not None
+            else " seluruh versi"
+        ),
     )
-    return book.response(f"riwayat_koreksi_{kind.value}_{process_id}.xlsx")
+    return book.response(radius_filename("riwayat", kind, process_id, run))
 
 
 @router.get("/{kind}/checks/{process_id}/results/export")

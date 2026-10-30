@@ -11,8 +11,8 @@ import { newestCheckpoint, progressLabel, progressPercent } from "@/lib/progress
 const revision = (value: CorrectionRun) => value.processing?.revision ?? 0;
 const count = (value: number) => value.toLocaleString("id-ID");
 
-export function CorrectionProgress({ kind, check, autoStart, onStarted, onBusyChange }: {
-  kind: CorrectionKind; check: CorrectionCheck; autoStart: boolean; onStarted: (runId: number) => void; onBusyChange?: (busy: boolean) => void;
+export function CorrectionProgress({ kind, check, autoStart, onStarted, onBusyChange, showDetails = true }: {
+  kind: CorrectionKind; check: CorrectionCheck; autoStart: boolean; onStarted: (runId: number) => void; onBusyChange?: (busy: boolean) => void; showDetails?: boolean;
 }) {
   const client = useQueryClient();
   const generation = useRef(0);
@@ -50,6 +50,9 @@ export function CorrectionProgress({ kind, check, autoStart, onStarted, onBusyCh
           for (const section of ["rows", "summary", "detail"]) {
             void client.invalidateQueries({ queryKey: ["corrections", kind, section] }, { cancelRefetch: force });
           }
+        }
+        for (const section of ["correction-map-rows", "correction-map-candidates", "correction-map-summary"]) {
+          void client.invalidateQueries({ queryKey: [section, kind, check.process_id], predicate: (query) => force || (section === "correction-map-rows" ? (query.queryKey[3] as { generation?: number })?.generation : query.queryKey[3]) === result.generation }, { cancelRefetch: force });
         }
       };
       const remaining = 3000 - (Date.now() - lastResultsRefresh.current);
@@ -115,7 +118,7 @@ export function CorrectionProgress({ kind, check, autoStart, onStarted, onBusyCh
     catch (cause) { setError((cause as ApiError).message ?? "Status jeda belum dapat dikonfirmasi. Muat ulang pemeriksaan."); }
     finally { setStopping(false); }
   };
-  if (!progress) return null;
+  if (!progress || !showDetails) return null;
   const ready = progress.state === "ready";
   const preparation = progress.preparation;
   const percent = progressPercent(progress.processed_rows, progress.validated_rows, progress.total_rows, ready,
@@ -124,7 +127,13 @@ export function CorrectionProgress({ kind, check, autoStart, onStarted, onBusyCh
   const preparationStages = { reading: "Membaca master dan menyimpan identitas", reserving: "Mencadangkan IDPEL PDPJ", materializing: "Menyimpan master gabungan dan master sisa", ready: "Persiapan master selesai" };
   const stageLabel = progress.stage === "preparing" && preparation ? preparationStages[preparation.phase] : stages[progress.stage];
   const seconds = Math.floor(progress.elapsed_seconds) + (busy && waiting.revision === progress.revision ? waiting.seconds : 0);
+  const completedInStage = progress.stage === "matching" ? progress.processed_rows : progress.stage === "validating" ? progress.validated_rows : 0;
+  const stageSeconds = (progress.stage_elapsed_seconds ?? 0) + (busy && waiting.revision === progress.revision ? waiting.seconds : 0);
+  const timedRows = progress.stage_timed_rows ?? 0;
+  const remaining = completedInStage > 0 && timedRows > 0 && stageSeconds > 0
+    ? Math.ceil((progress.total_rows - completedInStage) * stageSeconds / timedRows) : null;
   return <section aria-label="Progres pemeriksaan koreksi" aria-busy={busy} className="space-y-3 rounded-sm border-2 border-neo-border bg-white p-4 sm:p-5">
+    <p className="text-xs font-bold">Pemeriksaan #{check.process_id} · Versi {run.generation} · Radius {count(run.radius_meters)} m · Seluruh berkas</p>
     <div className="flex flex-wrap items-start justify-between gap-3"><div><h2 className="flex items-center gap-2 text-sm font-black">{busy ? <LoaderCircle size={18} className="animate-spin" /> : ready ? <CheckCircle2 size={18} className="text-green-700" /> : <Pause size={18} />}{stageLabel}</h2><p role="status" className="mt-1 text-xs">{stopping || (serverActive && run.activity?.operation === "pausing") ? "Menghentikan setelah bagian aktif tersimpan…" : ready ? "Seluruh hasil dan validasi akhir telah tersimpan" : working || serverActive ? "Pemeriksaan berjalan · hasil disimpan bertahap" : progress.state === "failed" || error ? "Proses terhenti · hasil tersimpan dapat dilanjutkan" : progress.state === "running" ? "Menunggu dilanjutkan dari hasil tersimpan" : "Proses dijeda · siap dilanjutkan"}</p></div>
       {!ready && (working || serverActive ? <button type="button" onClick={() => void pause()} disabled={stopping || run.activity?.operation === "pausing"} className={buttonClass.secondary}><Pause size={16} />Hentikan sementara koreksi</button> : <button type="button" disabled={stopping || monitor.isError} onClick={() => void start()} className={buttonClass.primary}>{stopping ? <LoaderCircle size={16} className="animate-spin" /> : <Play size={16} />}{stopping ? "Menyimpan bagian aktif…" : "Lanjutkan pemeriksaan koreksi"}</button>)}
     </div>
@@ -133,6 +142,7 @@ export function CorrectionProgress({ kind, check, autoStart, onStarted, onBusyCh
     {busy && <p className="flex animate-pulse items-center gap-2 rounded-sm border border-amber-600 bg-amber-50 p-3 text-xs font-bold text-amber-950"><LoaderCircle size={16} className="animate-spin" />{progress.stage === "preparing" ? "Menyiapkan sumber master yang dipilih…" : progress.stage === "validating" ? "Memeriksa dan menyimpan validasi akhir bagian aktif…" : "Memproses dan menyimpan bagian aktif…"} Angka berikut menunjukkan hasil yang sudah tersimpan.</p>}
     <dl className="grid gap-3 text-xs sm:grid-cols-2 lg:grid-cols-4"><div><dt className="font-bold">Baris koreksi tersimpan</dt><dd aria-live="polite">{count(progress.processed_rows)} / {count(progress.total_rows)} baris</dd></div><div><dt className="font-bold">Validasi akhir tersimpan</dt><dd aria-live="polite">{count(progress.validated_rows)} / {count(progress.total_rows)} baris</dd>{["preparing", "matching"].includes(progress.stage) && <p className="mt-1 text-neo-border">Dimulai setelah pemeriksaan seluruh baris selesai.</p>}</div><div><dt className="font-bold">Baris sumber terakhir tersimpan</dt><dd>{progress.last_row_number === null ? "Belum ada" : count(progress.last_row_number)}</dd></div><div><dt className="font-bold">Durasi pemrosesan</dt><dd>{Math.floor(seconds / 60)} menit {seconds % 60} detik</dd></div></dl>
     <p className="text-xs text-neo-border">Pembaruan terakhir: {new Date(`${progress.updated_at}Z`).toLocaleString("id-ID")}. {ready ? "Hasil pemeriksaan ini siap ditinjau." : "Kandidat dan bukti disimpan per bagian. Setelah halaman ditutup atau koneksi terputus, lanjutkan pemeriksaan yang sama dari posisi tersimpan. Tabel tetap menampilkan versi hasil yang telah selesai."}</p>
+    {!ready && <p aria-label="Estimasi waktu tahap koreksi" className="text-xs text-neo-border">{remaining === null ? "Estimasi sisa tahap: belum cukup data, menunggu bagian tahap ini tersimpan." : `Perkiraan waktu kerja tersisa pada tahap ini: ${Math.floor(remaining / 60)} menit ${remaining % 60} detik. Perkiraan dapat berubah sesuai jumlah kandidat dan beban server; waktu jeda tidak dihitung.`}</p>}
     {monitor.isError && <p role="alert" className="text-sm text-amber-900">Status server belum dapat dipastikan. Memeriksa ulang sebelum melanjutkan.</p>}
     {(error || progress.error) && <p role="alert" className="text-sm text-red-700">{error || progress.error}</p>}
   </section>;

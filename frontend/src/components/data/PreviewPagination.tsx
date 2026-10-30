@@ -3,7 +3,7 @@ import { ArrowLeft, ArrowRight } from "lucide-react";
 import { buttonClass } from "@/lib/button";
 
 type PreviewPaginationProps = {
-  context: "master" | "koreksi";
+  context: "master" | "koreksi" | "peta";
   page: number;
   pageSize: number;
   total?: number;
@@ -46,8 +46,8 @@ export function PreviewPagination({ context, page, pageSize, total, loading, onP
         <button type="submit" disabled={disabled} className={buttonClass.secondary}>Buka halaman</button>
       </form>
       <div className="flex gap-2">
-        <button type="button" aria-label={context === "master" ? "Halaman sebelumnya" : "Halaman koreksi sebelumnya"} disabled={page <= 1 || loading} onClick={() => navigate(page - 1)} className={buttonClass.secondary}><ArrowLeft size={16} /></button>
-        <button type="button" aria-label={context === "master" ? "Halaman berikutnya" : "Halaman koreksi berikutnya"} disabled={page >= pages || loading} onClick={() => navigate(page + 1)} className={buttonClass.secondary}><ArrowRight size={16} /></button>
+        <button type="button" aria-label={context === "master" ? "Halaman sebelumnya" : `Halaman ${context} sebelumnya`} disabled={page <= 1 || loading} onClick={() => navigate(page - 1)} className={buttonClass.secondary}><ArrowLeft size={16} /></button>
+        <button type="button" aria-label={context === "master" ? "Halaman berikutnya" : `Halaman ${context} berikutnya`} disabled={page >= pages || loading} onClick={() => navigate(page + 1)} className={buttonClass.secondary}><ArrowRight size={16} /></button>
       </div>
     </div>
     {error && <p id={`${context}-page-error`} role="alert" className="w-full text-red-700">{error}</p>}

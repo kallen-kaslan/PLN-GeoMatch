@@ -352,6 +352,9 @@ def reset_database(db: DbSession) -> dict[str, str]:
         db.query(UploadBatch).delete()
         db.query(UploadFileArchive).delete()
         db.commit()
+        from app.modules.corrections.pdpj_index import clear_pdpj_indexes
+
+        clear_pdpj_indexes()
         for key in archive_keys:
             try:
                 archive_path(key).unlink(missing_ok=True)

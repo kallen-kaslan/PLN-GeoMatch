@@ -3,6 +3,7 @@
 import math
 from bisect import bisect_left, bisect_right
 from collections import defaultdict
+from collections.abc import Mapping
 from time import monotonic
 from typing import Any, cast
 
@@ -19,6 +20,7 @@ from app.models.matching import (
 )
 from app.models.pdpj import PdpjRow
 from app.models.upload import BatchStatus, SourceRecord, UploadBatch
+from app.modules.corrections.pdpj_index import chunk_context
 from app.modules.corrections.service import CORRECTION_TYPES, reference_tokens
 from app.modules.corrections.writer import SearchWriter
 from app.modules.pdpj.service import completed_review, pending_pdpj_records
@@ -108,55 +110,6 @@ def run_correction_matching(
         if progress
         else records_query.yield_per(100)
     )
-    pdpj_batch = db.get(UploadBatch, review.batch_id)
-    assert pdpj_batch is not None
-    identities: dict[str, list[dict[str, Any]]] = defaultdict(list)
-    references: dict[tuple[str, str], list[dict[str, Any]]] = defaultdict(list)
-    coordinates: dict[tuple[float, float], list[int]] = defaultdict(list)
-    for row, source in (
-        db.query(PdpjRow, SourceRecord)
-        .join(SourceRecord, SourceRecord.id == PdpjRow.source_record_id)
-        .filter(PdpjRow.review_id == review.id)
-        .yield_per(400)
-    ):
-        # Older reviews predate typed reference fields; preserve their approved
-        # values while deriving recognizable reference types from original headers.
-        fields = with_reference_fields(
-            row.current_fields, source.data or {}, pdpj_batch.column_mapping
-        )
-        evidence = {
-            "pdpj_row_id": row.id,
-            "row_number": row.row_number,
-            "fields": fields,
-        }
-        if fields.get("idpel"):
-            identities[fields["idpel"]].append(evidence)
-        for kind, values in reference_tokens(
-            fields, source.data or {}, pdpj_batch.column_mapping
-        ).items():
-            for value in values:
-                references[(kind, value)].append(evidence)
-        if fields.get("lat") is not None and fields.get("lon") is not None:
-            coordinates[(round(fields["lat"], 7), round(fields["lon"], 7))].append(
-                row.row_number
-            )
-    # Pending source identities/references are reserved in this version too.
-    # Their evidence is explicitly marked as awaiting PDPJ validation.
-    for source in pending_pdpj_records(db, review):
-        fields = extract_standard_fields(source.data or {}, pdpj_batch.column_mapping)
-        evidence = {
-            "pdpj_row_id": None,
-            "row_number": source.row_number,
-            "fields": fields,
-            "pending_validation": True,
-        }
-        if fields.get("idpel"):
-            identities[fields["idpel"]].append(evidence)
-        for kind, values in reference_tokens(
-            fields, source.data or {}, pdpj_batch.column_mapping
-        ).items():
-            for value in values:
-                references[(kind, value)].append(evidence)
     target_fields = (
         [
             extract_standard_fields(record.data or {}, batch.column_mapping)
@@ -165,6 +118,70 @@ def run_correction_matching(
         if progress
         else []
     )
+    identities: Mapping[str, list[dict[str, Any]]]
+    references: Mapping[tuple[str, str], list[dict[str, Any]]]
+    coordinates: dict[tuple[float, float], list[int]]
+    if progress:
+        context = chunk_context(
+            db, review, target_fields, [record.data or {} for record in records], batch
+        )
+        identities, references, coordinates = (
+            context.identities,
+            context.references,
+            context.coordinates,
+        )
+    else:
+        pdpj_batch = db.get(UploadBatch, review.batch_id)
+        assert pdpj_batch is not None
+        identities = defaultdict(list)
+        references = defaultdict(list)
+        coordinates = defaultdict(list)
+        for row, source in (
+            db.query(PdpjRow, SourceRecord)
+            .join(SourceRecord, SourceRecord.id == PdpjRow.source_record_id)
+            .filter(PdpjRow.review_id == review.id)
+            .yield_per(400)
+        ):
+            # Older reviews predate typed reference fields; preserve their approved
+            # values while deriving recognizable reference types from original headers.
+            fields = with_reference_fields(
+                row.current_fields, source.data or {}, pdpj_batch.column_mapping
+            )
+            evidence = {
+                "pdpj_row_id": row.id,
+                "row_number": row.row_number,
+                "fields": fields,
+            }
+            if fields.get("idpel"):
+                identities[fields["idpel"]].append(evidence)
+            for kind, values in reference_tokens(
+                fields, source.data or {}, pdpj_batch.column_mapping
+            ).items():
+                for value in values:
+                    references[(kind, value)].append(evidence)
+            if fields.get("lat") is not None and fields.get("lon") is not None:
+                coordinates[(round(fields["lat"], 7), round(fields["lon"], 7))].append(
+                    row.row_number
+                )
+        # Pending source identities/references are reserved in this version too.
+        # Their evidence is explicitly marked as awaiting PDPJ validation.
+        for source in pending_pdpj_records(db, review):
+            fields = extract_standard_fields(
+                source.data or {}, pdpj_batch.column_mapping
+            )
+            evidence = {
+                "pdpj_row_id": None,
+                "row_number": source.row_number,
+                "fields": fields,
+                "pending_validation": True,
+            }
+            if fields.get("idpel"):
+                identities[fields["idpel"]].append(evidence)
+            for kind, values in reference_tokens(
+                fields, source.data or {}, pdpj_batch.column_mapping
+            ).items():
+                for value in values:
+                    references[(kind, value)].append(evidence)
     master_identity_query = db.query(SourceRecord.idpel).filter(
         SourceRecord.batch_id.in_(review.master_batch_ids),
         SourceRecord.idpel.isnot(None),
@@ -324,6 +341,7 @@ def run_correction_matching(
         writer.outcome(outcome)
     writer.flush()
     if progress is not None:
+        spent = monotonic() - started
         if last_source_id:
             progress.update(
                 last_source_id=last_source_id, last_row_number=last_row_number
@@ -333,12 +351,18 @@ def run_correction_matching(
         progress.update(
             processed_rows=total_targets,
             matched_rows=matched,
-            elapsed_seconds=progress["elapsed_seconds"] + monotonic() - started,
+            elapsed_seconds=progress["elapsed_seconds"] + spent,
+            stage_elapsed_seconds=progress.get("stage_elapsed_seconds", 0.0) + spent,
+            stage_timed_rows=progress.get("stage_timed_rows", 0)
+            + total_targets
+            - progress["processed_rows"],
             updated_at=utc_now().isoformat(),
             revision=progress["revision"] + 1,
         )
         if total_targets == progress["total_rows"]:
             progress["stage"] = "validating"
+            progress["stage_elapsed_seconds"] = 0.0
+            progress["stage_timed_rows"] = 0
         run.processing = progress
         run.total_targets, run.matched_targets = progress["total_rows"], matched
         db.commit()

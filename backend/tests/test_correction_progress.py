@@ -9,7 +9,7 @@ from sqlalchemy.orm import Session
 
 from app.correction_progress_schema import upgrade_correction_progress
 from app.models.correction import CorrectionCandidateEvidence, CorrectionTarget
-from app.models.matching import MatchCandidate, ReconciliationProcess
+from app.models.matching import MatchCandidate, MatchingRun, ReconciliationProcess
 from app.modules.corrections import router
 from app.modules.corrections.service import selected_run
 from app.modules.corrections.writer import SearchWriter
@@ -76,6 +76,69 @@ def finish(client: TestClient, check: dict, run: dict) -> dict:
             return run
         run = advance(client, check, run)
     pytest.fail("Processing did not finish")
+
+
+def test_stage_duration_survives_reload_and_pause_without_counting_preparation(
+    client: TestClient, pending: dict, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from app.modules.corrections import engine, progress
+
+    preparation_clock = iter([100.0, 1000.0])
+    monkeypatch.setattr(progress, "monotonic", lambda: next(preparation_clock))
+    run = advance(client, pending, pending["latest_run"])
+    assert run["processing"]["stage"] == "matching"
+    assert run["processing"]["elapsed_seconds"] == 900.0
+    assert run["processing"]["stage_elapsed_seconds"] == 0.0
+    matching_clock = iter([100.0, 110.0, 200.0, 220.0, 300.0, 330.0])
+    monkeypatch.setattr(engine, "monotonic", lambda: next(matching_clock))
+    monkeypatch.setattr(progress, "monotonic", lambda: 100.0)
+    first = advance(client, pending, run)
+    assert first["processing"]["stage_elapsed_seconds"] == 10.0
+    assert first["processing"]["stage_timed_rows"] == 2
+    restored = client.get(path(pending) + "/progress").json()
+    assert restored["processing"] == first["processing"]
+    paused = client.post(path(pending) + "/pause", json={"run_id": first["id"]}).json()
+    assert paused["processing"]["stage_elapsed_seconds"] == 10.0
+    resumed = client.post(
+        path(pending) + "/resume", json={"run_id": first["id"]}
+    ).json()
+    second = advance(client, pending, resumed)
+    assert second["processing"]["stage_elapsed_seconds"] == 30.0
+    third = advance(client, pending, second)
+    assert third["processing"]["stage"] == "validating"
+    assert third["processing"]["stage_elapsed_seconds"] == 0.0
+    assert third["processing"]["stage_timed_rows"] == 0
+    assert third["processing"]["elapsed_seconds"] == 960.0
+    validation_clock = iter([100.0, 105.0])
+    monkeypatch.setattr(progress, "monotonic", lambda: next(validation_clock))
+    validated = advance(client, pending, third)
+    assert validated["processing"]["stage_elapsed_seconds"] == 5.0
+    assert validated["processing"]["validated_rows"] == 2
+    assert validated["processing"]["stage_timed_rows"] == 2
+
+
+def test_existing_checkpoint_only_uses_newly_measured_rows_for_time_estimates(
+    client: TestClient,
+    db_session: Session,
+    pending: dict,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from app.modules.corrections import engine
+
+    prepared = advance(client, pending, pending["latest_run"])
+    first = advance(client, pending, prepared)
+    stored = db_session.get(MatchingRun, first["id"])
+    old_progress = dict(stored.processing)
+    old_progress.pop("stage_elapsed_seconds")
+    old_progress.pop("stage_timed_rows")
+    stored.processing = old_progress
+    db_session.commit()
+    matching_clock = iter([100.0, 120.0])
+    monkeypatch.setattr(engine, "monotonic", lambda: next(matching_clock))
+    second = advance(client, pending, first)
+    assert second["processing"]["processed_rows"] == 4
+    assert second["processing"]["stage_elapsed_seconds"] == 20.0
+    assert second["processing"]["stage_timed_rows"] == 2
 
 
 def test_saved_progress_pause_resume_and_final_validation_are_real(

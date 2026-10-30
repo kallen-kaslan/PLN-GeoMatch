@@ -31,6 +31,19 @@ Halaman hasil tanpa ID memilih pemeriksaan yang mempunyai pilihan tersimpan
 terbaru, kemudian mengikat ID tersebut di URL. Kategori bisa diganti melalui
 tab. Pemeriksaan dari alur lama tetap memakai tampilan dan ekspor lama.
 
+Dropdown **Versi radius pemeriksaan** pada Hasil Koreksi memilih hasil radius
+tersimpan dalam pemeriksaan yang sama. Tautan dari peta membawa `generation`
+yang sedang dibuka. Tabel, pilihan aktif, riwayat, dan ekspor dibatasi hingga
+versi tersebut, sehingga keputusan pada radius baru tidak mengubah isi file
+historis. Memilih versi lama tidak membuat pemeriksaan baru.
+
+Nama file XLSX memuat radius dan versi, misalnya
+`hasil_koreksi_idpel_kosong_4_radius_100m_v1.xlsx` atau
+`riwayat_koreksi_idpel_kosong_4_radius_150m_v2.xlsx`. Header unduhan dari server
+dipakai agar nama browser mengikuti isi file. Angka desimal radius memakai
+garis bawah pada nama file. Status hasil sebagian tetap dicantumkan pada
+lembar informasi.
+
 ## Sumber hasil dan arti hitungan
 
 - Pilihan aktif adalah keputusan dengan revisi tertinggi untuk satu target pada
@@ -79,9 +92,14 @@ Sheet **Data Target** menyimpan IDPEL awal, atribut, koordinat, nama file/sheet,
 dan baris target. **Observasi Sumber** memuat seluruh bukti kandidat dengan
 penanda `koordinat_dipakai`. **Keputusan Aktif** menyertakan status, versi,
 revisi, petugas, waktu UTC, alasan, dan jarak. **Informasi** menjelaskan kolom
-serta cakupan filter/pencarian ekspor. Ekspor riwayat menggunakan sheet
+serta cakupan filter/pencarian, radius, versi, dan status pemeriksaan. Lembar
+**Pemeriksaan Radius** memuat status pencocokan dan jumlah kandidat setiap
+target yang diekspor pada radius versi terpilih. **Keputusan Aktif** juga
+mencantumkan `radius_pilihan_meter`, karena pilihan yang dipertahankan dapat
+berasal dari radius sebelumnya. Ekspor riwayat menggunakan sheet
 **Riwayat Pilihan**: sepuluh kolom utama ditambah baris target, IDPEL awal,
-status, versi, revisi, petugas, waktu UTC, dan alasan pada setiap kejadian.
+status, versi, revisi, petugas, waktu UTC, alasan, dan radius saat pilihan
+disimpan pada setiap kejadian.
 
 IDPEL, nomor agenda, dan koordinat ditulis sebagai teks XLSX agar nol di depan
 dan digit desimal tetap utuh tanpa pembulatan tambahan. Teks seperti `=SUM(...)`
