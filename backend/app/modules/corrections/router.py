@@ -7,7 +7,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 from sqlalchemy import and_, func, or_
 from sqlalchemy.exc import SQLAlchemyError
-from sqlalchemy.orm import Session, object_session
+from sqlalchemy.orm import Session, load_only, object_session
 
 from app.config import settings
 from app.database import get_db
@@ -37,7 +37,12 @@ from app.modules.corrections.service import (
 )
 from app.modules.master.router import batch_info
 from app.modules.spatial.pipeline import execute_pipeline
-from app.modules.upload.normalization import extract_standard_fields, validate_fields
+from app.modules.upload.normalization import (
+    NORMALIZATION_VERSION,
+    extract_standard_fields,
+    validate_fields,
+)
+from app.modules.upload.pagination import load_original_cells, source_page_ids
 from app.modules.upload.storage import database_write_error
 from app.processing_activity import monitor_request, request_activity
 from app.tasks.spatial_tasks import (
@@ -206,6 +211,16 @@ def record_scope(
         raise HTTPException(422, "Pilih pemeriksaan untuk melihat versi pencarian")
     query = (
         db.query(SourceRecord, UploadBatch, CorrectionTarget)
+        .options(
+            load_only(
+                SourceRecord.id,
+                SourceRecord.batch_id,
+                SourceRecord.row_number,
+                SourceRecord.normalized_data,
+                SourceRecord.is_valid,
+                SourceRecord.validation_errors,
+            )
+        )
         .join(UploadBatch, SourceRecord.batch_id == UploadBatch.id)
         .outerjoin(
             CorrectionTarget,
@@ -226,13 +241,32 @@ def record_scope(
     return query, run
 
 
+def cached_preview_fields(
+    record: SourceRecord, batch: UploadBatch
+) -> dict[str, Any] | None:
+    """Reuse only a current, valid normalization; preserve raw parsing of errors."""
+    if (
+        batch.catalog_version == NORMALIZATION_VERSION
+        and record.normalized_data
+        and record.normalized_data.get("_normalization_version")
+        == NORMALIZATION_VERSION
+        and record.is_valid
+        and not record.validation_errors
+    ):
+        return record.normalized_data
+    return None
+
+
 def record_info(
     record: SourceRecord, batch: UploadBatch, outcome: CorrectionTarget | None
 ) -> dict[str, Any]:
     """Return every source row even when it has no coordinates or candidates."""
+    cached = cached_preview_fields(record, batch) if not outcome else None
     fields = (
         outcome.fields
         if outcome
+        else {**cached, "validation_errors": []}
+        if cached is not None
         else extract_standard_fields(record.data or {}, batch.column_mapping)
     )
     return {
@@ -526,7 +560,8 @@ def list_records(
     limit: int = Query(25, ge=1, le=100),
 ) -> dict[str, Any]:
     """Filter rows, rather than candidate records, so no-result targets remain visible."""
-    query, _ = record_scope(db, kind, batch_id, process_id, generation)
+    query, run = record_scope(db, kind, batch_id, process_id, generation)
+    payload_query = query
     if saved_only:
         query = query.filter(CorrectionTarget.id.is_not(None))
     if q.strip():
@@ -568,17 +603,46 @@ def list_records(
         )
     elif status != "all":
         query = query.filter(CorrectionTarget.search_status == status)
-    total = query.count()
+    selected_batch = batch_id
+    if run is not None:
+        selected_process = db.get(ReconciliationProcess, run.process_id)
+        assert selected_process is not None
+        selected_batch = selected_process.target_batch_id
+    batches = db.query(UploadBatch).filter(
+        UploadBatch.dataset_type == DatasetType(kind.value),
+        UploadBatch.status == BatchStatus.COMPLETED,
+    )
+    if selected_batch is not None:
+        batches = batches.filter(UploadBatch.id == selected_batch)
+    selected_batches = batches.all()
+    total, identities = source_page_ids(
+        db,
+        query,
+        [batch.id for batch in selected_batches],
+        skip,
+        limit,
+        unfiltered=not q.strip() and status == "all" and not saved_only,
+        known_totals={batch.id: batch.total_rows for batch in selected_batches},
+    )
+    records = (
+        payload_query.filter(SourceRecord.id.in_(identities))
+        .order_by(SourceRecord.batch_id.desc(), SourceRecord.id)
+        .all()
+        if identities
+        else []
+    )
+    load_original_cells(
+        db,
+        [
+            record.id
+            for record, batch, outcome in records
+            if outcome is None and cached_preview_fields(record, batch) is None
+        ],
+    )
     return {
         "total": total,
         "items": [
-            record_info(record, batch, outcome)
-            for record, batch, outcome in query.order_by(
-                SourceRecord.batch_id.desc(), SourceRecord.id
-            )
-            .offset(skip)
-            .limit(limit)
-            .all()
+            record_info(record, batch, outcome) for record, batch, outcome in records
         ],
     }
 

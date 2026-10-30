@@ -17,6 +17,8 @@ export function CorrectionProgress({ kind, check, autoStart, onStarted, onBusyCh
   const client = useQueryClient();
   const generation = useRef(0);
   const request = useRef<Promise<CorrectionRun> | null>(null);
+  const lastResultsRefresh = useRef(0);
+  const resultsRefreshTimer = useRef<number | undefined>(undefined);
   const [live, setLive] = useState<CorrectionRun | null>(null);
   const [working, setWorking] = useState(false);
   const [stopping, setStopping] = useState(false);
@@ -31,19 +33,35 @@ export function CorrectionProgress({ kind, check, autoStart, onStarted, onBusyCh
   const publish = useCallback(async (result: CorrectionRun, refresh = true) => {
     setLive((old) => newestCheckpoint(old, result, revision));
     const key = ["corrections", kind, "check", check.process_id];
-    await client.cancelQueries({ queryKey: key });
     client.setQueryData<CorrectionCheck>(key, (old) => old && old.latest_run.id === result.id && newestCheckpoint(old.latest_run, result, revision) === result ? {
       ...old, status: result.status, latest_run: result,
       current_generation: result.status === "completed" ? result.generation : old.current_generation,
       runs: old.runs.map((item) => item.id === result.id ? result : item),
     } : old);
-    if (refresh) void client.invalidateQueries({ queryKey: result.status === "completed" ? ["corrections", kind] : key });
-    if (refresh && result.status !== "completed") {
-      for (const section of ["rows", "summary", "detail"]) {
-        void client.invalidateQueries({ queryKey: ["corrections", kind, section] });
+    if (refresh) {
+      const force = result.status === "completed" || result.processing?.state !== "running";
+      const refreshResults = () => {
+        resultsRefreshTimer.current = undefined;
+        lastResultsRefresh.current = Date.now();
+        if (result.status === "completed") {
+          void client.invalidateQueries({ queryKey: ["corrections", kind] });
+        } else {
+          void client.invalidateQueries({ queryKey: key }, { cancelRefetch: force });
+          for (const section of ["rows", "summary", "detail"]) {
+            void client.invalidateQueries({ queryKey: ["corrections", kind, section] }, { cancelRefetch: force });
+          }
+        }
+      };
+      const remaining = 3000 - (Date.now() - lastResultsRefresh.current);
+      if (force || remaining <= 0) {
+        window.clearTimeout(resultsRefreshTimer.current);
+        refreshResults();
+      } else if (resultsRefreshTimer.current === undefined) {
+        resultsRefreshTimer.current = window.setTimeout(refreshResults, remaining);
       }
     }
   }, [client, kind, check.process_id]);
+  useEffect(() => () => window.clearTimeout(resultsRefreshTimer.current), []);
   const serverActive = run.activity?.active === true;
   const monitor = useProcessMonitor({ queryKey: ["process-monitor", "correction", check.process_id, runId],
     queryFn: () => correctionApi.progress(kind, check.process_id), checkpoint: run, revision,

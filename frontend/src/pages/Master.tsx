@@ -1,12 +1,13 @@
 import { useDeferredValue, useEffect, useRef, useState } from "react";
 import { Link, Navigate, useParams } from "react-router-dom";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { AlertCircle, ArrowLeft, ArrowRight, CheckCircle2, Database, FileSpreadsheet, LoaderCircle, MapPin, Plus, RefreshCw, Search, X } from "lucide-react";
+import { AlertCircle, CheckCircle2, Database, FileSpreadsheet, LoaderCircle, MapPin, Plus, RefreshCw, Search, X } from "lucide-react";
+import { PreviewPagination } from "@/components/data/PreviewPagination";
 import { MasterImport } from "@/components/master/MasterImport";
 import { MASTER_TYPES, displayValue, masterApi, masterFieldLabel, masterFields, validationMessage, type ImportResult, type MasterKind, type MasterRecord, type MasterStatus } from "@/lib/master";
 
 const controlClass = "rounded-sm border-2 border-neo-border bg-white px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-neo-accent";
-const count = (value: number | undefined) => value === undefined ? "—" : value.toLocaleString("id-ID");
+const count = (value: number | null | undefined) => value == null ? "—" : value.toLocaleString("id-ID");
 
 function RecordBadge({ record }: { record: MasterRecord }) {
   const label = !record.is_valid ? "Perlu perbaikan" : record.coordinates_complete ? "Lengkap" : "Koordinat belum lengkap";
@@ -69,10 +70,11 @@ function MasterWorkspace({ kind }: { kind: MasterKind }) {
   const [notice, setNotice] = useState<ImportResult & { filename: string } | null>(null);
 
   const batches = useQuery({ queryKey: ["masters", kind, "batches"], queryFn: () => masterApi.batches(kind) });
-  const summary = useQuery({ queryKey: ["masters", kind, "summary", batchId], queryFn: () => masterApi.summary(kind, batchId) });
-  const records = useQuery({ queryKey: ["masters", kind, "records", batchId, deferredSearch, status, page, pageSize], queryFn: () => masterApi.records(kind, { batch_id: batchId, q: deferredSearch, status, skip: (page - 1) * pageSize, limit: pageSize }) });
+  const summary = useQuery({ queryKey: ["masters", kind, "summary", batchId], queryFn: ({ signal }) => masterApi.summary(kind, batchId, signal, false), staleTime: 30_000 });
+  const statistics = useQuery({ queryKey: ["masters", kind, "statistics", batchId, summary.data?.source_signature], queryFn: ({ signal }) => masterApi.summary(kind, batchId, signal), enabled: summary.data?.statistics_ready === false, staleTime: Infinity, retry: false });
+  const totals = statistics.data?.source_signature === summary.data?.source_signature && statistics.data?.statistics_ready ? statistics.data : summary.data;
+  const records = useQuery({ queryKey: ["masters", kind, "records", batchId, deferredSearch, status, page, pageSize], queryFn: ({ signal }) => masterApi.records(kind, { batch_id: batchId, q: deferredSearch, status, skip: (page - 1) * pageSize, limit: pageSize }, signal), staleTime: 30_000 });
   const selectedBatch = batches.data?.find((batch) => batch.id === batchId);
-  const totalPages = Math.max(1, Math.ceil((records.data?.total ?? 0) / pageSize));
   const failed = batches.isError || summary.isError || records.isError;
 
   const imported = (result: ImportResult, filename: string) => {
@@ -99,20 +101,21 @@ function MasterWorkspace({ kind }: { kind: MasterKind }) {
     {failed && <div role="alert" className="flex items-start gap-2 rounded-sm border-2 border-red-600 bg-red-50 p-4 text-sm text-red-700"><AlertCircle size={18} className="shrink-0" />Data master belum dapat dimuat. Periksa koneksi dan gunakan tombol muat ulang.</div>}
     <section aria-label="Ringkasan data master" className="grid grid-cols-2 gap-3 xl:grid-cols-4">
       {[
-        { label: "Total baris", value: summary.data?.total_rows, icon: FileSpreadsheet, color: "bg-white" },
-        { label: "Lolos validasi", value: summary.data?.valid_rows, icon: CheckCircle2, color: "bg-green-50" },
-        { label: "Koordinat belum lengkap", value: summary.data?.incomplete_coordinates, icon: MapPin, color: "bg-amber-50" },
-        { label: "Perlu perbaikan", value: summary.data?.invalid_rows, icon: AlertCircle, color: "bg-red-50" },
+        { label: "Total baris", value: totals?.total_rows, icon: FileSpreadsheet, color: "bg-white" },
+        { label: "Lolos validasi", value: totals?.valid_rows, icon: CheckCircle2, color: "bg-green-50" },
+        { label: "Koordinat belum lengkap", value: totals?.incomplete_coordinates, icon: MapPin, color: "bg-amber-50" },
+        { label: "Perlu perbaikan", value: totals?.invalid_rows, icon: AlertCircle, color: "bg-red-50" },
       ].map((card) => <div key={card.label} className={`rounded-sm border-2 border-neo-border p-3 shadow-[2px_2px_0_#0a0a0a] sm:p-4 ${card.color}`}><div className="flex items-start justify-between gap-2"><p className="text-[10px] font-bold uppercase tracking-wide text-neo-border">{card.label}</p><card.icon size={16} className="shrink-0" /></div><p className={`mt-2 text-2xl font-black sm:text-3xl ${summary.isFetching ? "animate-pulse" : ""}`}>{count(card.value)}</p></div>)}
     </section>
+    {totals?.statistics_ready === false && <div aria-label="Status statistik master" className="rounded-sm border border-neo-border bg-white p-3 text-xs">{statistics.isError ? <p role="alert">Statistik rinci belum dapat dimuat. <button type="button" onClick={() => void statistics.refetch()} className="font-bold underline">Coba lagi statistik master</button></p> : <p role="status" className="flex items-center gap-2"><LoaderCircle size={14} className="animate-spin" />Menghitung IDPEL unik dan kelengkapan koordinat. Jumlah utama dan tabel tetap dapat digunakan.</p>}</div>}
     <section className="space-y-4 rounded-sm border-2 border-neo-border bg-white p-4 shadow-[3px_3px_0_#0a0a0a] sm:p-5">
       <div className="flex flex-col justify-between gap-3 lg:flex-row lg:items-end">
-        <div><h2 className="text-sm font-black">Daftar sumber master</h2><p className="mt-1 text-xs text-neo-border">{count(summary.data?.ready_files)} berkas siap · {count(summary.data?.unique_idpels)} IDPEL unik · {count(summary.data?.duplicate_observations)} observasi berulang</p></div>
+        <div><h2 className="text-sm font-black">Daftar sumber master</h2><p className="mt-1 text-xs text-neo-border">{count(totals?.ready_files)} berkas siap · {count(totals?.unique_idpels)} IDPEL unik · {count(totals?.duplicate_observations)} observasi berulang</p></div>
         <label className="flex flex-col gap-1.5 text-xs font-bold lg:min-w-80">Berkas sumber
           <select aria-label="Berkas sumber" value={batchId ?? ""} onChange={(event) => { setBatchId(event.target.value ? Number(event.target.value) : undefined); setPage(1); }} className={controlClass}><option value="">Semua berkas {descriptor.label}</option>{batches.data?.map((batch) => <option key={batch.id} value={batch.id}>{batch.filename}{batch.period ? ` · ${batch.period}` : ""}{batch.status !== "completed" ? " · Menunggu mapping" : ""}</option>)}</select>
         </label>
       </div>
-      {!!summary.data?.pending_files && !selectedBatch && <div className="rounded-sm border border-amber-600 bg-amber-50 p-3 text-xs text-amber-900">Ada {summary.data.pending_files} berkas menunggu mapping. Pilih berkas tersebut untuk melanjutkan impor.</div>}
+      {!!totals?.pending_files && !selectedBatch && <div className="rounded-sm border border-amber-600 bg-amber-50 p-3 text-xs text-amber-900">Ada {totals.pending_files} berkas menunggu mapping. Pilih berkas tersebut untuk melanjutkan impor.</div>}
       {selectedBatch && selectedBatch.status !== "completed" && <div className="flex flex-col justify-between gap-3 rounded-sm border border-amber-600 bg-amber-50 p-3 text-xs text-amber-900 sm:flex-row sm:items-center"><p><strong>{selectedBatch.filename}</strong> memiliki {count(selectedBatch.total_rows)} baris. Selesaikan mapping agar masuk data referensi.</p><button type="button" onClick={() => { setResumeId(selectedBatch.id); setShowImport(true); }} className="touch-min shrink-0 rounded-sm border border-amber-700 bg-white px-3 font-bold">Lanjutkan mapping</button></div>}
       <div className="flex flex-col gap-3 sm:flex-row"><label className="relative flex-1"><span className="sr-only">Cari data master</span><Search size={16} className="pointer-events-none absolute top-3 left-3 text-neo-border" /><input type="search" value={search} onChange={(event) => { setSearch(event.target.value); setPage(1); }} placeholder="Cari IDPEL, nama, kode, atau nomor meter…" className={`${controlClass} w-full pl-9`} /></label>
         <select aria-label="Status kelengkapan data" value={status} onChange={(event) => { setStatus(event.target.value as MasterStatus); setPage(1); }} className={controlClass}><option value="all">Semua kondisi</option><option value="valid">Lolos validasi</option><option value="incomplete">Koordinat belum lengkap</option><option value="invalid">Perlu perbaikan</option></select></div>
@@ -130,7 +133,7 @@ function MasterWorkspace({ kind }: { kind: MasterKind }) {
           </tr>) : <tr><td colSpan={8} className="p-10 text-center"><Database size={28} className="mx-auto mb-3 text-neo-border" /><p className="text-sm font-bold">{search || status !== "all" ? "Tidak ada data sesuai pencarian." : "Belum ada data master yang siap ditampilkan."}</p><p className="mt-1 text-xs text-neo-border">{search || status !== "all" ? "Sesuaikan pencarian atau filter kondisi data." : "Unggah berkas dan konfirmasi pemetaan kolom untuk menambahkan referensi."}</p></td></tr>}</tbody>
         </table>
       </div>
-      <footer className="flex flex-col justify-between gap-3 text-xs sm:flex-row sm:items-center"><p>{count(records.data?.total)} baris sesuai filter · Halaman {Math.min(page, totalPages)} dari {totalPages}</p><div className="flex items-center gap-2"><label className="sr-only" htmlFor="master-page-size">Baris per halaman</label><select id="master-page-size" value={pageSize} onChange={(event) => { setPageSize(Number(event.target.value)); setPage(1); }} className={`${controlClass} text-xs`}>{[25, 50, 100].map((size) => <option key={size} value={size}>{size} baris</option>)}</select><button type="button" aria-label="Halaman sebelumnya" disabled={page <= 1 || records.isFetching} onClick={() => setPage((previous) => previous - 1)} className="touch-min rounded-sm border border-neo-border hover:bg-gray-100 disabled:opacity-30"><ArrowLeft size={16} /></button><button type="button" aria-label="Halaman berikutnya" disabled={page >= totalPages || records.isFetching} onClick={() => setPage((previous) => previous + 1)} className="touch-min rounded-sm border border-neo-border hover:bg-gray-100 disabled:opacity-30"><ArrowRight size={16} /></button></div></footer>
+      <PreviewPagination context="master" page={page} pageSize={pageSize} total={records.data?.total} loading={records.isFetching} key={`${batchId}-${deferredSearch}-${status}-${pageSize}`} onPageChange={setPage} onPageSizeChange={setPageSize} />
     </section>
     {detailId !== null && <RecordDetail key={detailId} kind={kind} id={detailId} onClose={() => setDetailId(null)} />}
   </div>;

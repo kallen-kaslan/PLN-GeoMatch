@@ -43,6 +43,7 @@ def prepare_database(connection: Connection) -> None:
     from app.correction_schema import upgrade_corrections
     from app.master_preparation_schema import upgrade_master_preparation
     from app.master_schema import upgrade_master_catalog
+    from app.master_summary_schema import upgrade_master_summary
     from app.pdpj_progress_schema import upgrade_pdpj_progress
     from app.pdpj_publication_schema import upgrade_pdpj_publications
     from app.pdpj_results_schema import upgrade_pdpj_results
@@ -58,6 +59,7 @@ def prepare_database(connection: Connection) -> None:
     # The batch indexes are needed before any legacy data is inspected.
     apply_once(connection, "performance", "e5fa92c30b71", upgrade_performance)
     upgrade_master_catalog(connection)
+    apply_once(connection, "master_summary", "f46ac7259b18", upgrade_master_summary)
     apply_once(connection, "pdpj", "f6ac81d43e20", upgrade_pdpj_validation)
     apply_once(connection, "pdpj_progress", "a91d72f04c63", upgrade_pdpj_progress)
     apply_once(connection, "pdpj_results", "e35fb6148a07", upgrade_pdpj_results)

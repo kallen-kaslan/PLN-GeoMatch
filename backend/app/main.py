@@ -15,6 +15,7 @@ from .models.correction import (
 )
 from .models.correction_decision import CorrectionDecision
 from .models.master_sisa import CleanedMasterRecord, MasterSisaRecord
+from .models.master_summary import MasterSummaryCache
 from .models.matching import MatchCandidate, ReconciliationProcess
 from .models.pdpj import PdpjChange, PdpjRecommendation, PdpjReview, PdpjRow
 from .models.schema_state import SchemaState

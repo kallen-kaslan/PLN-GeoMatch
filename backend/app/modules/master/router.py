@@ -4,13 +4,15 @@ import enum
 from typing import Annotated, Any
 
 from fastapi import APIRouter, Depends, HTTPException, Query
-from sqlalchemy import and_, func, or_
+from sqlalchemy import or_
 from sqlalchemy.orm import Query as ORMQuery
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, load_only
 
 from app.database import get_db
 from app.models.upload import BatchStatus, DatasetType, SourceRecord, UploadBatch
+from app.modules.master.summary import master_summary
 from app.modules.upload.normalization import extract_standard_fields
+from app.modules.upload.pagination import load_original_cells, source_page_ids
 
 DbSession = Annotated[Session, Depends(get_db)]
 router = APIRouter(prefix="/master", tags=["Data Master"])
@@ -113,9 +115,7 @@ def list_master_batches(kind: MasterKind, db: DbSession) -> list[dict[str, Any]]
 
 
 @router.get("/{kind}/batches/{batch_id}")
-def get_master_batch(
-    kind: MasterKind, batch_id: int, db: DbSession
-) -> dict[str, Any]:
+def get_master_batch(kind: MasterKind, batch_id: int, db: DbSession) -> dict[str, Any]:
     """Return saved headers and preview rows for a resumable column-mapping form."""
     batch = source_batch(db, kind, batch_id)
     rows = (
@@ -136,41 +136,15 @@ def get_master_batch(
 
 @router.get("/{kind}/summary")
 def get_master_summary(
-    kind: MasterKind, db: DbSession, batch_id: int | None = Query(None, gt=0)
+    kind: MasterKind,
+    db: DbSession,
+    batch_id: int | None = Query(None, gt=0),
+    details: bool = True,
 ) -> dict[str, Any]:
-    """Aggregate the entire selected dataset, independent of table pagination."""
-    query = catalogue_query(db, kind, batch_id)
-    rows, valid, invalid, incomplete, unique_idpels = query.with_entities(
-        func.count(SourceRecord.id),
-        func.count(SourceRecord.id).filter(SourceRecord.is_valid.is_(True)),
-        func.count(SourceRecord.id).filter(SourceRecord.is_valid.is_(False)),
-        func.count(SourceRecord.id).filter(
-            and_(SourceRecord.is_valid.is_(True), incomplete_location())
-        ),
-        func.count(func.distinct(SourceRecord.idpel)).filter(
-            SourceRecord.is_valid.is_(True)
-        ),
-    ).one()
-    batches = db.query(UploadBatch).filter(
-        UploadBatch.dataset_type == DatasetType(kind.value)
-    )
+    """Restore stored totals first; cache exact counts for the selected source set."""
     if batch_id is not None:
-        batches = batches.filter(UploadBatch.id == batch_id)
-    return {
-        "dataset_type": kind.value,
-        "total_rows": rows,
-        "valid_rows": valid,
-        "invalid_rows": invalid,
-        "incomplete_coordinates": incomplete,
-        "unique_idpels": unique_idpels,
-        "duplicate_observations": valid - unique_idpels,
-        "ready_files": batches.filter(
-            UploadBatch.status == BatchStatus.COMPLETED
-        ).count(),
-        "pending_files": batches.filter(
-            UploadBatch.status != BatchStatus.COMPLETED
-        ).count(),
-    }
+        source_batch(db, kind, batch_id)
+    return master_summary(db, DatasetType(kind.value), batch_id, details)
 
 
 @router.get("/{kind}/records")
@@ -216,22 +190,42 @@ def list_master_records(
         query = query.filter(SourceRecord.is_valid.is_(False))
     elif status == RecordStatus.INCOMPLETE:
         query = query.filter(SourceRecord.is_valid.is_(True), incomplete_location())
-    total = query.count()
-    records = (
-        query.order_by(SourceRecord.batch_id.desc(), SourceRecord.id)
-        .offset(skip)
-        .limit(limit)
-        .all()
+    selected_batches = db.query(UploadBatch).filter(
+        UploadBatch.dataset_type == DatasetType(kind.value),
+        UploadBatch.status == BatchStatus.COMPLETED,
     )
-    batches = (
-        {
-            batch.id: batch
-            for batch in db.query(UploadBatch)
-            .filter(UploadBatch.id.in_({record.batch_id for record in records}))
-            .all()
-        }
-        if records
-        else {}
+    if batch_id is not None:
+        selected_batches = selected_batches.filter(UploadBatch.id == batch_id)
+    batches = {batch.id: batch for batch in selected_batches.all()}
+    total, identities = source_page_ids(
+        db,
+        query,
+        list(batches),
+        skip,
+        limit,
+        unfiltered=not q.strip() and status == RecordStatus.ALL,
+        known_totals={value: batch.total_rows for value, batch in batches.items()},
+    )
+    records = (
+        db.query(SourceRecord)
+        .filter(SourceRecord.id.in_(identities))
+        .options(
+            load_only(
+                SourceRecord.id,
+                SourceRecord.batch_id,
+                SourceRecord.row_number,
+                SourceRecord.normalized_data,
+                SourceRecord.is_valid,
+                SourceRecord.validation_errors,
+            )
+        )
+        .order_by(SourceRecord.batch_id.desc(), SourceRecord.id)
+        .all()
+        if identities
+        else []
+    )
+    load_original_cells(
+        db, [record.id for record in records if not record.normalized_data]
     )
     return {
         "total": total,
