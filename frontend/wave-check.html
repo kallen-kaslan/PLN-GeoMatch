@@ -1,0 +1,36 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <link rel="stylesheet" href="/src/index.css">
+  <style>
+    body { background: #fafafa; }
+  </style>
+</head>
+<body>
+  <header class="spatial-navbar" style="position:relative;display:flex;align-items:center;justify-content:space-between;height:64px;border-bottom:2px solid #10141B;background:linear-gradient(90deg,#171B22,#20252E,#252B35);color:#F1F0ED">
+    <svg class="spatial-beam" viewBox="0 0 1000 100" preserveAspectRatio="none" aria-hidden="true">
+      <defs>
+        <linearGradient id="nav-beam-top" x1="0" y1="0" x2="1" y2="0">
+          <stop offset="0" stop-color="transparent"></stop>
+          <stop offset="0.3" stop-color="rgba(200,146,99,0.8)"></stop>
+          <stop offset="0.5" stop-color="rgba(241,240,237,1)"></stop>
+          <stop offset="0.7" stop-color="rgba(200,146,99,0.8)"></stop>
+          <stop offset="1" stop-color="transparent"></stop>
+        </linearGradient>
+        <linearGradient id="nav-beam-bottom" x1="1" y1="0" x2="0" y2="0">
+          <stop offset="0" stop-color="transparent"></stop>
+          <stop offset="0.3" stop-color="rgba(120,221,242,0.8)"></stop>
+          <stop offset="0.5" stop-color="rgba(241,240,237,1)"></stop>
+          <stop offset="0.7" stop-color="rgba(120,221,242,0.8)"></stop>
+          <stop offset="1" stop-color="transparent"></stop>
+        </linearGradient>
+      </defs>
+      <line x1="0" y1="1" x2="1000" y2="1" class="beam-top"></line>
+      <line x1="1000" y1="99" x2="0" y2="99" class="beam-bottom"></line>
+    </svg>
+    <span>PLN GeoMatch</span>
+    <span>Spatial ready</span>
+  </header>
+</body>
+</html>

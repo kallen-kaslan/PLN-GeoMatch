@@ -17,6 +17,12 @@
   --auth-ice: #78DDF2;
   --auth-violet: #9D8CFF;
   --auth-muted-blue: #6B82CB;
+  --console-graphite: #20252E;
+  --console-charcoal: #171B22;
+  --console-ivory: #F1F0ED;
+  --console-cool-gray: #A8AFBA;
+  --console-cobalt: #4F86F7;
+  --console-copper: #C89263;
   --color-neo-accent: var(--auth-light-blue);
 
   /* Neo-brutalism design tokens (PRD §12.1) */
@@ -234,6 +240,173 @@ html, body, #root {
   border: 1px solid rgba(107, 130, 203, 0.35);
   opacity: var(--border-alpha, 0);
   transition: opacity 180ms ease;
+}
+
+/* Navbar spatial lighting: SVG perimeter wave + CSS signal wave + orb breathing. */
+.spatial-navbar {
+  isolation: isolate;
+  position: relative;
+}
+
+.spatial-wave-svg {
+  position: absolute;
+  overflow: hidden;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+  z-index: 1;
+}
+
+.spatial-wave-svg use {
+  fill: none;
+  vector-effect: non-scaling-stroke;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.wave-top-track {
+  stroke: url(#nav-wave-blue);
+  stroke-width: 1.5px;
+  stroke-dasharray: 16 324;
+  stroke-dashoffset: 0;
+}
+
+.wave-bottom-track {
+  stroke: url(#nav-wave-blue);
+  stroke-width: 1.5px;
+  stroke-dasharray: 16 324;
+  stroke-dashoffset: 0;
+}
+
+.wave-main {
+  stroke-width: 2.5px;
+  stroke-dasharray: 34 306;
+  opacity: 1;
+  filter: drop-shadow(0 0 2px #a7f5ff) drop-shadow(0 0 4px rgba(22, 139, 255, 0.72));
+}
+
+.wave-top {
+  animation: navbar-wave-clockwise 7s linear infinite;
+}
+
+.wave-bottom {
+  animation: navbar-wave-counterclockwise 7s linear infinite;
+}
+
+.wave-support {
+  stroke-width: 1.1px;
+  stroke-dasharray: 22 318;
+  opacity: 0.68;
+  filter: drop-shadow(0 0 2px rgba(34, 211, 255, 0.58));
+}
+
+.wave-support-one.wave-top-track {
+  animation: navbar-wave-clockwise 9s linear infinite;
+}
+
+.wave-support-one.wave-bottom-track {
+  animation: navbar-wave-counterclockwise 9s linear infinite;
+}
+
+.wave-support-two {
+  stroke: #22d3ff;
+  stroke-width: 0.75px;
+  stroke-dasharray: 14 326;
+  opacity: 0.48;
+}
+
+.wave-support-two.wave-top-track {
+  animation: navbar-wave-clockwise 11s linear infinite;
+}
+
+.wave-support-two.wave-bottom-track {
+  animation: navbar-wave-counterclockwise 11s linear infinite;
+}
+
+.wave-filament {
+  stroke: #a7f5ff;
+  stroke-width: 0.5px;
+  stroke-dasharray: 8 332;
+  opacity: 0.28;
+}
+
+.wave-filament.wave-top-track {
+  animation: navbar-wave-clockwise 13s linear infinite;
+}
+
+.wave-filament.wave-bottom-track {
+  animation: navbar-wave-counterclockwise 13s linear infinite;
+}
+
+.wave-thread-short {
+  stroke: #8deaff;
+  stroke-width: 0.55px;
+  stroke-dasharray: 5 335;
+  opacity: 0.18;
+  filter: drop-shadow(0 0 1px rgba(34, 211, 255, 0.3));
+}
+
+.wave-thread-short.wave-top-track {
+  animation: navbar-wave-clockwise 15s linear infinite;
+}
+
+.wave-thread-short.wave-bottom-track {
+  animation: navbar-wave-counterclockwise 15s linear infinite;
+}
+
+.wave-particles {
+  opacity: 0.78;
+  filter: drop-shadow(0 0 3px #22d3ff);
+  animation: navbar-particles 3.2s ease-in-out infinite alternate;
+}
+
+@keyframes navbar-wave-clockwise {
+  from { stroke-dashoffset: 0; }
+  to { stroke-dashoffset: -340; }
+}
+
+@keyframes navbar-wave-counterclockwise {
+  from { stroke-dashoffset: 0; }
+  to { stroke-dashoffset: 340; }
+}
+
+@keyframes navbar-particles {
+  from { opacity: 0.35; }
+  to { opacity: 0.9; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .wave-top,
+  .wave-bottom,
+  .wave-support,
+  .wave-filament,
+  .wave-thread-short,
+  .wave-particles {
+    animation: none !important;
+  }
+}
+
+@keyframes navbar-signal-flow {
+  0%, 15% { transform: translateX(110%); opacity: 0; }
+  25% { opacity: 0.8; }
+  85% { opacity: 0.7; }
+  100% { transform: translateX(-110%); opacity: 0; }
+}
+
+@keyframes navbar-orb-breathe {
+  0%, 100% { opacity: 0.35; transform: scale(0.82); }
+  50% { opacity: 0.9; transform: scale(1.18); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .spatial-navbar::before,
+  .spatial-navbar::after,
+  .spatial-signal-line::after,
+  .spatial-orb::before {
+    animation: none !important;
+    opacity: 0 !important;
+  }
 }
 
 /* Spatial Panel Animations (Login/Register) */
