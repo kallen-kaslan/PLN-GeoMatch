@@ -2,6 +2,7 @@
 
 from typing import Any
 
+from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from app.models.correction_decision import CorrectionDecision
@@ -49,7 +50,7 @@ def reserved_keys(
 
 
 def pdpj_update_info(
-    db: Session, process_id: int, review_id: int
+    db: Session, process_id: int, review_id: int, include_conflicts: bool = True
 ) -> dict[str, Any] | None:
     """Flag active choices affected by a newer approved version; retain their history."""
     original = db.get(PdpjReview, review_id)
@@ -64,7 +65,13 @@ def pdpj_update_info(
     events = db.query(CorrectionDecision).filter(
         CorrectionDecision.process_id == process_id
     )
-    if events.first() is not None:
+    decision_revision = (
+        db.query(func.max(CorrectionDecision.id))
+        .filter(CorrectionDecision.process_id == process_id)
+        .scalar()
+        or 0
+    )
+    if include_conflicts and decision_revision:
         old_ids, old_refs = reserved_keys(db, original)
         new_ids, new_refs = reserved_keys(db, latest)
         new_ids -= old_ids
@@ -93,4 +100,6 @@ def pdpj_update_info(
         "review_id": latest.id,
         "publication": latest.publication,
         "conflicts": conflicts,
+        "conflicts_checked": include_conflicts or not decision_revision,
+        "decision_revision": decision_revision,
     }

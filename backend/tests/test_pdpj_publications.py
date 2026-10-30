@@ -10,6 +10,7 @@ from sqlalchemy.orm import Session
 from app.config import settings
 from app.models.correction_decision import CorrectionDecision
 from app.models.pdpj import PdpjChange, PdpjReview, PdpjRow
+from app.modules.corrections import pdpj_updates
 from app.modules.corrections import router as correction_router
 from app.modules.pdpj import service
 from app.pdpj_publication_schema import upgrade_pdpj_publications
@@ -57,6 +58,7 @@ def test_partial_publication_keeps_cursor_and_pins_corrections_until_next_versio
     client: TestClient,
     db_session: Session,
     partial: dict,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     review_id = partial["id"]
     path = f"/pdpj/reviews/{review_id}"
@@ -141,6 +143,39 @@ def test_partial_publication_keeps_cursor_and_pins_corrections_until_next_versio
     assert update["pdpj_update"]["conflicts"] == [
         {"record_id": target_row["id"], "codes": ["idpel_sama_pdpj"]}
     ]
+    assert update["pdpj_update"]["conflicts_checked"] is True
+    with monkeypatch.context() as patch:
+        scan = Mock(
+            side_effect=AssertionError("Status restoration must not scan PDPJ rows")
+        )
+        patch.setattr(pdpj_updates, "reserved_keys", scan)
+        light = client.get(base, params={"include_update_conflicts": False})
+        assert light.status_code == 200
+        value = light.json()
+        assert {
+            key: item for key, item in value["latest_run"].items() if key != "activity"
+        } == {
+            key: item for key, item in update["latest_run"].items() if key != "activity"
+        }
+        assert value["pdpj_update"]["review_id"] == second["id"]
+        assert value["pdpj_update"]["conflicts_checked"] is False
+        assert value["pdpj_update"]["decision_revision"] > 0
+        listing = client.get(
+            "/corrections/idpel_kosong/checks",
+            params={"batch_id": target, "include_update_conflicts": False},
+        )
+        assert listing.status_code == 200
+        assert listing.json()[0]["process_id"] == process_id
+        scan.assert_not_called()
+    reviewed = client.get(base + "/pdpj-update")
+    assert reviewed.status_code == 200
+    assert reviewed.json() == update["pdpj_update"]
+    assert (
+        client.get(
+            base.replace("idpel_kosong", "idpel_tidak_ketemu") + "/pdpj-update"
+        ).status_code
+        == 404
+    )
     latest = check(
         client, "idpel_kosong", target, second["id"], key="new_published_version"
     )

@@ -112,7 +112,12 @@ def run_info(run: MatchingRun) -> dict[str, Any]:
     }
 
 
-def check_info(db: Session, kind: CorrectionKind, process_id: int) -> dict[str, Any]:
+def check_info(
+    db: Session,
+    kind: CorrectionKind,
+    process_id: int,
+    include_update_conflicts: bool = True,
+) -> dict[str, Any]:
     """Keep the latest job state separate from the last published generation."""
     check, process = check_process(db, kind, process_id)
     runs = (
@@ -126,7 +131,9 @@ def check_info(db: Session, kind: CorrectionKind, process_id: int) -> dict[str, 
         "batch_id": process.target_batch_id,
         "category": check.category,
         "pdpj_review_id": check.pdpj_review_id,
-        "pdpj_update": pdpj_update_info(db, process_id, check.pdpj_review_id),
+        "pdpj_update": pdpj_update_info(
+            db, process_id, check.pdpj_review_id, include_update_conflicts
+        ),
         "status": process.matching_status.value,
         "current_generation": process.current_generation,
         "master_snapshot_id": process.master_snapshot_id,
@@ -321,7 +328,10 @@ def batch_preview(kind: CorrectionKind, batch_id: int, db: DbSession) -> dict[st
 
 @router.get("/{kind}/checks")
 def list_checks(
-    kind: CorrectionKind, db: DbSession, batch_id: int = Query(gt=0)
+    kind: CorrectionKind,
+    db: DbSession,
+    batch_id: int = Query(gt=0),
+    include_update_conflicts: bool = True,
 ) -> list[dict[str, Any]]:
     """List previous checks with their original PDPJ source and parameters."""
     source_batch(db, kind, batch_id)
@@ -335,7 +345,9 @@ def list_checks(
         .order_by(ReconciliationProcess.id.desc())
         .all()
     )
-    return [check_info(db, kind, value) for (value,) in processes]
+    return [
+        check_info(db, kind, value, include_update_conflicts) for (value,) in processes
+    ]
 
 
 @router.post("/{kind}/checks")
@@ -361,9 +373,23 @@ def start_check(kind: CorrectionKind, req: StartCheck, db: DbSession) -> dict[st
 
 
 @router.get("/{kind}/checks/{process_id}")
-def get_check(kind: CorrectionKind, process_id: int, db: DbSession) -> dict[str, Any]:
+def get_check(
+    kind: CorrectionKind,
+    process_id: int,
+    db: DbSession,
+    include_update_conflicts: bool = True,
+) -> dict[str, Any]:
     """Poll status until the requested attempt has actually completed."""
-    return check_info(db, kind, process_id)
+    return check_info(db, kind, process_id, include_update_conflicts)
+
+
+@router.get("/{kind}/checks/{process_id}/pdpj-update")
+def get_pdpj_update(
+    kind: CorrectionKind, process_id: int, db: DbSession
+) -> dict[str, Any] | None:
+    """Review conflicts independently of the lightweight process restoration path."""
+    check, _ = check_process(db, kind, process_id)
+    return pdpj_update_info(db, process_id, check.pdpj_review_id)
 
 
 @router.post("/{kind}/checks/{process_id}/retry")
@@ -391,9 +417,16 @@ def rerun_check(
 
 
 @router.get("/{kind}/checks/{process_id}/progress")
-def processing_status(kind: CorrectionKind, process_id: int, db: DbSession) -> dict[str, Any]:
+def processing_status(
+    kind: CorrectionKind, process_id: int, db: DbSession
+) -> dict[str, Any]:
     check_process(db, kind, process_id)
-    run = db.query(MatchingRun).filter_by(process_id=process_id).order_by(MatchingRun.generation.desc()).first()
+    run = (
+        db.query(MatchingRun)
+        .filter_by(process_id=process_id)
+        .order_by(MatchingRun.generation.desc())
+        .first()
+    )
     if run is None:
         raise HTTPException(404, "Pemeriksaan tidak ditemukan")
     return run_info(run)

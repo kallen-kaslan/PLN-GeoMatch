@@ -108,6 +108,10 @@ def test_refresh_observes_actual_server_activity_and_then_offers_resume(
             expect(progress).to_have_attribute("aria-busy", "true")
             expect(progress.locator(".animate-spin").first).to_be_visible()
             expect(progress.get_by_role("button", name=resume_label, exact=True)).to_have_count(0)
+            if stage.startswith("correction"):
+                page.get_by_label("Petugas untuk riwayat", exact=True).fill("Petugas Refresh")
+                expect(page.get_by_label("PDPJ selesai divalidasi", exact=True)).to_be_disabled()
+                expect(page.get_by_role("button", name="Pemeriksaan baru", exact=True)).to_be_disabled()
             if stage == "pdpj_publishing":
                 page.get_by_label("Petugas untuk riwayat", exact=True).fill("Petugas Refresh")
                 expect(page.get_by_role("button", name="Selesaikan validasi PDPJ", exact=True)).to_be_disabled()
