@@ -106,6 +106,7 @@ def run_info(run: MatchingRun) -> dict[str, Any]:
     return {
         "id": run.id,
         "generation": run.generation,
+        "candidate_policy": run.candidate_policy,
         "status": run.status.value,
         "failure_code": run.failure_code,
         "radius_meters": run.radius_meters,

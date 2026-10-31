@@ -24,13 +24,14 @@ export interface CorrectionProcessing {
   preparation?: MasterPreparationProgress;
 }
 export interface MasterPreparationProgress {
-  phase: "reading" | "reserving" | "materializing" | "ready";
+  phase: "reading" | "reserving" | "materializing" | "observations" | "ready";
   reused: boolean; work_done: number; work_total: number;
   source_total?: number; source_rows?: number; unique_rows?: number; cached_rows?: number;
   file_index?: number; file_count?: number; current_file?: string | null;
   pdpj_total?: number; pdpj_rows?: number; materialized_rows?: number; eligible_rows?: number; excluded_rows?: number;
+  observation_rows?: number; observation_source_rows?: number; observation_source_total?: number;
 }
-export interface CorrectionRun { activity?: import("./progress").ProcessActivity; id: number; generation: number; status: "queued" | "running" | "completed" | "failed"; failure_code?: string | null; radius_meters: number; total_targets: number; matched_targets: number; created_at: string; completed_at: string | null; processing?: CorrectionProcessing | null }
+export interface CorrectionRun { candidate_policy?: number; activity?: import("./progress").ProcessActivity; id: number; generation: number; status: "queued" | "running" | "completed" | "failed"; failure_code?: string | null; radius_meters: number; total_targets: number; matched_targets: number; created_at: string; completed_at: string | null; processing?: CorrectionProcessing | null }
 export interface PdpjUpdate { review_id: number; publication: PdpjPublication | null; conflicts: { record_id: number; codes: string[] }[]; conflicts_checked?: boolean; decision_revision?: number }
 export interface CorrectionCheck { process_id: number; batch_id: number; category: CorrectionKind; pdpj_review_id: number; status: CorrectionRun["status"]; current_generation: number; master_snapshot_id: number | null; latest_run: CorrectionRun; runs: CorrectionRun[]; requested_run_id?: number; execution_mode?: string; pdpj_update?: PdpjUpdate | null }
 

@@ -330,6 +330,12 @@ def export_info(
         ["Proses", process_id],
         ["Berkas target", source_label(batch.filename, batch.source_sheet)],
         ["Versi pemeriksaan", run.generation],
+        [
+            "Aturan koordinat kandidat",
+            "Seluruh observasi PR/PC dan DIL"
+            if run.candidate_policy == 2
+            else "Satu koordinat acuan per IDPEL",
+        ],
         ["Radius pemeriksaan (meter)", run.radius_meters],
         ["Status pemeriksaan", run.status.value],
         ["Cakupan ekspor", scope],

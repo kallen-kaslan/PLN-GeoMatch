@@ -18,6 +18,10 @@ from app.models.matching import (
 )
 from app.models.upload import SourceRecord
 from app.modules.corrections.engine import run_correction_matching
+from app.modules.corrections.observations import (
+    ALL_OBSERVATIONS_POLICY,
+    advance_observations,
+)
 from app.modules.corrections.service import CorrectionKind, check_process
 from app.modules.pdpj.service import lock_review_session
 from app.modules.spatial.master_preparation import advance_preparation
@@ -191,7 +195,20 @@ def advance_progress(
                 db, process, progress.get("preparation")
             )
             if progress["preparation"]["phase"] == "ready":
-                progress["stage"] = "matching"
+                if run.candidate_policy == ALL_OBSERVATIONS_POLICY:
+                    observations = advance_observations(db, process)
+                    preparation = progress["preparation"]
+                    preparation.update(
+                        phase="ready" if observations["ready"] else "observations",
+                        work_done=preparation["work_done"] + observations["work_done"],
+                        work_total=preparation["work_total"]
+                        + observations["work_total"],
+                        observation_rows=observations["observation_rows"],
+                        observation_source_rows=observations["work_done"],
+                        observation_source_total=observations["work_total"],
+                    )
+                if progress["preparation"]["phase"] == "ready":
+                    progress["stage"] = "matching"
         elif progress["stage"] == "validating":
             validate_chunk(db, run, progress, chunk_size)
         elif progress["stage"] == "publishing":

@@ -4,6 +4,7 @@ import math
 from bisect import bisect_left, bisect_right
 from collections import defaultdict
 from collections.abc import Mapping
+from dataclasses import dataclass
 from time import monotonic
 from typing import Any, cast
 
@@ -11,7 +12,7 @@ from sqlalchemy import false, or_
 from sqlalchemy.orm import Session
 
 from app.models.correction import CorrectionCheck, utc_now
-from app.models.master_sisa import MasterSisaRecord
+from app.models.master_sisa import CorrectionMasterObservation, MasterSisaRecord
 from app.models.matching import (
     MatchingRun,
     ProcessStatus,
@@ -20,6 +21,7 @@ from app.models.matching import (
 )
 from app.models.pdpj import PdpjRow
 from app.models.upload import BatchStatus, SourceRecord, UploadBatch
+from app.modules.corrections.observations import ALL_OBSERVATIONS_POLICY
 from app.modules.corrections.pdpj_index import chunk_context
 from app.modules.corrections.service import CORRECTION_TYPES, reference_tokens
 from app.modules.corrections.writer import SearchWriter
@@ -35,6 +37,14 @@ from app.modules.upload.normalization import (
     with_reference_fields,
 )
 from app.performance import timed
+
+
+@dataclass
+class CandidateLocation:
+    master: MasterSisaRecord
+    latitude: float
+    longitude: float
+    observation_source_id: int | None = None
 
 
 @timed("corrections.match_and_store")
@@ -93,6 +103,34 @@ def run_correction_matching(
     )
     if run.generation <= process.current_generation or run.id != latest:
         raise ValueError("Pemeriksaan ini telah digantikan versi yang lebih baru")
+    all_observations = run.candidate_policy == ALL_OBSERVATIONS_POLICY
+    if all_observations and chunk_size is None:
+        from app.modules.corrections.progress import (
+            advance_progress,
+            initialize_progress,
+        )
+        from app.modules.corrections.service import CorrectionKind
+
+        if not run.processing:
+            initialize_progress(db, process, run)
+            run.processing = {
+                **cast(dict[str, Any], run.processing),
+                "background_execution": True,
+            }
+            db.commit()
+        while run.status != ProcessStatus.COMPLETED:
+            assert run.processing is not None
+            if run.processing["state"] != "running":
+                return matching_run_summary(db, process, run)
+            run = advance_progress(
+                db,
+                CorrectionKind(check.category),
+                process_id,
+                run.id,
+                run.processing["revision"],
+                100,
+            )
+        return matching_run_summary(db, process, run)
     run.status = process.matching_status = ProcessStatus.RUNNING
     run.failure_code = None
     progress = (
@@ -224,7 +262,52 @@ def run_correction_matching(
             if target_latitudes
             else false()
         )
-    eligible = eligible_query.all()
+    eligible = (
+        [
+            CandidateLocation(
+                master, cast(float, master.latitude), cast(float, master.longitude)
+            )
+            for master in eligible_query.all()
+        ]
+        if not all_observations
+        else []
+    )
+    if all_observations:
+        observations_query = (
+            db.query(CorrectionMasterObservation, MasterSisaRecord)
+            .join(
+                MasterSisaRecord,
+                MasterSisaRecord.id == CorrectionMasterObservation.master_record_id,
+            )
+            .filter(
+                CorrectionMasterObservation.snapshot_id == process.master_snapshot_id
+            )
+            .order_by(
+                CorrectionMasterObservation.latitude, CorrectionMasterObservation.id
+            )
+        )
+        if progress:
+            observations_query = observations_query.filter(
+                or_(
+                    *(
+                        CorrectionMasterObservation.latitude.between(
+                            latitude - latitude_delta, latitude + latitude_delta
+                        )
+                        for latitude in target_latitudes
+                    )
+                )
+                if target_latitudes
+                else false()
+            )
+        eligible = [
+            CandidateLocation(
+                master,
+                observation.latitude,
+                observation.longitude,
+                observation.source_record_id,
+            )
+            for observation, master in observations_query.all()
+        ]
     matched = progress["matched_rows"] if progress else 0
     total_targets = progress["processed_rows"] if progress else 0
     last_source_id, last_row_number = 0, None
@@ -297,22 +380,28 @@ def run_correction_matching(
         found = []
         lower = bisect_left(latitudes, lat - latitude_delta)
         upper = bisect_right(latitudes, lat + latitude_delta)
-        for master in eligible[lower:upper]:
-            if (
-                master.idpel in identities
-                or master.latitude is None
-                or master.longitude is None
+        for location in eligible[lower:upper]:
+            master = location.master
+            if master.idpel in identities or (
+                not all_observations
+                and (master.latitude is None or master.longitude is None)
             ):
                 continue
             distance = calculate_haversine_distance(
-                lat, lon, master.latitude, master.longitude
+                lat, lon, location.latitude, location.longitude
             )
             if distance <= run.radius_meters:
                 if master.source_record_id is None:
                     continue
-                found.append((distance, master.idpel, master))
+                found.append((distance, master.idpel, location))
         found.sort(key=lambda item: (item[0], item[1]))
-        for rank, (distance, _, master) in enumerate(found, 1):
+        if all_observations:
+            nearest: dict[str, tuple[float, str, CandidateLocation]] = {}
+            for item in found:
+                nearest.setdefault(item[1], item)
+            found = list(nearest.values())
+        for rank, (distance, _, location) in enumerate(found, 1):
+            master = location.master
             candidate = {
                 "process_id": process_id,
                 "generation": run.generation,
@@ -324,16 +413,21 @@ def run_correction_matching(
                 "target_lon": lon,
                 "candidate_idpel": master.idpel,
                 "candidate_nama": master.nama,
-                "candidate_lat": master.latitude,
-                "candidate_lon": master.longitude,
-                "distance_meters": round(distance, 2),
+                "candidate_lat": location.latitude,
+                "candidate_lon": location.longitude,
+                "distance_meters": distance if all_observations else round(distance, 2),
                 "rank": rank,
                 "jenis_layanan": master.jenis_layanan,
                 "validity_status": "VALID",
                 "is_under_5m": int(distance < 5),
                 "is_accepted": 0,
             }
-            writer.candidate(candidate, master.id, cast(int, master.source_record_id))
+            writer.candidate(
+                candidate,
+                master.id,
+                cast(int, master.source_record_id),
+                location.observation_source_id,
+            )
         outcome["candidate_count"] = len(found)
         if found:
             outcome["search_status"] = "matched"

@@ -141,3 +141,33 @@ class MasterSisaRecord(Base):
     created_at: Mapped[datetime] = mapped_column(
         DateTime, default=datetime.utcnow, nullable=True
     )
+
+
+class CorrectionObservationCatalog(Base):
+    """Durable spatial preparation shared only by an immutable eligible snapshot."""
+
+    __tablename__ = "correction_observation_catalogs"
+
+    snapshot_id: Mapped[int] = mapped_column(
+        ForeignKey("master_snapshots.id"), primary_key=True
+    )
+    processing: Mapped[dict[str, Any]] = mapped_column(JSON)
+
+
+class CorrectionMasterObservation(Base):
+    """One original eligible observation, without duplicating its raw source cells."""
+
+    __tablename__ = "correction_master_observations"
+    __table_args__ = (
+        UniqueConstraint("snapshot_id", "source_record_id"),
+        Index("ix_correction_observation_latitude", "snapshot_id", "latitude", "id"),
+    )
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    snapshot_id: Mapped[int] = mapped_column(
+        ForeignKey("correction_observation_catalogs.snapshot_id")
+    )
+    master_record_id: Mapped[int] = mapped_column(ForeignKey("master_sisa_records.id"))
+    source_record_id: Mapped[int] = mapped_column(ForeignKey("source_records.id"))
+    latitude: Mapped[float] = mapped_column(Float)
+    longitude: Mapped[float] = mapped_column(Float)
