@@ -83,11 +83,17 @@ class MatchingRun(Base):
         ForeignKey("reconciliation_processes.id"), index=True, nullable=False
     )
     generation: Mapped[int] = mapped_column(Integer, nullable=False)
+    candidate_policy: Mapped[int] = mapped_column(
+        Integer, default=1, server_default="1", nullable=False
+    )
     status: Mapped[ProcessStatus] = mapped_column(
         Enum(ProcessStatus), default=ProcessStatus.QUEUED, nullable=False
     )
     failure_code: Mapped[str | None] = cast(
         Mapped[str | None], Column(String(40), nullable=True)
+    )
+    processing: Mapped[dict[str, Any] | None] = cast(
+        Mapped[dict[str, Any] | None], Column(JSON, nullable=True)
     )
     radius_meters: Mapped[float] = mapped_column(Float, nullable=False)
     max_candidates: Mapped[int | None] = cast(

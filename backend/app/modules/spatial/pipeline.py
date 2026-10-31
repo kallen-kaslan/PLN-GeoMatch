@@ -148,25 +148,7 @@ def execute_pipeline(
     )
     if process is None or not process.source_batches:
         raise ValueError("Proses atau sumber dataset tidak ditemukan")
-    sources = process.source_batches
-    if process.master_snapshot_id is None:
-        master = build_combined_master(
-            db,
-            sources["pascabayar"],
-            sources["prabayar"],
-            sources.get("dil", []),
-            commit=False,
-        )
-        prepared = process_master_sisa_exclusion(
-            db,
-            master["master_batch_id"],
-            sources["pdpj"],
-            commit=False,
-            pdpj_review_id=sources.get("pdpj_review_id"),
-        )
-        process.master_snapshot_id = prepared["master_snapshot_id"]
-        process.target_batch_id = sources["target"]
-        db.flush()
+    prepare_process_master(db, process)
     if process.target_batch_id is None:
         process.matching_status = ProcessStatus.COMPLETED
         process.completed_at = datetime.now(UTC).replace(tzinfo=None)
@@ -191,3 +173,28 @@ def execute_pipeline(
         process_id=process.id,
         run_id=run_id if run_id is not None else latest_run.id if latest_run else None,
     )
+
+
+def prepare_process_master(db: Session, process: ReconciliationProcess) -> None:
+    """Prepare pinned sources inside the caller's transaction."""
+    sources = process.source_batches
+    if not sources:
+        raise ValueError("Sumber pemeriksaan tidak ditemukan")
+    if process.master_snapshot_id is None:
+        master = build_combined_master(
+            db,
+            sources["pascabayar"],
+            sources["prabayar"],
+            sources.get("dil", []),
+            commit=False,
+        )
+        prepared = process_master_sisa_exclusion(
+            db,
+            master["master_batch_id"],
+            sources["pdpj"],
+            commit=False,
+            pdpj_review_id=sources.get("pdpj_review_id"),
+        )
+        process.master_snapshot_id = prepared["master_snapshot_id"]
+        process.target_batch_id = sources["target"]
+        db.flush()

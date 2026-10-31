@@ -32,14 +32,16 @@ export interface MasterBatchPreview extends MasterBatch {
 }
 
 export interface MasterSummary {
-  total_rows: number;
-  valid_rows: number;
-  invalid_rows: number;
-  incomplete_coordinates: number;
-  unique_idpels: number;
-  duplicate_observations: number;
+  total_rows: number | null;
+  valid_rows: number | null;
+  invalid_rows: number | null;
+  incomplete_coordinates: number | null;
+  unique_idpels: number | null;
+  duplicate_observations: number | null;
   ready_files: number;
   pending_files: number;
+  statistics_ready: boolean;
+  source_signature: string;
 }
 
 export interface MasterRecord {
@@ -165,9 +167,9 @@ export function guessMasterMapping(headers: string[], kind: SourceKind, rows: Re
 export const masterApi = {
   batches: async (kind: MasterKind) => (await api.get<MasterBatch[]>(`/master/${kind}/batches`)).data,
   batch: async (kind: MasterKind, id: number) => (await api.get<MasterBatchPreview>(`/master/${kind}/batches/${id}`)).data,
-  summary: async (kind: MasterKind, batchId?: number) => (await api.get<MasterSummary>(`/master/${kind}/summary`, { params: { batch_id: batchId } })).data,
-  records: async (kind: MasterKind, params: { batch_id?: number; q: string; status: MasterStatus; skip: number; limit: number }) =>
-    (await api.get<{ total: number; items: MasterRecord[] }>(`/master/${kind}/records`, { params })).data,
+  summary: async (kind: MasterKind, batchId?: number, signal?: AbortSignal, details = true) => (await api.get<MasterSummary>(`/master/${kind}/summary`, { params: { batch_id: batchId, details }, signal })).data,
+  records: async (kind: MasterKind, params: { batch_id?: number; q: string; status: MasterStatus; skip: number; limit: number }, signal?: AbortSignal) =>
+    (await api.get<{ total: number; items: MasterRecord[] }>(`/master/${kind}/records`, { params, signal })).data,
   detail: async (kind: MasterKind, id: number) => (await api.get<MasterRecordDetail>(`/master/${kind}/records/${id}`)).data,
 };
 

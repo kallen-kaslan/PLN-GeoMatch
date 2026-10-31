@@ -1,9 +1,10 @@
 """Master identity observations and immutable eligible source snapshots."""
 
 from datetime import datetime
-from typing import cast
+from typing import Any, cast
 
 from sqlalchemy import (
+    JSON,
     Boolean,
     Column,
     DateTime,
@@ -12,6 +13,8 @@ from sqlalchemy import (
     Index,
     Integer,
     String,
+    UniqueConstraint,
+    true,
 )
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -24,6 +27,9 @@ class MasterSnapshot(Base):
     __tablename__ = "master_snapshots"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    ready: Mapped[bool] = mapped_column(
+        Boolean, default=True, server_default=true(), nullable=False
+    )
     master_batch_id: Mapped[int | None] = cast(
         Mapped[int | None], Column(ForeignKey("upload_batches.id"), nullable=True)
     )
@@ -33,6 +39,47 @@ class MasterSnapshot(Base):
     created_at: Mapped[datetime] = mapped_column(
         DateTime, default=datetime.utcnow, nullable=False
     )
+
+
+class MasterPreparation(Base):
+    __tablename__ = "master_preparations"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    signature: Mapped[str] = mapped_column(String(64), unique=True, nullable=False)
+    master_batch_id: Mapped[int] = mapped_column(ForeignKey("upload_batches.id"))
+    snapshot_id: Mapped[int] = mapped_column(ForeignKey("master_snapshots.id"))
+    pdpj_review_id: Mapped[int] = mapped_column(ForeignKey("pdpj_reviews.id"))
+    sources: Mapped[list[dict[str, Any]]] = mapped_column(JSON)
+    processing: Mapped[dict[str, Any]] = mapped_column(JSON)
+
+
+class MasterPreparationIdentity(Base):
+    __tablename__ = "master_preparation_identities"
+    __table_args__ = (
+        UniqueConstraint("preparation_id", "idpel"),
+        Index("ix_preparation_identity_cursor", "preparation_id", "id"),
+    )
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    preparation_id: Mapped[int] = mapped_column(ForeignKey("master_preparations.id"))
+    idpel: Mapped[str] = mapped_column(String, nullable=False)
+    base_source_id: Mapped[int | None] = cast(
+        Mapped[int | None], Column(Integer, nullable=True)
+    )
+    dil_source_id: Mapped[int | None] = cast(
+        Mapped[int | None], Column(Integer, nullable=True)
+    )
+    base_period: Mapped[str] = mapped_column(String, default="")
+    dil_period: Mapped[str] = mapped_column(String, default="")
+
+
+class MasterPreparationExcluded(Base):
+    __tablename__ = "master_preparation_excluded"
+
+    preparation_id: Mapped[int] = mapped_column(
+        ForeignKey("master_preparations.id"), primary_key=True
+    )
+    idpel: Mapped[str] = mapped_column(String, primary_key=True)
 
 
 class CleanedMasterRecord(Base):
@@ -94,3 +141,33 @@ class MasterSisaRecord(Base):
     created_at: Mapped[datetime] = mapped_column(
         DateTime, default=datetime.utcnow, nullable=True
     )
+
+
+class CorrectionObservationCatalog(Base):
+    """Durable spatial preparation shared only by an immutable eligible snapshot."""
+
+    __tablename__ = "correction_observation_catalogs"
+
+    snapshot_id: Mapped[int] = mapped_column(
+        ForeignKey("master_snapshots.id"), primary_key=True
+    )
+    processing: Mapped[dict[str, Any]] = mapped_column(JSON)
+
+
+class CorrectionMasterObservation(Base):
+    """One original eligible observation, without duplicating its raw source cells."""
+
+    __tablename__ = "correction_master_observations"
+    __table_args__ = (
+        UniqueConstraint("snapshot_id", "source_record_id"),
+        Index("ix_correction_observation_latitude", "snapshot_id", "latitude", "id"),
+    )
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    snapshot_id: Mapped[int] = mapped_column(
+        ForeignKey("correction_observation_catalogs.snapshot_id")
+    )
+    master_record_id: Mapped[int] = mapped_column(ForeignKey("master_sisa_records.id"))
+    source_record_id: Mapped[int] = mapped_column(ForeignKey("source_records.id"))
+    latitude: Mapped[float] = mapped_column(Float)
+    longitude: Mapped[float] = mapped_column(Float)

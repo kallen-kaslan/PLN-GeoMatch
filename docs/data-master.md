@@ -12,11 +12,42 @@ Perbaikan pembacaan `KOORDINAT_X`/`KOORDINAT_Y` dan pemulihan data lama dijelask
 4. Pilih **Simpan dan validasi master**. Baris bermasalah tetap disimpan dan dapat diperiksa melalui filter kondisi.
 5. Gunakan pencarian, filter berkas, dan pagination. Tombol **Detail** menampilkan nilai hasil mapping, data asli, nama berkas, sheet, nomor baris, dan periode.
 
+Kontrol preview mengikuti PDPJ: pilih **10, 25, 50, atau 100 baris per halaman**,
+isi **Ke halaman**, lalu tekan Enter atau **Buka halaman**. Nomor halaman harus
+bilangan bulat dalam rentang hasil. Footer menampilkan jumlah hasil, rentang
+baris yang sedang terlihat, serta halaman aktif/total. Mengganti berkas,
+pencarian, kondisi, atau jumlah baris mengembalikan preview ke halaman pertama.
+
+Pemuatan halaman mengambil ID record melalui indeks per berkas terlebih dahulu,
+lalu membaca isi baris yang tampil. Urutannya tetap berkas terbaru kemudian
+record sumber berurutan. Jumlah tanpa filter memakai total impor tersimpan;
+berkas lama tanpa total memakai hitungan database. Hasil pencarian dan filter
+tetap dihitung dari seluruh data yang sesuai. Data sel asli dimuat saat membuka
+detail atau ketika normalisasi lama belum tersedia. Permintaan halaman yang
+ditinggalkan dibatalkan, dan halaman Master yang sama disimpan di cache frontend
+selama 30 detik; impor dan tombol muat ulang membatalkan cache tersebut.
+
 Jika unggahan sudah tersimpan tetapi konfirmasi mapping terhenti, pilih berkas yang bertanda **Menunggu mapping**, lalu **Lanjutkan mapping**. Berkas tersebut belum dipakai sebagai referensi sebelum mapping dikonfirmasi.
 
 Ekspor Excel kadang menyimpan metadata area sheet yang tidak sesuai dengan sel sebenarnya, misalnya `A1` meskipun tabel berada di baris atau kolom lain. Pratinjau menggunakan alamat sel yang terbaca. Jika pratinjau browser tidak menemukan header, pembacaan cadangan melalui `POST /upload/preview` memindai sel asli pada sheet yang dipilih dan mengembalikan lima baris beserta posisi header. Pratinjau ini tidak membuat batch atau menyimpan baris ke database. Impor Excel juga membaca sel asli tanpa bergantung pada metadata area tersebut, sehingga nomor baris dan kolomnya tetap konsisten dengan pratinjau.
 
 Kartu ringkasan menghitung seluruh baris pada jenis/berkas terpilih, terpisah dari pencarian dan halaman tabel. Baris dengan IDPEL valid tetapi koordinat kosong tetap lolos validasi identitas dan masuk hitungan **Koordinat belum lengkap**. IDPEL yang berulang tetap tersedia sebagai observasi sumber; tabel katalog tidak melakukan deduplikasi.
+
+**Total baris**, **Lolos validasi**, dan **Perlu perbaikan** tampil dari hitungan
+impor yang sudah tersimpan, tanpa menunggu pemeriksaan jutaan baris. Statistik
+koordinat, IDPEL unik, dan observasi berulang dihitung terpisah pada pemuatan
+pertama lalu disimpan di database. Selama dihitung, indikator tetap terlihat
+dan tabel dapat digunakan. Jika statistik rinci gagal dimuat, tersedia tombol
+coba lagi tanpa menghilangkan jumlah utama. Nilai yang belum diketahui tampil
+sebagai tanda pisah, bukan nol.
+
+Cache statistik berlaku untuk jenis dan kombinasi berkas yang sama. Impor,
+perubahan mapping/periode/versi normalisasi, atau perbaikan koordinat membuat
+kunci hitungan baru. IDPEL unik seluruh berkas tetap dihitung dengan deduplikasi
+lintas berkas; bukan penjumlahan IDPEL unik masing-masing berkas. Total impor
+lama yang belum tersedia dihitung dari sumber saat statistik rinci dimuat.
+Migrasi `f46ac7259b18` hanya menambahkan tabel hitungan agregat; data sumber
+tidak diubah. Reset unggahan juga menghapus cache ini.
 
 ## Kolom DIL
 
@@ -60,7 +91,8 @@ API katalog tersedia pada `/master/{kind}` dengan `kind` berupa `prabayar`, `pas
 | --- | --- |
 | `/batches` | Daftar berkas, termasuk yang menunggu mapping |
 | `/batches/{batch_id}` | Metadata, mapping tersimpan, dan pratinjau |
-| `/summary?batch_id=...` | Ringkasan per jenis atau berkas |
+| `/summary?batch_id=...` | Ringkasan lengkap per jenis atau berkas; memakai cache jika tersedia |
+| `/summary?batch_id=...&details=false` | Jumlah utama cepat; `statistics_ready` menandai kesiapan statistik rinci dan `source_signature` mengikat hasil ke sumber yang sama |
 | `/records?batch_id=...&q=...&status=...&skip=...&limit=...` | Pencarian dan pagination; maksimum 100 baris per halaman |
 | `/records/{record_id}` | Detail hasil ekstraksi dan data asli |
 

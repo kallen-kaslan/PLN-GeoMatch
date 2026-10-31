@@ -39,8 +39,15 @@ def apply_once(
 def prepare_database(connection: Connection) -> None:
     from app.coordinate_schema import repair_xy_coordinates
     from app.correction_map_schema import upgrade_correction_map
+    from app.correction_observation_schema import upgrade_correction_observations
+    from app.correction_progress_schema import upgrade_correction_progress
     from app.correction_schema import upgrade_corrections
+    from app.master_preparation_schema import upgrade_master_preparation
     from app.master_schema import upgrade_master_catalog
+    from app.master_summary_schema import upgrade_master_summary
+    from app.pdpj_progress_schema import upgrade_pdpj_progress
+    from app.pdpj_publication_schema import upgrade_pdpj_publications
+    from app.pdpj_results_schema import upgrade_pdpj_results
     from app.pdpj_schema import upgrade_pdpj_validation
     from app.performance_schema import upgrade_performance
     from app.schema_compatibility import upgrade_foundations
@@ -53,8 +60,26 @@ def prepare_database(connection: Connection) -> None:
     # The batch indexes are needed before any legacy data is inspected.
     apply_once(connection, "performance", "e5fa92c30b71", upgrade_performance)
     upgrade_master_catalog(connection)
+    apply_once(connection, "master_summary", "f46ac7259b18", upgrade_master_summary)
     apply_once(connection, "pdpj", "f6ac81d43e20", upgrade_pdpj_validation)
+    apply_once(connection, "pdpj_progress", "a91d72f04c63", upgrade_pdpj_progress)
+    apply_once(connection, "pdpj_results", "e35fb6148a07", upgrade_pdpj_results)
+    apply_once(
+        connection, "pdpj_publications", "b02c83e15d74", upgrade_pdpj_publications
+    )
     apply_once(connection, "corrections", "f21a85db4e09", upgrade_corrections)
+    apply_once(
+        connection, "correction_progress", "c13d94f26e85", upgrade_correction_progress
+    )
     apply_once(connection, "correction_map", "a4b19c7e6201", upgrade_correction_map)
+    apply_once(
+        connection,
+        "correction_observations",
+        "a72f06e391bd",
+        upgrade_correction_observations,
+    )
+    apply_once(
+        connection, "master_preparation", "d24ea5037f96", upgrade_master_preparation
+    )
     apply_once(connection, "upload_files", "c8d72fe610ab", upgrade_upload_files)
     repair_xy_coordinates(connection)

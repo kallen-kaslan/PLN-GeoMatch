@@ -6,6 +6,8 @@ from sqlalchemy import Table
 from sqlalchemy.engine import Connection
 
 from app.models.pdpj import PdpjChange, PdpjRecommendation, PdpjReview, PdpjRow
+from app.pdpj_progress_schema import upgrade_pdpj_progress
+from app.pdpj_publication_schema import upgrade_pdpj_publications
 from app.pdpj_warning_schema import upgrade_pdpj_warnings
 
 
@@ -14,3 +16,5 @@ def upgrade_pdpj_validation(connection: Connection) -> None:
     for model in (PdpjReview, PdpjRow, PdpjRecommendation, PdpjChange):
         cast(Table, model.__table__).create(connection, checkfirst=True)
     upgrade_pdpj_warnings(connection)
+    upgrade_pdpj_progress(connection)
+    upgrade_pdpj_publications(connection)

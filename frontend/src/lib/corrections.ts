@@ -1,6 +1,7 @@
 import { api } from "@/lib/api";
 import type { CorrectionKind, MasterBatch, MasterBatchPreview } from "@/lib/master";
-import type { Fields } from "@/lib/pdpj";
+import type { Fields, PdpjPublication } from "@/lib/pdpj";
+import { newestCheckpoint } from "@/lib/progress";
 
 export const CORRECTION_TYPES: { key: CorrectionKind; slug: string; label: string }[] = [
   { key: "idpel_tidak_ketemu", slug: "idpel-tidak-ketemu", label: "IDPEL Tidak Ketemu" },
@@ -14,23 +15,56 @@ export const searchLabel: Record<SearchStatus, string> = {
 };
 export const identityLabel: Record<string, string> = { not_checked: "Belum diperiksa", empty: "IDPEL kosong", invalid: "Format IDPEL bermasalah", found: "Ditemukan di master", not_found: "Tidak ditemukan di master" };
 export const conflictLabel: Record<string, string> = { idpel_sama_pdpj: "IDPEL sama dengan PDPJ", meter_sama_pdpj: "Nomor meter sama dengan PDPJ", agenda_sama_pdpj: "Nomor agenda sama dengan PDPJ", survey_sama_pdpj: "Referensi survei sama dengan PDPJ" };
-export interface ReadyPdpj { review_id: number; batch_id: number; filename: string; completed_by: string; completed_at: string; master_batch_ids: number[] }
-export interface CorrectionRun { id: number; generation: number; status: "queued" | "running" | "completed" | "failed"; failure_code?: string | null; radius_meters: number; total_targets: number; matched_targets: number; created_at: string; completed_at: string | null }
-export interface CorrectionCheck { process_id: number; batch_id: number; category: CorrectionKind; pdpj_review_id: number; status: CorrectionRun["status"]; current_generation: number; master_snapshot_id: number | null; latest_run: CorrectionRun; runs: CorrectionRun[]; requested_run_id?: number; execution_mode?: string }
+export interface ReadyPdpj { review_id: number; batch_id: number; filename: string; completed_by: string; completed_at: string; master_batch_ids: number[]; source_review_id: number | null; publication: PdpjPublication | null }
+export interface CorrectionProcessing {
+  state: "running" | "paused" | "failed" | "ready"; stage: "preparing" | "matching" | "validating" | "publishing" | "done";
+  revision: number; total_rows: number; processed_rows: number; validated_rows: number; matched_rows: number;
+  last_source_id: number; last_row_number: number | null; last_validated_source_id: number;
+  started_at: string; updated_at: string; elapsed_seconds: number; stage_elapsed_seconds?: number; stage_timed_rows?: number; error: string | null;
+  preparation?: MasterPreparationProgress;
+}
+export interface MasterPreparationProgress {
+  phase: "reading" | "reserving" | "materializing" | "observations" | "ready";
+  reused: boolean; work_done: number; work_total: number;
+  source_total?: number; source_rows?: number; unique_rows?: number; cached_rows?: number;
+  file_index?: number; file_count?: number; current_file?: string | null;
+  pdpj_total?: number; pdpj_rows?: number; materialized_rows?: number; eligible_rows?: number; excluded_rows?: number;
+  observation_rows?: number; observation_source_rows?: number; observation_source_total?: number;
+}
+export interface CorrectionRun { candidate_policy?: number; activity?: import("./progress").ProcessActivity; id: number; generation: number; status: "queued" | "running" | "completed" | "failed"; failure_code?: string | null; radius_meters: number; total_targets: number; matched_targets: number; created_at: string; completed_at: string | null; processing?: CorrectionProcessing | null }
+export interface PdpjUpdate { review_id: number; publication: PdpjPublication | null; conflicts: { record_id: number; codes: string[] }[]; conflicts_checked?: boolean; decision_revision?: number }
+export interface CorrectionCheck { process_id: number; batch_id: number; category: CorrectionKind; pdpj_review_id: number; status: CorrectionRun["status"]; current_generation: number; master_snapshot_id: number | null; latest_run: CorrectionRun; runs: CorrectionRun[]; requested_run_id?: number; execution_mode?: string; pdpj_update?: PdpjUpdate | null }
+
+export function mergeCheckProgress(previous: CorrectionCheck | undefined, next: CorrectionCheck): CorrectionCheck {
+  if (!previous || previous.process_id !== next.process_id) return next;
+  if (previous.latest_run.generation > next.latest_run.generation) return previous;
+  if (previous.latest_run.id !== next.latest_run.id) return next;
+  const latest = newestCheckpoint(previous.latest_run, next.latest_run, (run) => run.processing?.revision ?? 0);
+  return { ...next, latest_run: latest, status: latest.status,
+    current_generation: latest.status === "completed" ? latest.generation : Math.max(previous.current_generation, next.current_generation),
+    runs: next.runs.map((run) => run.id === latest.id ? latest : run) };
+}
 export interface CorrectionScope { batch_id?: number; process_id?: number; generation?: number }
 export interface CorrectionSummary { total_rows: number; not_checked: number; pdpj_conflicts: number; matched: number; no_candidates: number; invalid_data: number; incomplete_coordinates: number; identity_found: number; identity_not_found: number; eligible_searched: number; generation: number | null }
+export interface MapRadiusSummary {
+  process_id: number; generation: number; revision: number; radius_meters: number; stored_radius_meters: number; partial: boolean;
+  total_rows: number; saved_rows: number; not_checked: number; matched: number; no_candidates: number;
+  pdpj_conflicts: number; invalid_data: number; incomplete_coordinates: number; candidate_total: number;
+  candidate_counts: Record<string, number>; newly_matched: number;
+  baseline: { generation: number; radius_meters: number; matched: number; no_candidates: number; saved_rows: number };
+}
 export interface CorrectionRow {
   id: number; batch_id: number; category: CorrectionKind; row_number: number; filename: string; source_sheet: string | null;
   fields: Fields; identity_status: string; search_status: SearchStatus; candidate_count: number;
   errors: { field: string; code: string }[];
-  conflicts: { code: string; value: string; pdpj_row_id: number; row_number: number; fields: Fields }[];
+  conflicts: { code: string; value: string; pdpj_row_id: number | null; row_number: number; fields: Fields; pending_validation?: boolean }[];
   warnings: { code: string; pdpj_rows: number[] }[];
 }
 export interface CorrectionCandidate { id: number; rank: number; distance_meters: number; fields: Fields; is_accepted: number;
   observations: { batch_id: number; filename: string; dataset_type: string; row_number: number; source_sheet: string | null; fields: Fields }[] }
 export interface CorrectionDetail extends CorrectionRow { raw_data: Record<string, unknown>; column_mapping: Record<string, string>; generation: number | null; radius_meters: number | null; candidates_total: number; candidates: CorrectionCandidate[] }
-export interface CheckRequest { batch_id: number; pdpj_review_id: number; radius_meters: number; actor: string; request_key: string }
-export interface RetryRequest { latest_run_id: number; radius_meters: number; actor: string; request_key: string }
+export interface CheckRequest { batch_id: number; pdpj_review_id: number; radius_meters: number; actor: string; request_key: string; incremental?: boolean }
+export interface RetryRequest { latest_run_id: number; radius_meters: number; actor: string; request_key: string; incremental?: boolean }
 export interface CorrectionDecision { id: number; revision: number; generation: number; candidate_id: number | null; candidate: Partial<CorrectionCandidate>; target_fields: Fields; actor: string; reason: string; created_at: string }
 export interface CorrectionChoice { revision: number; current: CorrectionDecision | null; history: CorrectionDecision[] }
 export interface ChoiceRequest { generation: number; expected_revision: number; candidate_id: number | null; actor: string; reason: string; request_key: string }
@@ -39,18 +73,24 @@ export const correctionApi = {
   readyPdpj: async () => (await api.get<ReadyPdpj[]>("/corrections/ready-pdpj")).data,
   batches: async (kind: CorrectionKind) => (await api.get<MasterBatch[]>(`/corrections/${kind}/batches`)).data,
   batch: async (kind: CorrectionKind, id: number) => (await api.get<MasterBatchPreview>(`/corrections/${kind}/batches/${id}`)).data,
-  checks: async (kind: CorrectionKind, id: number) => (await api.get<CorrectionCheck[]>(`/corrections/${kind}/checks`, { params: { batch_id: id } })).data,
-  check: async (kind: CorrectionKind, id: number) => (await api.get<CorrectionCheck>(`/corrections/${kind}/checks/${id}`)).data,
+  checks: async (kind: CorrectionKind, id: number, signal?: AbortSignal) => (await api.get<CorrectionCheck[]>(`/corrections/${kind}/checks`, { params: { batch_id: id, include_update_conflicts: false }, signal })).data,
+  check: async (kind: CorrectionKind, id: number, signal?: AbortSignal) => (await api.get<CorrectionCheck>(`/corrections/${kind}/checks/${id}`, { params: { include_update_conflicts: false }, signal })).data,
+  pdpjUpdate: async (kind: CorrectionKind, id: number, signal?: AbortSignal) => (await api.get<PdpjUpdate | null>(`/corrections/${kind}/checks/${id}/pdpj-update`, { signal })).data,
   start: async (kind: CorrectionKind, body: CheckRequest) => (await api.post<CorrectionCheck>(`/corrections/${kind}/checks`, body)).data,
   retry: async (kind: CorrectionKind, id: number, body: RetryRequest) => (await api.post<CorrectionCheck>(`/corrections/${kind}/checks/${id}/retry`, body)).data,
+  advance: async (kind: CorrectionKind, id: number, run: CorrectionRun) => (await api.post<CorrectionRun>(`/corrections/${kind}/checks/${id}/advance`, { run_id: run.id, revision: run.processing!.revision, chunk_size: 100 })).data,
+  progress: async (kind: CorrectionKind, id: number) => (await api.get<CorrectionRun>(`/corrections/${kind}/checks/${id}/progress`)).data,
+  pause: async (kind: CorrectionKind, id: number, runId: number) => (await api.post<CorrectionRun>(`/corrections/${kind}/checks/${id}/pause`, { run_id: runId })).data,
+  resume: async (kind: CorrectionKind, id: number, runId: number) => (await api.post<CorrectionRun>(`/corrections/${kind}/checks/${id}/resume`, { run_id: runId })).data,
   summary: async (kind: CorrectionKind, scope: CorrectionScope) => (await api.get<CorrectionSummary>(`/corrections/${kind}/summary`, { params: scope })).data,
-  rows: async (kind: CorrectionKind, params: CorrectionScope & { q: string; status: CorrectionFilter; skip: number; limit: number }) => (await api.get<{ total: number; items: CorrectionRow[] }>(`/corrections/${kind}/records`, { params })).data,
+  mapSummary: async (kind: CorrectionKind, process_id: number, generation: number, radius_meters: number, signal: AbortSignal) => (await api.get<MapRadiusSummary>(`/corrections/${kind}/map-summary`, { params: { process_id, generation, radius_meters }, signal })).data,
+  rows: async (kind: CorrectionKind, params: CorrectionScope & { q: string; status: CorrectionFilter; skip: number; limit: number }, signal?: AbortSignal) => (await api.get<{ total: number; items: CorrectionRow[] }>(`/corrections/${kind}/records`, { params, signal })).data,
   detail: async (kind: CorrectionKind, id: number, scope: CorrectionScope, skip: number, radius_meters?: number) => (await api.get<CorrectionDetail>(`/corrections/${kind}/records/${id}`, { params: { ...scope, skip, limit: 10, radius_meters } })).data,
   allRows: async (kind: CorrectionKind, scope: CorrectionScope, signal: AbortSignal) => {
     const items: CorrectionRow[] = [];
     let total = 0;
     do {
-      const response = await api.get<{ total: number; items: CorrectionRow[] }>(`/corrections/${kind}/records`, { params: { ...scope, skip: items.length, limit: 100 }, signal });
+      const response = await api.get<{ total: number; items: CorrectionRow[] }>(`/corrections/${kind}/records`, { params: { ...scope, saved_only: true, skip: items.length, limit: 100 }, signal });
       total = response.data.total;
       if (!response.data.items.length && items.length < total) throw new Error("Data peta belum lengkap. Muat ulang pemeriksaan.");
       items.push(...response.data.items);
@@ -68,6 +108,6 @@ export const correctionApi = {
     } while (items.length < total);
     return items;
   },
-  choice: async (kind: CorrectionKind, process: number, record: number) => (await api.get<CorrectionChoice>(`/corrections/${kind}/checks/${process}/records/${record}/choice`)).data,
+  choice: async (kind: CorrectionKind, process: number, record: number, generation?: number) => (await api.get<CorrectionChoice>(`/corrections/${kind}/checks/${process}/records/${record}/choice`, { params: { generation } })).data,
   choose: async (kind: CorrectionKind, process: number, record: number, body: ChoiceRequest) => (await api.post<CorrectionChoice>(`/corrections/${kind}/checks/${process}/records/${record}/choice`, body)).data,
 };

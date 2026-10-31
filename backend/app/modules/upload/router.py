@@ -21,6 +21,7 @@ from ...models.correction import (
 )
 from ...models.correction_decision import CorrectionDecision
 from ...models.master_sisa import CleanedMasterRecord, MasterSisaRecord, MasterSnapshot
+from ...models.master_summary import MasterSummaryCache
 from ...models.matching import (
     MatchCandidate,
     MatchingRun,
@@ -321,12 +322,26 @@ def reset_database(db: DbSession) -> dict[str, str]:
         lock_review_session(db)
         archive_keys = [key for (key,) in db.query(UploadFileArchive.storage_key).all()]
         db.query(CoordinateRepair).delete()
+        db.query(MasterSummaryCache).delete()
         db.query(UploadSheetImport).delete()
         db.query(CorrectionDecision).delete()
         db.query(CorrectionCandidateEvidence).delete()
         db.query(CorrectionTarget).delete()
         db.query(CorrectionAttempt).delete()
         db.query(CorrectionCheck).delete()
+        from app.models.master_sisa import (
+            CorrectionMasterObservation,
+            CorrectionObservationCatalog,
+            MasterPreparation,
+            MasterPreparationExcluded,
+            MasterPreparationIdentity,
+        )
+
+        db.query(CorrectionMasterObservation).delete()
+        db.query(CorrectionObservationCatalog).delete()
+        db.query(MasterPreparationExcluded).delete()
+        db.query(MasterPreparationIdentity).delete()
+        db.query(MasterPreparation).delete()
         db.query(PdpjChange).delete()
         db.query(PdpjRecommendation).delete()
         db.query(PdpjRow).delete()
@@ -341,6 +356,9 @@ def reset_database(db: DbSession) -> dict[str, str]:
         db.query(UploadBatch).delete()
         db.query(UploadFileArchive).delete()
         db.commit()
+        from app.modules.corrections.pdpj_index import clear_pdpj_indexes
+
+        clear_pdpj_indexes()
         for key in archive_keys:
             try:
                 archive_path(key).unlink(missing_ok=True)

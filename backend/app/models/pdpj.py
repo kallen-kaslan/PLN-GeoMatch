@@ -9,6 +9,7 @@ from sqlalchemy import (
     Column,
     DateTime,
     ForeignKey,
+    Index,
     Integer,
     String,
     UniqueConstraint,
@@ -31,11 +32,30 @@ class PdpjReview(Base):
         Mapped[datetime | None], Column(DateTime, nullable=True)
     )
     completed_by: Mapped[str] = mapped_column(String, default="")
+    processing: Mapped[dict[str, Any] | None] = cast(
+        Mapped[dict[str, Any] | None], Column(JSON, nullable=True)
+    )
+    source_review_id: Mapped[int | None] = cast(
+        Mapped[int | None], Column(Integer, nullable=True, index=True)
+    )
+    publication: Mapped[dict[str, Any] | None] = cast(
+        Mapped[dict[str, Any] | None], Column(JSON, nullable=True)
+    )
 
 
 class PdpjRow(Base):
     __tablename__ = "pdpj_rows"
-    __table_args__ = (UniqueConstraint("review_id", "source_record_id"),)
+    __table_args__ = (
+        UniqueConstraint("review_id", "source_record_id"),
+        Index("ix_pdpj_rows_review_row_number_id", "review_id", "row_number", "id"),
+        Index(
+            "ix_pdpj_rows_review_existence_row_number_id",
+            "review_id",
+            "existence",
+            "row_number",
+            "id",
+        ),
+    )
 
     id: Mapped[int] = mapped_column(primary_key=True)
     review_id: Mapped[int] = mapped_column(ForeignKey("pdpj_reviews.id"), index=True)
@@ -50,6 +70,13 @@ class PdpjRow(Base):
     reviewed: Mapped[bool] = mapped_column(Boolean, default=False)
     exception: Mapped[bool] = mapped_column(Boolean, default=False)
     exception_reason: Mapped[str] = mapped_column(String, default="")
+
+
+Index(
+    "ix_pdpj_rows_review_identity",
+    PdpjRow.review_id,
+    PdpjRow.current_fields["idpel"].as_string(),
+)
 
 
 class PdpjRecommendation(Base):

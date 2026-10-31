@@ -4,17 +4,19 @@ from typing import Annotated, Any, Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, ConfigDict, Field, field_validator
-from sqlalchemy import and_, func, or_
+from sqlalchemy import and_, case, func, or_
 from sqlalchemy.exc import SQLAlchemyError
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, defer, object_session
 
 from app.database import get_db
 from app.models.pdpj import PdpjChange, PdpjRecommendation, PdpjReview, PdpjRow
 from app.models.upload import DatasetType, SourceRecord, UploadBatch
 from app.modules.master.router import batch_info
 from app.modules.pdpj.service import (
+    advance_review,
     before_change,
     complete_validation,
+    control_processing,
     create_review,
     get_review,
     pdpj_batch,
@@ -24,6 +26,7 @@ from app.modules.pdpj.service import (
 )
 from app.modules.upload.storage import database_write_error
 from app.pdpj_warning_schema import DUPLICATE_IDPEL
+from app.processing_activity import monitor_request, request_activity
 
 DbSession = Annotated[Session, Depends(get_db)]
 router = APIRouter(prefix="/pdpj", tags=["Validasi PDPJ"])
@@ -32,6 +35,12 @@ router = APIRouter(prefix="/pdpj", tags=["Validasi PDPJ"])
 class StartReview(BaseModel):
     batch_id: int = Field(gt=0)
     master_batch_ids: list[int] | None = Field(None, max_length=1000)
+    incremental: bool = False
+
+
+class ProcessingStep(BaseModel):
+    revision: int = Field(ge=1)
+    chunk_size: int = Field(400, ge=1, le=400)
 
 
 class ReviewAction(BaseModel):
@@ -89,6 +98,10 @@ def review_info(review: PdpjReview) -> dict[str, Any]:
         "created_at": review.created_at,
         "completed_at": review.completed_at,
         "completed_by": review.completed_by,
+        "processing": review.processing,
+        "activity": request_activity(object_session(review), "pdpj", review.id),
+        "source_review_id": review.source_review_id,
+        "publication": review.publication,
     }
 
 
@@ -169,7 +182,10 @@ def list_reviews(batch_id: int, db: DbSession) -> list[dict[str, Any]]:
         review_info(review)
         for review in db.query(PdpjReview)
         .filter(PdpjReview.batch_id == batch_id)
-        .order_by(PdpjReview.id.desc())
+        .order_by(
+            case((PdpjReview.source_review_id.is_(None), 0), else_=1),
+            PdpjReview.id.desc(),
+        )
         .all()
     ]
 
@@ -177,7 +193,49 @@ def list_reviews(batch_id: int, db: DbSession) -> list[dict[str, Any]]:
 @router.post("/reviews")
 def start_review(req: StartReview, db: DbSession) -> dict[str, Any]:
     """Match every PDPJ identity against every observation in the selected sources."""
+    if req.incremental:
+        return review_info(
+            create_review(db, req.batch_id, req.master_batch_ids, incremental=True)
+        )
     return review_info(create_review(db, req.batch_id, req.master_batch_ids))
+
+
+@router.post("/reviews/{review_id}/advance")
+@monitor_request("pdpj", "review_id", "matching")
+def advance_processing(
+    review_id: int, req: ProcessingStep, db: DbSession
+) -> dict[str, Any]:
+    """Process one bounded transaction and return its durable checkpoint."""
+    try:
+        return review_info(advance_review(db, review_id, req.revision, req.chunk_size))
+    except SQLAlchemyError as exc:
+        raise database_write_error(db, exc, "pemeriksaan PDPJ") from exc
+
+
+@router.post("/reviews/{review_id}/pause")
+@monitor_request("pdpj", "review_id", "pausing")
+def pause_processing(review_id: int, db: DbSession) -> dict[str, Any]:
+    """Wait for the active chunk and preserve all committed results."""
+    try:
+        return review_info(control_processing(db, review_id, "paused"))
+    except SQLAlchemyError as exc:
+        raise database_write_error(db, exc, "jeda pemeriksaan PDPJ") from exc
+
+
+@router.post("/reviews/{review_id}/resume")
+@monitor_request("pdpj", "review_id", "resuming")
+def resume_processing(review_id: int, db: DbSession) -> dict[str, Any]:
+    """Continue with the saved sources and cursors, never create another review."""
+    try:
+        return review_info(control_processing(db, review_id, "running"))
+    except SQLAlchemyError as exc:
+        raise database_write_error(db, exc, "kelanjutan pemeriksaan PDPJ") from exc
+
+
+@router.get("/reviews/{review_id}/progress")
+def processing_status(review_id: int, db: DbSession) -> dict[str, Any]:
+    """Return a lightweight checkpoint and actual in-flight activity."""
+    return review_info(get_review(db, review_id))
 
 
 @router.get("/reviews/{review_id}")
@@ -223,6 +281,13 @@ def review_summary(review_id: int, db: DbSession) -> dict[str, Any]:
             for batch in db.query(UploadBatch)
             .filter(UploadBatch.id.in_(review.master_batch_ids))
             .order_by(UploadBatch.id)
+            .all()
+        ],
+        "publications": [
+            review_info(item)
+            for item in db.query(PdpjReview)
+            .filter(PdpjReview.source_review_id == review.id)
+            .order_by(PdpjReview.id.desc())
             .all()
         ],
     }
@@ -283,16 +348,24 @@ def list_rows(
         query = query.filter(
             func.json_array_length(PdpjRow.issues) == 0, PdpjRow.exception.is_(False)
         )
-    total = query.count()
+    total = query.with_entities(func.count(PdpjRow.id)).scalar() or 0
+    page_ids = (
+        query.with_entities(PdpjRow.id)
+        .order_by(PdpjRow.row_number, PdpjRow.id)
+        .offset(skip)
+        .limit(limit)
+        .subquery()
+    )
+    page_rows = (
+        db.query(PdpjRow)
+        .join(page_ids, page_ids.c.id == PdpjRow.id)
+        .options(defer(PdpjRow.original_fields))
+        .order_by(PdpjRow.row_number, PdpjRow.id)
+        .all()
+    )
     return {
         "total": total,
-        "items": [
-            row_info(row)
-            for row in query.order_by(PdpjRow.row_number)
-            .offset(skip)
-            .limit(limit)
-            .all()
-        ],
+        "items": [row_info(row) for row in page_rows],
     }
 
 
@@ -410,12 +483,13 @@ def decide_row(
 
 
 @router.post("/reviews/{review_id}/complete")
+@monitor_request("pdpj", "review_id", "publishing")
 def finish_review(review_id: int, req: ReviewAction, db: DbSession) -> dict[str, Any]:
     """Finalize clean rows together; exceptions must already carry explicit reasons."""
     try:
         review = get_review(db, review_id, req.revision)
-        complete_validation(db, review, req.actor)
-        return review_info(review)
+        _, published = complete_validation(db, review, req.actor)
+        return {**review_info(review), "published_review": review_info(published)}
     except HTTPException:
         db.rollback()
         raise
@@ -424,20 +498,25 @@ def finish_review(review_id: int, req: ReviewAction, db: DbSession) -> dict[str,
 
 
 @router.post("/reviews/{review_id}/complete-with-exceptions")
+@monitor_request("pdpj", "review_id", "publishing")
 def finish_with_exceptions(
     review_id: int, req: CompleteWithExceptions, db: DbSession
 ) -> dict[str, Any]:
     """Finalize after an explicit, audited deferral of all remaining problem rows."""
     try:
         review = get_review(db, review_id, req.revision)
-        added = complete_validation(
+        added, published = complete_validation(
             db,
             review,
             req.actor,
             exception_reason=req.reason,
             expected_unresolved=req.expected_unresolved,
         )
-        return {**review_info(review), "exceptions_added": added}
+        return {
+            **review_info(review),
+            "exceptions_added": added,
+            "published_review": review_info(published),
+        }
     except HTTPException:
         db.rollback()
         raise

@@ -20,6 +20,128 @@ Sidebar memiliki submenu untuk kedua kategori. Tautan lama `/upload` diarahkan k
 
 Pemeriksaan selesai tidak berarti semua baris sudah memiliki kandidat atau sudah dipilih hasilnya. Baris bermasalah tetap terlihat dan mempunyai alasan hasil.
 
+Preview kedua kategori memakai kontrol seperti PDPJ: **10, 25, 50, atau 100
+baris per halaman**, input **Ke halaman**, Enter/**Buka halaman**, jumlah hasil,
+rentang baris, dan halaman aktif/total. Nomor kosong, pecahan, atau di luar
+rentang ditolak. Mengganti berkas, pemeriksaan, versi, pencarian, filter, atau
+jumlah baris mengembalikan preview ke halaman pertama. Preview hanya memuat
+payload ID record pada halaman terpilih; seluruh hasil tetap tersedia melalui
+halaman berikutnya dan filter. Normalisasi yang valid dipakai ulang, sementara
+data lama/bermasalah tetap menggunakan ekstraksi sumber beserta kesalahannya.
+
+## Progres dan penyimpanan bertahap
+
+Kedua kategori menampilkan panel progres dengan persentase desimal, tahap aktif,
+jumlah baris koreksi tersimpan, validasi akhir tersimpan, baris sumber terakhir,
+durasi, dan waktu pembaruan. Tahapnya adalah persiapan master, pemeriksaan benturan
+dan kandidat, validasi hasil tersimpan, lalu penyimpanan penyelesaian pemeriksaan.
+Animasi tetap berjalan selama bagian aktif diproses/disimpan dan saat menunggu jeda.
+
+UI meminta maksimal 100 baris per bagian. Kandidat, bukti sumber, hasil baris,
+dan checkpoint disimpan dalam transaksi yang sama. **Hentikan sementara koreksi**
+menunggu transaksi aktif selesai, lalu menjeda pengiriman bagian berikutnya.
+**Lanjutkan pemeriksaan koreksi** memakai run dan snapshot sumber yang sama,
+termasuk setelah halaman dibuka ulang atau koneksi terputus. Jika satu bagian
+gagal disimpan, hasil bagian sebelumnya tetap tersedia dan bagian gagal dicoba
+ulang tanpa menggandakan kandidat.
+
+Checkpoint progres diperbarui langsung setelah setiap penyimpanan. Tabel,
+ringkasan, dan detail diperbarui paling sering setiap tiga detik selama proses
+berjalan, tanpa membatalkan pemuatan preview yang masih berlangsung. Jeda,
+kegagalan, dan penyelesaian meminta pembaruan segera. Dengan demikian,
+pemrosesan cepat tidak membuat tabel terus memuat ulang tanpa sempat tampil.
+
+Setelah jeda dikonfirmasi tersimpan dan tidak ada permintaan server aktif,
+pilihan PDPJ, radius untuk pemeriksaan baru, dan **Pemeriksaan baru** dapat
+digunakan. Pilih PDPJ versi terbaru lalu **Jalankan pemeriksaan** untuk membuat
+proses baru dengan acuan tersebut. Proses lama tetap dijeda pada checkpoint,
+PDPJ, radius, kandidat, dan keputusan sebelumnya. **Periksa ulang** pada proses
+yang sama tetap menunggu penyelesaian; gunakan panel progres untuk melanjutkan
+proses lama. Selama bagian aktif diproses/disimpan atau status jeda belum
+terkonfirmasi, pilihan sumber dan pembuatan proses baru tetap terkunci.
+
+Refresh memulihkan aktivitas server beserta checkpoint melalui
+`GET /corrections/{kind}/checks/{id}/progress` setiap dua detik. Animasi dan
+tombol mengikuti permintaan yang masih aktif, termasuk persiapan master,
+pencocokan, validasi, dan penyelesaian. Ketika bagian aktif selesai tetapi
+halaman lama sudah ditutup, tampil **Menunggu dilanjutkan dari hasil tersimpan**.
+Tombol lanjut tidak mengirim pekerjaan baru selama bagian sebelumnya masih
+aktif. Jeda dari halaman baru menunggu bagian itu selesai disimpan. Pemantauan
+ringan ini tidak menjalankan ulang master atau ringkasan setiap dua detik.
+
+Halaman mengikat berkas dan pemeriksaan terpilih di URL agar refresh tidak
+berpindah ke pemeriksaan lain. Pilihan PDPJ dan radius untuk pemeriksaan baru
+juga mengikuti parameter `pdpj_review_id` dan `radius_meters`; ini hanya draf
+formulir, tidak mengganti sumber/radius pemeriksaan tersimpan. Nama petugas
+dipertahankan per kategori dalam `sessionStorage` selama sesi tab browser.
+Jika penyimpanan browser tidak tersedia, nama petugas tetap dapat diisi manual.
+Selama status pemeriksaan dipulihkan, formulir menampilkan indikator pemulihan
+dan menonaktifkan aksi. Tabel/ringkasan menunggu cakupan versi terpilih siap,
+sehingga tidak sempat menampilkan hasil tanpa pemeriksaan sebagai hasil terbaru.
+
+Daftar/detail pemeriksaan di frontend memakai `include_update_conflicts=false`
+untuk memuat status dan checkpoint tanpa memindai seluruh PDPJ. Informasi versi
+PDPJ terbaru tetap tersedia. Benturan keputusan dimuat terpisah melalui
+`GET /corrections/{kind}/checks/{id}/pdpj-update`, dengan indikator pemeriksaan
+dan tombol coba lagi jika gagal. Hasil pemeriksaan benturan disimpan di cache
+berdasarkan proses, versi PDPJ terbaru, dan revisi keputusan; polling progres
+tidak menghitung ulang benturan tersebut. Jalur API lama tetap memuat benturan
+lengkap secara bawaan. Respons status yang terlambat tidak menimpa checkpoint
+dengan revisi/aktivitas lebih baru.
+
+Aktivitas nyata dibedakan dari status checkpoint: SQLite memakai kunci berkas
+antarproses, PostgreSQL memakai advisory lock pada koneksi khusus. Kunci
+dilepas otomatis ketika proses server keluar; checkpoint dan hasil tetap
+tersimpan. Permintaan jeda mencegah bagian berikutnya mendahului penyimpanan
+status jeda. Status yang belum dapat diperiksa ditampilkan sebagai tidak pasti.
+
+Tabel, ringkasan, filter, dan detail langsung membaca hasil bagian yang sudah
+tersimpan, termasuk saat proses berjalan, dijeda, atau terhenti. Versi terbaru
+ditampilkan sebagai **hasil sementara** sampai validasi akhir dan penyelesaian
+berhasil disimpan. Hanya baris yang belum diproses berstatus **Belum diperiksa**.
+Versi lama yang sudah selesai tetap tersedia melalui pilihan versi hasil.
+Setelah ada baris tersimpan, **Buka Peta Koreksi** tersedia untuk versi tersebut.
+Pemilihan kandidat dapat dilakukan pada baris tersimpan dalam versi terbaru,
+termasuk saat pemeriksaan berjalan, dijeda, atau terhenti. Baris yang belum
+diproses belum ditawarkan di peta. Pemeriksaan berikutnya melanjutkan checkpoint
+yang sama dan mempertahankan seluruh pilihan kandidat yang sudah disimpan.
+
+Persiapan master juga bertahap: satu permintaan menyimpan maksimal 2.000 baris
+pekerjaan, dibaca dalam blok maksimal 400 baris. Panel menampilkan jumlah sumber
+master yang dibaca, berkas aktif, normalisasi tersimpan yang dipakai ulang,
+IDPEL unik, pemeriksaan pengecualian PDPJ, master gabungan tersimpan, dan master
+sisa tersedia. Progres keseluruhan mencakup pekerjaan persiapan tersebut.
+
+Persiapan memakai normalisasi unggahan yang sesuai versinya, lalu menyimpan
+penunjuk observasi terpilih per IDPEL di database. Seluruh riwayat observasi tetap
+berada pada sumber asli; bukti lengkap baru dibaca untuk kandidat yang ditemukan.
+Karena itu persiapan tidak menampung seluruh riwayat jutaan baris di RAM atau
+menyalinnya lagi ke setiap baris master gabungan. Aturan periode terbaru,
+prioritas Prabayar/Pascabayar, pelengkapan dari DIL, dan pengecualian PDPJ tetap
+dipertahankan.
+
+Snapshot belum selesai ditandai tidak siap dan tidak ditawarkan untuk pencarian.
+Setelah siap, snapshot dapat digunakan ulang untuk pemeriksaan lain dengan
+sumber, mapping, periode, versi normalisasi, dan versi PDPJ yang sama. Snapshot
+dengan sumber berbeda tidak dipakai sebagai pengganti. Jeda, kegagalan, dan buka
+ulang halaman mempertahankan checkpoint persiapan, termasuk pembentukan master
+sisa. Migrasi `d24ea5037f96` menambahkan penyimpanan persiapan tanpa mengubah
+snapshot atau keputusan koreksi lama.
+
+Validasi akhir memeriksa jumlah kandidat dan bukti terhadap setiap hasil baris,
+kemudian menyimpan checkpoint validasinya. Persentase tidak mencapai 100% sebelum
+status penyelesaian berhasil disimpan. Hasil bagian yang sudah tersimpan dapat
+digunakan di tabel dan peta sebelum seluruh run lolos validasi; hasil tersebut
+diberi penanda sementara. Perluasan radius menunggu pemeriksaan selesai agar
+kelanjutan baris tetap memakai sumber, radius, dan versi yang sama.
+
+UI mengirim `incremental: true` pada pembuatan/pemeriksaan ulang, lalu memanggil
+`POST /corrections/{kind}/checks/{id}/advance` dengan `run_id`, revisi checkpoint,
+dan ukuran bagian. Endpoint `/pause` dan `/resume` mengontrol run yang sama.
+Permintaan dengan revisi atau run lama ditolak. Pemanggil lama tanpa flag tersebut
+tetap menggunakan dispatch dan kontrak pemrosesan sebelumnya. Migrasi
+`c13d94f26e85` menambahkan checkpoint tanpa mengubah run historis.
+
 ## Pemeriksaan benturan dan kategori
 
 Pemeriksaan memakai nilai PDPJ **saat ini** dari versi validasi selesai yang dipilih, termasuk perbaikan manual sebelumnya.
@@ -123,4 +245,6 @@ Pengujian browser memakai API dan SQLite sementara. Skenarionya mencakup impor k
 
 Perintah pengujian tetap mengikuti [validasi-pdpj.md](validasi-pdpj.md). Integrasi database diuji dengan SQLite; PostgreSQL/PostGIS dan pekerja Celery yang benar-benar terhubung ke broker belum dijalankan pada lingkungan ini.
 
-Tahap 4 sudah diimplementasikan pada [peta-koreksi.md](peta-koreksi.md): seluruh titik sesuai kategori, tooltip hover, pemilihan target dari tabel/titik, pengaturan radius, pemakaian kandidat tersimpan, serta pilihan aktif dan riwayatnya. Tahap berikutnya adalah Hasil Koreksi dan ekspor per kategori.
+Peta tersedia sesuai [peta-koreksi.md](peta-koreksi.md). Pilihan aktif langsung
+tersedia di [Hasil Koreksi dan Riwayat Proses](hasil-koreksi.md), termasuk hasil
+sebagian, perbandingan target/kandidat, ekspor CSV, dan seluruh riwayat perubahan.

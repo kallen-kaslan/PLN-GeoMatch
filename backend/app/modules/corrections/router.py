@@ -6,7 +6,8 @@ from typing import Annotated, Any, Literal
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 from sqlalchemy import and_, func, or_
-from sqlalchemy.orm import Session
+from sqlalchemy.exc import SQLAlchemyError
+from sqlalchemy.orm import Session, load_only, object_session
 
 from app.config import settings
 from app.database import get_db
@@ -23,6 +24,10 @@ from app.models.matching import (
 from app.models.pdpj import PdpjReview
 from app.models.upload import BatchStatus, DatasetType, SourceRecord, UploadBatch
 from app.modules.corrections.decisions import router as decisions_router
+from app.modules.corrections.map_summary import radius_summary
+from app.modules.corrections.pdpj_updates import pdpj_update_info
+from app.modules.corrections.progress import advance_progress, control_progress
+from app.modules.corrections.results import router as results_router
 from app.modules.corrections.service import (
     CorrectionKind,
     check_process,
@@ -33,7 +38,14 @@ from app.modules.corrections.service import (
 )
 from app.modules.master.router import batch_info
 from app.modules.spatial.pipeline import execute_pipeline
-from app.modules.upload.normalization import extract_standard_fields, validate_fields
+from app.modules.upload.normalization import (
+    NORMALIZATION_VERSION,
+    extract_standard_fields,
+    validate_fields,
+)
+from app.modules.upload.pagination import load_original_cells, source_page_ids
+from app.modules.upload.storage import database_write_error
+from app.processing_activity import monitor_request, request_activity
 from app.tasks.spatial_tasks import (
     execute_batch_reconciliation_pipeline,
     mark_process_failed,
@@ -60,6 +72,7 @@ class SearchRequest(BaseModel):
     radius_meters: float = Field(100, gt=0, le=100000)
     actor: str = Field(min_length=1, max_length=80)
     request_key: str = Field(min_length=8, max_length=64, pattern=r"^[A-Za-z0-9_-]+$")
+    incremental: bool = False
 
     @field_validator("actor")
     @classmethod
@@ -79,11 +92,21 @@ class RetryCheck(SearchRequest):
     latest_run_id: int = Field(gt=0)
 
 
+class ProgressControl(BaseModel):
+    run_id: int = Field(gt=0)
+
+
+class ProgressStep(ProgressControl):
+    revision: int = Field(ge=1)
+    chunk_size: int = Field(100, ge=1, le=400)
+
+
 def run_info(run: MatchingRun) -> dict[str, Any]:
     """Expose actual state of each immutable search attempt."""
     return {
         "id": run.id,
         "generation": run.generation,
+        "candidate_policy": run.candidate_policy,
         "status": run.status.value,
         "failure_code": run.failure_code,
         "radius_meters": run.radius_meters,
@@ -91,10 +114,17 @@ def run_info(run: MatchingRun) -> dict[str, Any]:
         "matched_targets": run.matched_targets,
         "created_at": run.created_at,
         "completed_at": run.completed_at,
+        "processing": run.processing,
+        "activity": request_activity(object_session(run), "correction", run.id),
     }
 
 
-def check_info(db: Session, kind: CorrectionKind, process_id: int) -> dict[str, Any]:
+def check_info(
+    db: Session,
+    kind: CorrectionKind,
+    process_id: int,
+    include_update_conflicts: bool = True,
+) -> dict[str, Any]:
     """Keep the latest job state separate from the last published generation."""
     check, process = check_process(db, kind, process_id)
     runs = (
@@ -108,6 +138,9 @@ def check_info(db: Session, kind: CorrectionKind, process_id: int) -> dict[str, 
         "batch_id": process.target_batch_id,
         "category": check.category,
         "pdpj_review_id": check.pdpj_review_id,
+        "pdpj_update": pdpj_update_info(
+            db, process_id, check.pdpj_review_id, include_update_conflicts
+        ),
         "status": process.matching_status.value,
         "current_generation": process.current_generation,
         "master_snapshot_id": process.master_snapshot_id,
@@ -175,11 +208,21 @@ def record_scope(
                 404, "Pemeriksaan tidak menggunakan berkas yang dipilih"
             )
         batch_id = process.target_batch_id
-        run = selected_run(db, process, generation)
+        run = selected_run(db, process, generation, include_partial=True)
     elif generation is not None:
         raise HTTPException(422, "Pilih pemeriksaan untuk melihat versi pencarian")
     query = (
         db.query(SourceRecord, UploadBatch, CorrectionTarget)
+        .options(
+            load_only(
+                SourceRecord.id,
+                SourceRecord.batch_id,
+                SourceRecord.row_number,
+                SourceRecord.normalized_data,
+                SourceRecord.is_valid,
+                SourceRecord.validation_errors,
+            )
+        )
         .join(UploadBatch, SourceRecord.batch_id == UploadBatch.id)
         .outerjoin(
             CorrectionTarget,
@@ -200,13 +243,32 @@ def record_scope(
     return query, run
 
 
+def cached_preview_fields(
+    record: SourceRecord, batch: UploadBatch
+) -> dict[str, Any] | None:
+    """Reuse only a current, valid normalization; preserve raw parsing of errors."""
+    if (
+        batch.catalog_version == NORMALIZATION_VERSION
+        and record.normalized_data
+        and record.normalized_data.get("_normalization_version")
+        == NORMALIZATION_VERSION
+        and record.is_valid
+        and not record.validation_errors
+    ):
+        return record.normalized_data
+    return None
+
+
 def record_info(
     record: SourceRecord, batch: UploadBatch, outcome: CorrectionTarget | None
 ) -> dict[str, Any]:
     """Return every source row even when it has no coordinates or candidates."""
+    cached = cached_preview_fields(record, batch) if not outcome else None
     fields = (
         outcome.fields
         if outcome
+        else {**cached, "validation_errors": []}
+        if cached is not None
         else extract_standard_fields(record.data or {}, batch.column_mapping)
     )
     return {
@@ -230,10 +292,28 @@ def record_info(
 
 @router.get("/ready-pdpj")
 def ready_pdpj(db: DbSession) -> list[dict[str, Any]]:
-    """Offer only files whose latest review is complete, without hiding unfinished rechecks."""
+    """Offer approved versions of each file's latest working review."""
     latest: dict[int, PdpjReview] = {}
-    for review in db.query(PdpjReview).order_by(PdpjReview.id.desc()).all():
+    for review in (
+        db.query(PdpjReview)
+        .filter(PdpjReview.source_review_id.is_(None))
+        .order_by(PdpjReview.id.desc())
+        .all()
+    ):
         latest.setdefault(review.batch_id, review)
+    approved: list[PdpjReview] = []
+    for review in latest.values():
+        if review.status == "completed":
+            approved.append(review)
+        approved.extend(
+            db.query(PdpjReview)
+            .filter(
+                PdpjReview.source_review_id == review.id,
+                PdpjReview.status == "completed",
+            )
+            .order_by(PdpjReview.id.desc())
+            .all()
+        )
     return [
         {
             "review_id": review.id,
@@ -242,10 +322,11 @@ def ready_pdpj(db: DbSession) -> list[dict[str, Any]]:
             "completed_by": review.completed_by,
             "completed_at": review.completed_at,
             "master_batch_ids": review.master_batch_ids,
+            "source_review_id": review.source_review_id,
+            "publication": review.publication,
         }
-        for review in latest.values()
-        if review.status == "completed"
-        and (batch := db.get(UploadBatch, review.batch_id)) is not None
+        for review in approved
+        if (batch := db.get(UploadBatch, review.batch_id)) is not None
     ]
 
 
@@ -283,7 +364,10 @@ def batch_preview(kind: CorrectionKind, batch_id: int, db: DbSession) -> dict[st
 
 @router.get("/{kind}/checks")
 def list_checks(
-    kind: CorrectionKind, db: DbSession, batch_id: int = Query(gt=0)
+    kind: CorrectionKind,
+    db: DbSession,
+    batch_id: int = Query(gt=0),
+    include_update_conflicts: bool = True,
 ) -> list[dict[str, Any]]:
     """List previous checks with their original PDPJ source and parameters."""
     source_batch(db, kind, batch_id)
@@ -297,7 +381,9 @@ def list_checks(
         .order_by(ReconciliationProcess.id.desc())
         .all()
     )
-    return [check_info(db, kind, value) for (value,) in processes]
+    return [
+        check_info(db, kind, value, include_update_conflicts) for (value,) in processes
+    ]
 
 
 @router.post("/{kind}/checks")
@@ -311,9 +397,10 @@ def start_check(kind: CorrectionKind, req: StartCheck, db: DbSession) -> dict[st
         req.radius_meters,
         req.request_key,
         req.actor,
+        req.incremental,
     )
     run_id, process_id = run.id, process.id
-    mode = dispatch(db, process, run, fresh)
+    mode = "incremental" if run.processing else dispatch(db, process, run, fresh)
     return {
         **check_info(db, kind, process_id),
         "requested_run_id": run_id,
@@ -322,9 +409,23 @@ def start_check(kind: CorrectionKind, req: StartCheck, db: DbSession) -> dict[st
 
 
 @router.get("/{kind}/checks/{process_id}")
-def get_check(kind: CorrectionKind, process_id: int, db: DbSession) -> dict[str, Any]:
+def get_check(
+    kind: CorrectionKind,
+    process_id: int,
+    db: DbSession,
+    include_update_conflicts: bool = True,
+) -> dict[str, Any]:
     """Poll status until the requested attempt has actually completed."""
-    return check_info(db, kind, process_id)
+    return check_info(db, kind, process_id, include_update_conflicts)
+
+
+@router.get("/{kind}/checks/{process_id}/pdpj-update")
+def get_pdpj_update(
+    kind: CorrectionKind, process_id: int, db: DbSession
+) -> dict[str, Any] | None:
+    """Review conflicts independently of the lightweight process restoration path."""
+    check, _ = check_process(db, kind, process_id)
+    return pdpj_update_info(db, process_id, check.pdpj_review_id)
 
 
 @router.post("/{kind}/checks/{process_id}/retry")
@@ -340,14 +441,80 @@ def rerun_check(
         req.radius_meters,
         req.request_key,
         req.actor,
+        req.incremental,
     )
     run_id = run.id
-    mode = dispatch(db, process, run, fresh)
+    mode = "incremental" if run.processing else dispatch(db, process, run, fresh)
     return {
         **check_info(db, kind, process_id),
         "requested_run_id": run_id,
         "execution_mode": mode,
     }
+
+
+@router.get("/{kind}/checks/{process_id}/progress")
+def processing_status(
+    kind: CorrectionKind, process_id: int, db: DbSession
+) -> dict[str, Any]:
+    check_process(db, kind, process_id)
+    run = (
+        db.query(MatchingRun)
+        .filter_by(process_id=process_id)
+        .order_by(MatchingRun.generation.desc())
+        .first()
+    )
+    if run is None:
+        raise HTTPException(404, "Pemeriksaan tidak ditemukan")
+    return run_info(run)
+
+
+@router.post("/{kind}/checks/{process_id}/advance")
+@monitor_request("correction", "req.run_id", "matching")
+def advance_check(
+    kind: CorrectionKind, process_id: int, req: ProgressStep, db: DbSession
+) -> dict[str, Any]:
+    try:
+        return run_info(
+            advance_progress(
+                db, kind, process_id, req.run_id, req.revision, req.chunk_size
+            )
+        )
+    except SQLAlchemyError as exc:
+        raise database_write_error(db, exc, "pemrosesan koreksi") from exc
+
+
+@router.post("/{kind}/checks/{process_id}/pause")
+@monitor_request("correction", "req.run_id", "pausing")
+def pause_check(
+    kind: CorrectionKind, process_id: int, req: ProgressControl, db: DbSession
+) -> dict[str, Any]:
+    try:
+        return run_info(control_progress(db, kind, process_id, req.run_id, "paused"))
+    except SQLAlchemyError as exc:
+        raise database_write_error(db, exc, "jeda koreksi") from exc
+
+
+@router.post("/{kind}/checks/{process_id}/resume")
+@monitor_request("correction", "req.run_id", "resuming")
+def resume_check(
+    kind: CorrectionKind, process_id: int, req: ProgressControl, db: DbSession
+) -> dict[str, Any]:
+    try:
+        return run_info(control_progress(db, kind, process_id, req.run_id, "running"))
+    except SQLAlchemyError as exc:
+        raise database_write_error(db, exc, "kelanjutan koreksi") from exc
+
+
+@router.get("/{kind}/map-summary")
+def map_summary(
+    kind: CorrectionKind,
+    db: DbSession,
+    process_id: int = Query(gt=0),
+    generation: int | None = Query(None, ge=1),
+    radius_meters: float = Query(gt=0, le=100000, allow_inf_nan=False),
+) -> dict[str, Any]:
+    """Read radius-specific counts and target statuses from persisted candidates."""
+    return radius_summary(db, kind, process_id, generation, radius_meters)
 
 
 @router.get("/{kind}/summary")
@@ -402,11 +569,15 @@ def list_records(
     generation: int | None = Query(None, ge=1),
     q: str = Query("", max_length=120),
     status: RecordFilter = "all",
+    saved_only: bool = False,
     skip: int = Query(0, ge=0),
     limit: int = Query(25, ge=1, le=100),
 ) -> dict[str, Any]:
     """Filter rows, rather than candidate records, so no-result targets remain visible."""
-    query, _ = record_scope(db, kind, batch_id, process_id, generation)
+    query, run = record_scope(db, kind, batch_id, process_id, generation)
+    payload_query = query
+    if saved_only:
+        query = query.filter(CorrectionTarget.id.is_not(None))
     if q.strip():
         pattern = (
             "%"
@@ -446,17 +617,46 @@ def list_records(
         )
     elif status != "all":
         query = query.filter(CorrectionTarget.search_status == status)
-    total = query.count()
+    selected_batch = batch_id
+    if run is not None:
+        selected_process = db.get(ReconciliationProcess, run.process_id)
+        assert selected_process is not None
+        selected_batch = selected_process.target_batch_id
+    batches = db.query(UploadBatch).filter(
+        UploadBatch.dataset_type == DatasetType(kind.value),
+        UploadBatch.status == BatchStatus.COMPLETED,
+    )
+    if selected_batch is not None:
+        batches = batches.filter(UploadBatch.id == selected_batch)
+    selected_batches = batches.all()
+    total, identities = source_page_ids(
+        db,
+        query,
+        [batch.id for batch in selected_batches],
+        skip,
+        limit,
+        unfiltered=not q.strip() and status == "all" and not saved_only,
+        known_totals={batch.id: batch.total_rows for batch in selected_batches},
+    )
+    records = (
+        payload_query.filter(SourceRecord.id.in_(identities))
+        .order_by(SourceRecord.batch_id.desc(), SourceRecord.id)
+        .all()
+        if identities
+        else []
+    )
+    load_original_cells(
+        db,
+        [
+            record.id
+            for record, batch, outcome in records
+            if outcome is None and cached_preview_fields(record, batch) is None
+        ],
+    )
     return {
         "total": total,
         "items": [
-            record_info(record, batch, outcome)
-            for record, batch, outcome in query.order_by(
-                SourceRecord.batch_id.desc(), SourceRecord.id
-            )
-            .offset(skip)
-            .limit(limit)
-            .all()
+            record_info(record, batch, outcome) for record, batch, outcome in records
         ],
     }
 
@@ -525,3 +725,4 @@ def record_detail(
 
 
 router.include_router(decisions_router)
+router.include_router(results_router)

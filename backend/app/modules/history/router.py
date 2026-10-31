@@ -1,13 +1,17 @@
 import csv
 import io
-from typing import Annotated
+from typing import Annotated, Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Response
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
 
 from app.database import get_db
+from app.models.correction import CorrectionCheck
 from app.models.matching import MatchCandidate, MatchingRun, ReconciliationProcess
+from app.modules.corrections.results import export_results, results_summary
+from app.modules.corrections.service import CorrectionKind
+from app.modules.corrections.spreadsheet import Spreadsheet
 
 DbSession = Annotated[Session, Depends(get_db)]
 
@@ -38,6 +42,12 @@ def get_process_history(db: DbSession):
                 "completed_at": p.completed_at.isoformat() if p.completed_at else None,
             }
         )
+    for item in result:
+        check = db.get(CorrectionCheck, item["id"])
+        if check is not None:
+            item.update(
+                results_summary(db, CorrectionKind(check.category), check.process_id)
+            )
     return result
 
 
@@ -107,6 +117,11 @@ def get_process_summary(
     process_id: int, db: DbSession, generation: int | None = Query(None, ge=1)
 ) -> dict:
     """Read summary strictly within the requested process and search generation."""
+    check = db.get(CorrectionCheck, process_id)
+    if check is not None:
+        return results_summary(
+            db, CorrectionKind(check.category), process_id, generation
+        )
     process, selected, run = get_process_generation(db, process_id, generation)
     candidates = (
         db.query(MatchCandidate)
@@ -137,9 +152,17 @@ def get_process_summary(
 
 @router.get("/process/{process_id}/export")
 def export_process_results(
-    process_id: int, db: DbSession, generation: int | None = Query(None, ge=1)
+    process_id: int,
+    db: DbSession,
+    generation: int | None = Query(None, ge=1),
+    format: Literal["csv", "xlsx"] = "csv",
 ) -> Response:
-    """Ekspor hasil verifikasi ke file CSV (PRD §8 FR-RES-04)"""
+    """Export categorized results as XLSX; keep legacy CSV callers compatible."""
+    check = db.get(CorrectionCheck, process_id)
+    if check is not None:
+        return export_results(
+            db, CorrectionKind(check.category), process_id, generation
+        )
     _, selected, _ = get_process_generation(db, process_id, generation)
     candidates = (
         db.query(MatchCandidate)
@@ -212,6 +235,14 @@ def export_process_results(
         )
 
     csv_data = output.getvalue()
+    if format == "xlsx":
+        book = Spreadsheet()
+        rows = csv.reader(io.StringIO(csv_data))
+        headers = next(rows)
+        sheet = book.sheet("Hasil Rekonsiliasi", headers, [26] * len(headers))
+        for row in rows:
+            book.append(sheet, row)
+        return book.response(f"hasil_geomatch_proses_{process_id}.xlsx")
     filename = f"hasil_geomatch_proses_{process_id}.csv"
 
     return Response(

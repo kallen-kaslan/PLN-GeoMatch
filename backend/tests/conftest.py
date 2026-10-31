@@ -19,6 +19,7 @@ from sqlalchemy.pool import StaticPool
 
 from app.database import Base
 from app.models.master_sisa import MasterSnapshot
+from app.models.master_summary import MasterSummaryCache  # noqa: F401
 from app.models.matching import MatchCandidate, MatchingRun, ReconciliationProcess  # noqa: F401
 from app.models.upload import SourceRecord, UploadBatch  # noqa: F401
 from app.models.pdpj import PdpjReview, PdpjRow, PdpjRecommendation, PdpjChange  # noqa: F401

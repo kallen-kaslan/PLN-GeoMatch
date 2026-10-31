@@ -1,5 +1,9 @@
 import { useState, useEffect, useCallback } from "react";
 import { useSearchParams, Link } from "react-router-dom";
+import { useQuery } from "@tanstack/react-query";
+import { CorrectionResults } from "@/components/corrections/CorrectionResults";
+import { resultsApi } from "@/lib/results";
+import { CORRECTION_TYPES } from "@/lib/corrections";
 import { api, API_BASE_URL } from "@/lib/api";
 import { Download, ArrowLeft, CheckCircle2, XCircle, Clock, FileSpreadsheet, RefreshCw, Trash2 } from "lucide-react";
 
@@ -16,9 +20,7 @@ interface ProcessSummary {
   review_status: string;
 }
 
-export default function ResultPage() {
-  const [searchParams] = useSearchParams();
-  const initialId = searchParams.get("process_id") || "1";
+function LegacyResultPage({ initialId, onSelect }: { initialId: string; onSelect: (value: string) => void }) {
 
   const [processId, setProcessId] = useState<string>(initialId);
   const [summary, setSummary] = useState<ProcessSummary | null>(null);
@@ -50,7 +52,7 @@ export default function ResultPage() {
   }, [fetchSummary]);
 
   const handleDownload = () => {
-    window.open(`${API_BASE_URL}/process/${processId}/export`, "_blank");
+    window.open(`${API_BASE_URL}/process/${processId}/export?format=xlsx`, "_blank");
   };
 
   const handleReset = async () => {
@@ -86,6 +88,7 @@ export default function ResultPage() {
               type="number"
               value={processId}
               onChange={(e) => setProcessId(e.target.value)}
+              onBlur={() => { if (Number(processId) > 0) onSelect(processId); }}
               className="w-14 text-xs font-bold text-neo-black focus:outline-none"
             />
           </div>
@@ -167,7 +170,7 @@ export default function ResultPage() {
             <div>
               <h3 className="font-black text-sm sm:text-base text-neo-black">Unduh Laporan Hasil Rekonsiliasi</h3>
               <p className="text-xs text-neo-border mt-0.5">
-                Download file CSV berisi koordinat target, IDPEL kandidat terpilih, dan keputusan petugas.
+                Unduh file XLSX berisi koordinat target, IDPEL kandidat terpilih, dan keputusan petugas.
               </p>
             </div>
             <div className="flex flex-col sm:flex-row gap-2.5 shrink-0">
@@ -183,7 +186,7 @@ export default function ResultPage() {
                 className="touch-min px-5 py-2.5 min-h-[44px] border-2 border-neo-border bg-neo-black text-white text-xs font-bold rounded-sm shadow-[2px_2px_0_#ff6b35] hover:bg-[#1a1a1a] transition active:translate-y-0.5 flex items-center justify-center gap-2"
               >
                 <Download size={16} />
-                <span>Unduh File CSV (.CSV)</span>
+                <span>Unduh File XLSX (.xlsx)</span>
               </button>
             </div>
           </div>
@@ -211,3 +214,22 @@ export default function ResultPage() {
   );
 }
 
+
+export default function ResultPage() {
+  const [params, setParams] = useSearchParams();
+  const processes = useQuery({ queryKey: ["process-history"], queryFn: ({ signal }) => resultsApi.processes(signal), refetchInterval: 5000 });
+  const requested = Number(params.get("process_id")) || null;
+  const category = CORRECTION_TYPES.find((item) => item.key === params.get("category"))?.key;
+  const selected = requested ? processes.data?.find((item) => item.id === requested)
+    : processes.data?.find((item) => (!category || item.category === category) && (item.chosen_count ?? 0) > 0)
+      ?? processes.data?.find((item) => !category || item.category === category);
+  const selectedId = selected?.id;
+  useEffect(() => {
+    if (!requested && selectedId) setParams({ process_id: String(selectedId), ...(category ? { category } : {}) }, { replace: true });
+  }, [requested, selectedId, category, setParams]);
+  if (processes.isPending) return <p role="status" className="p-6 text-sm">Memuat daftar hasil...</p>;
+  if (processes.isError) return <p role="alert" className="p-6 text-sm text-red-700">Daftar hasil belum dapat dimuat. <button type="button" onClick={() => void processes.refetch()} className="font-bold underline">Coba lagi</button></p>;
+  if (selected?.category || (!requested && category)) return <CorrectionResults key={selected?.id ?? category} process={selected} processes={processes.data ?? []} category={selected?.category ?? category!} />;
+  if (!selected && !requested) return <div className="space-y-3 border-2 border-neo-border bg-white p-5"><h1 className="text-xl font-black">Hasil Koreksi</h1><p>Belum ada hasil pemeriksaan.</p><Link className="font-bold underline" to="/koreksi">Buka Data Koreksi</Link></div>;
+  return <LegacyResultPage key={requested ?? selected?.id} initialId={String(requested ?? selected?.id)} onSelect={(id) => setParams({ process_id: id })} />;
+}
