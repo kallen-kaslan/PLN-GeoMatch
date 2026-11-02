@@ -2,7 +2,7 @@ import { CandidateCoordinateSource } from "@/components/corrections/CandidateCoo
 import { buttonClass } from "@/lib/button";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Link, useSearchParams, type SetURLSearchParams } from "react-router-dom";
-import { LoaderCircle } from "lucide-react";
+import { LoaderCircle, X } from "lucide-react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { CorrectionMap } from "@/components/corrections/CorrectionMap";
 import { CorrectionProgress } from "@/components/corrections/CorrectionProgress";
@@ -51,13 +51,15 @@ function MapWorkspace({ kind, batchParam, processParam, generationParam, params,
   const [filterMessage, setFilterMessage] = useState("");
   const [autoRunId, setAutoRunId] = useState<number | null>(null);
   const updateView = useCallback((values: Record<string, string | null>) => {
-    const next = new URLSearchParams(params);
+    // Preserve edits already written to the URL while the router is still
+    // committing the previous navigation to the rendered controls.
+    const next = new URLSearchParams(window.location.search);
     next.delete("show_candidates");
     for (const [key, value] of Object.entries(values)) {
       if (value === null) next.delete(key); else next.set(key, value);
     }
     changeParams(next, { replace: true });
-  }, [params, changeParams]);
+  }, [changeParams]);
   useEffect(() => {
     try { sessionStorage.setItem(`pln_geomatch_correction_actor_${kind}`, actor); }
     catch { /* Keep editing available when browser storage is disabled. */ }
@@ -71,6 +73,7 @@ function MapWorkspace({ kind, batchParam, processParam, generationParam, params,
   const viewParam = params.get("map_view");
   const mobileView = viewParam === "targets" || viewParam === "detail" ? viewParam : "map";
   const viewMounted = useRef(false);
+  const returnFocusToTargets = useRef(false);
   useEffect(() => {
     if (!viewMounted.current) { viewMounted.current = true; return; }
     if (window.matchMedia("(max-width: 1279px)").matches) document.getElementById("map-workspace")?.scrollIntoView({ block: "start", behavior: "auto" });
@@ -156,6 +159,21 @@ function MapWorkspace({ kind, batchParam, processParam, generationParam, params,
     setCandidatePage(1); setReason(""); setNotice(""); setFocusedCandidate(null);
     document.getElementById("map-workspace")?.scrollIntoView({ block: "start", behavior: "auto" });
   }, [choose.isPending, expand.isPending, updateView]);
+  const clearTarget = () => {
+    if (choose.isPending || expand.isPending) return;
+    returnFocusToTargets.current = true;
+    updateView({ record_id: null, map_view: "targets" });
+    setCandidatePage(1); setReason(""); setNotice(""); setFocusedCandidate(null);
+  };
+  useEffect(() => {
+    if (selected !== null || !returnFocusToTargets.current) return;
+    returnFocusToTargets.current = false;
+    const heading = document.getElementById("map-target-list-title");
+    const dock = heading?.closest("details");
+    if (dock instanceof HTMLDetailsElement) dock.open = true;
+    heading?.scrollIntoView({ block: "start", behavior: "auto" });
+    heading?.focus({ preventScroll: true });
+  }, [selected, mobileView]);
   const candidateFocus = (id: number) => { updateView({ map_view: "detail" }); const index = candidates.findIndex((item) => item.id === id); if (index >= 0) { setCandidatePage(Math.floor(index / 10) + 1); setFocusedCandidate(id); } };
   useEffect(() => { if (focusedCandidate !== null) { const element = document.getElementById(`candidate-${focusedCandidate}`); element?.scrollIntoView({ behavior: window.matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth", block: "center" }); element?.focus({ preventScroll: true }); } }, [focusedCandidate, candidatePage]);
   const filtered = statusRows.filter((row) => !search.trim() || Object.values(row.fields).some((value) => String(value ?? "").toLowerCase().includes(search.trim().toLowerCase())));
@@ -232,6 +250,11 @@ function MapWorkspace({ kind, batchParam, processParam, generationParam, params,
       if (next !== null) { event.preventDefault(); tabs[next]?.click(); tabs[next]?.focus({ preventScroll: true }); }
     }} className="sticky top-0 z-20 flex gap-1 rounded-lg border border-ui-border bg-white p-1 xl:hidden">{([['map', 'Peta'], ['targets', 'Daftar'], ['detail', 'Detail']] as const).map(([value, label]) => <button key={value} type="button" role="tab" tabIndex={mobileView === value ? 0 : -1} aria-selected={mobileView === value} onClick={() => updateView({ map_view: value })} className={`flex-1 rounded-md px-3 py-2 text-sm ${mobileView === value ? 'bg-ui-accent-soft font-semibold text-ui-accent-text' : 'text-ui-muted'}`}>{label}</button>)}</div>
     <div id="map-workspace" className="geo-map-layout scroll-mt-16">
+      {selected !== null && <div role="group" aria-label="Target yang dipilih" className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-ui-context-border bg-ui-context px-3 py-2 xl:col-span-2">
+        <p className="text-sm font-medium">{active ? `Target baris ${active.row_number}` : "Target terpilih"}</p>
+        <button type="button" onClick={clearTarget} disabled={choose.isPending || expand.isPending} aria-describedby="clear-map-target-note" className={button}><X size={15} />Lepas pilihan target</button>
+        <span id="clear-map-target-note" className="sr-only">Mengosongkan sorotan target dan tampilan kandidat. Keputusan kandidat yang sudah tersimpan tetap dipertahankan.</span>
+      </div>}
       <div className="geo-map-main">
         <div className={mobileView === "map" ? "block" : "hidden xl:block"}>    <section className={panel} aria-label="Pemetaan koreksi">
       <p className="text-sm font-semibold">{rows.isFetching || (run && validRadius && radiusSummary.isPending) ? "Memuat seluruh target…" : `${mapRows.length} baris · ${mapRows.length - noCoordinates} bertitik · ${noCoordinates} tanpa koordinat`} · {descriptor.label}</p>
@@ -240,7 +263,7 @@ function MapWorkspace({ kind, batchParam, processParam, generationParam, params,
     </section>
 </div>
         <div className={mobileView === "targets" ? "block" : "hidden xl:block"}><details open className="geo-map-dock"><summary className="font-medium">Daftar target · {descriptor.label}</summary>    <section className="geo-dock-body" aria-label="Tabel target peta">
-      <h2 className="text-sm font-semibold">Target {descriptor.label}</h2><input type="search" aria-label="Cari target peta" value={search} onChange={(event) => { setSearch(event.target.value); setPage(1); }} placeholder="Cari data target…" className={`${control} w-full`} />
+      <h2 id="map-target-list-title" tabIndex={-1} className="scroll-mt-16 text-sm font-semibold focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-ui-primary">Target {descriptor.label}</h2><input type="search" aria-label="Cari target peta" value={search} onChange={(event) => { setSearch(event.target.value); setPage(1); }} placeholder="Cari data target…" className={`${control} w-full`} />
       <label className="flex flex-col gap-1 text-xs font-semibold">Filter hasil pada radius terpilih<select aria-label="Filter hasil peta" value={statusChoice} onChange={(event) => { setPage(1); updateView({ status: event.target.value, record_id: null }); }} className={control}><option value="all">Semua hasil tersimpan</option>{Object.entries(searchLabel).filter(([key]) => key !== "not_checked").map(([key, label]) => <option key={key} value={key}>{label}</option>)}</select></label>
       <div className="geo-dock-table neo-scrollbar resize-y"><table className="w-full min-w-[620px] text-left text-[13px]"><thead><tr>{["Baris", "IDPEL / Nama", "Koordinat", "Hasil", "Kandidat", "Aksi"].map((label) => <th className="p-3" key={label}>{label}</th>)}</tr></thead><tbody>{pageRows.map((row) => <tr key={row.id} onClick={() => { if (!choose.isPending) select(row.id); }} aria-selected={selected === row.id} className={`cursor-pointer border-t ${selected === row.id ? "bg-blue-50" : "hover:bg-gray-50"}`}><td className="p-3">{row.row_number}</td><td className="p-3">{displayValue(row.fields.idpel)}<p>{displayValue(row.fields.nama)}</p></td><td className="p-3">{coordinates(row.fields) ? `${row.fields.lat}, ${row.fields.lon}` : "Koordinat belum lengkap"}</td><td className="p-3">{searchLabel[row.search_status]}</td><td className="p-3">{row.candidate_count}</td><td className="p-3"><button aria-label={`Pilih target baris ${row.row_number}`} disabled={choose.isPending} onClick={(event) => { event.stopPropagation(); select(row.id); }} className={selected === row.id ? buttonClass.primary : button}>{selected === row.id ? "Terpilih" : "Pilih target"}</button></td></tr>)}</tbody></table>{!rows.isFetching && !pageRows.length && <p className="p-5 text-center text-sm">Tidak ada target sesuai cakupan atau pencarian.</p>}</div>
       <PreviewPagination key={`${generation}-${radius}-${statusChoice}-${search}-${pageSize}`} context="peta" page={activePage} pageSize={pageSize} total={run ? rows.data && radiusSummary.data ? filtered.length : undefined : 0} loading={restoring || rows.isFetching || radiusSummary.isFetching} onPageChange={setPage} onPageSizeChange={setPageSize} />

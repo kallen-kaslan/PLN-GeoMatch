@@ -41,6 +41,8 @@ Pada layar sempit tersedia tab Peta, Daftar, dan Detail, dengan navigasi keyboar
 
 Pemuatan kandidat hanya membaca baris pada versi dan radius yang dipilih; tidak menjalankan pemeriksaan baru maupun menyimpan pilihan. Status memuat, kegagalan, dan target yang belum tersedia ditampilkan terpisah dari hasil tanpa kandidat. Target tanpa koordinat, berbenturan dengan PDPJ, atau bermasalah tidak memicu permintaan kandidat. Memilih kandidat tetap merupakan aksi persetujuan tersendiri.
 
+Tombol **Lepas pilihan target** menghapus sorotan baris, titik aktif, dan tampilan kandidat, lalu mengembalikan fokus ke daftar target. Berkas, proses, versi, radius, pencarian, filter, dan halaman tabel dipertahankan. ID target dihapus dari URL sehingga refresh tidak memilihnya kembali. Tindakan ini tidak membatalkan keputusan kandidat tersimpan; pembatalan keputusan tetap memakai **Batalkan pilihan** beserta aturan alasannya. Pelepasan target tersedia setelah permintaan penyimpanan atau perluasan yang sedang aktif selesai.
+
 Filter radius hanya membaca hasil dalam cakupan versi tersimpan. Perluasan tetap merupakan aksi terpisah untuk seluruh berkas, dengan kontrol yang dibuka secara eksplisit. Pemilihan kandidat tetap memerlukan nama petugas dan aturan alasan perubahan yang sama. Versi historis tetap hanya dapat dibaca.
 
 ## Dashboard dan halaman lain

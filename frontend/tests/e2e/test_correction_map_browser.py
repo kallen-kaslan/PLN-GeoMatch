@@ -4,6 +4,7 @@ from workspace_controls import open_radius_controls
 
 import httpx
 import re
+from urllib.parse import parse_qs, urlparse
 import pytest
 from playwright.sync_api import Page, Route, expect
 from test_corrections_browser import prepare, upload
@@ -214,6 +215,64 @@ def test_select_target_loads_candidates_automatically_and_preserves_read_only_fl
     expect(page.get_by_role("region", name="Detail target terpilih", exact=True)).to_contain_text("belum mempunyai koordinat lengkap")
     expect(panel).to_have_count(0)
     assert not rejected_requests
+
+
+@pytest.mark.parametrize("kind", ["idpel_kosong", "idpel_tidak_ketemu"])
+def test_clear_target_keeps_saved_decision_filters_and_table_page(
+    page: Page, servers: tuple[str, str], kind: str,
+) -> None:
+    _, process = setup_map(page, servers[1], kind=kind, count=30)
+    page.get_by_label("Cari target peta", exact=True).fill("Target")
+    page.get_by_label("Filter hasil peta", exact=True).select_option("matched")
+    expect(page).to_have_url(re.compile(r"[?&]status=matched(?:&|$)"))
+    radius = page.get_by_label("Radius peta (meter)", exact=True)
+    radius.fill("1")
+    expect(page.get_by_role("region", name="Ringkasan radius peta", exact=True)).to_contain_text("Radius 1 m")
+    expect(page.get_by_label("Filter hasil peta", exact=True)).to_have_value("matched")
+    jump = page.get_by_label("Nomor halaman peta", exact=True)
+    jump.fill("2")
+    jump.press("Enter")
+    page.get_by_role("button", name="Pilih target baris 27", exact=True).click()
+    candidates = page.get_by_role("region", name="Kandidat target peta", exact=True)
+    expect(candidates).to_contain_text("12 kandidat tersimpan")
+    page.get_by_label("Petugas peta", exact=True).fill("Petugas Uji Pelepasan")
+    candidates.get_by_role("button", name="Pilih kandidat 1", exact=True).click()
+    detail = page.get_by_role("region", name="Detail target terpilih", exact=True)
+    expect(detail).to_contain_text("Pilihan aktif: 002")
+    before = parse_qs(urlparse(page.url).query)
+    record_id = before["record_id"][0]
+    choice_url = f"{servers[1]}/corrections/{kind}/checks/{process}/records/{record_id}/choice"
+    saved = httpx.get(choice_url).json()
+    assert saved["current"]["candidate_id"]
+
+    page.locator(".geo-map-dock > summary").click()
+    page.get_by_role("button", name="Lepas pilihan target", exact=True).click()
+    expect(detail).to_have_count(0)
+    expect(candidates).to_have_count(0)
+    table = page.get_by_role("region", name="Tabel target peta", exact=True)
+    expect(table.locator('tr[aria-selected="true"]')).to_have_count(0)
+    expect(page.get_by_role("heading", name=f"Target {'IDPEL Kosong' if kind == 'idpel_kosong' else 'IDPEL Tidak Ketemu'}", exact=True)).to_be_focused()
+    expect(jump).to_have_value("2")
+    expect(page.get_by_label("Cari target peta", exact=True)).to_have_value("Target")
+    expect(page.get_by_label("Filter hasil peta", exact=True)).to_have_value("matched")
+    expect(radius).to_have_value("1")
+    expect(page.locator(".leaflet-overlay-pane path[fill='#2563eb']")).to_have_count(0)
+    after = parse_qs(urlparse(page.url).query)
+    assert "record_id" not in after
+    for key in ("category", "batch_id", "process_id", "generation", "radius_meters", "status"):
+        assert after.get(key) == before.get(key)
+    assert httpx.get(choice_url).json() == saved
+
+    page.reload()
+    expect(candidates).to_have_count(0)
+    expect(detail).to_have_count(0)
+    expect(radius).to_have_value("1")
+    jump.fill("2")
+    jump.press("Enter")
+    page.get_by_role("button", name="Pilih target baris 27", exact=True).click()
+    expect(candidates).to_contain_text("12 kandidat tersimpan")
+    expect(detail).to_contain_text("Pilihan aktif: 002")
+    assert httpx.get(choice_url).json() == saved
 
 
 @pytest.mark.parametrize("kind", ["idpel_kosong", "idpel_tidak_ketemu"])
