@@ -5,6 +5,7 @@ import pytest
 from playwright.sync_api import Page, expect
 
 from test_corrections_browser import prepare, upload
+from workspace_controls import open_radius_controls
 
 
 @pytest.mark.parametrize("kind", ["idpel_kosong", "idpel_tidak_ketemu"])
@@ -48,9 +49,10 @@ def test_partial_map_choice_survives_more_saved_rows_and_completion(
     page.get_by_role("button", name="Pilih target baris 2", exact=True).click()
     page.get_by_label("Petugas peta", exact=True).fill("Petugas Peta Bertahap")
     page.get_by_label("Radius peta (meter)", exact=True).fill("100")
+    open_radius_controls(page)
     expect(page.get_by_role("button", name="Perluas pemeriksaan dan tampilkan kandidat", exact=True)).to_be_disabled()
     page.get_by_label("Radius peta (meter)", exact=True).fill("10")
-    page.get_by_role("button", name="Tampilkan kandidat target", exact=True).click()
+
     candidates = page.get_by_role("region", name="Kandidat target peta", exact=True)
     expect(candidates).to_contain_text("2 kandidat tersimpan")
     candidates.get_by_role("button", name="Pilih kandidat 1", exact=True).click()

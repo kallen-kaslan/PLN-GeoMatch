@@ -57,21 +57,21 @@ export default function LoginPage() {
     <main className="min-h-[100dvh] bg-neo-white px-3 sm:px-4 py-6 sm:py-12 flex flex-col items-center justify-center text-neo-black safe-top safe-bottom">
       <div className="w-full max-w-md">
         <header className="mb-6 sm:mb-8 text-center">
-          <p className="text-xs sm:text-sm font-bold uppercase tracking-[0.18em] text-neo-border">PLN GeoMatch</p>
-          <h1 className="mt-2 sm:mt-3 text-2xl sm:text-3xl font-black tracking-tight">
+          <p className="text-xs sm:text-sm font-semibold uppercase tracking-[0.18em] text-ui-muted">PLN GeoMatch</p>
+          <h1 className="mt-2 sm:mt-3 text-2xl sm:text-3xl font-semibold tracking-tight">
             Verifikasi Koordinat Pelanggan
           </h1>
         </header>
 
-        <section className="border-2 sm:border-3 border-neo-black bg-white shadow-[4px_4px_0_#0a0a0a] sm:shadow-[6px_6px_0_#0a0a0a]">
-          <div className="border-b-2 sm:border-b-3 border-neo-black px-5 py-4 sm:px-8 sm:py-5">
+        <section className="geo-panel overflow-hidden">
+          <div className="border-b border-ui-context-border bg-ui-context px-5 py-4 sm:px-8 sm:py-5">
             <div className="flex items-center gap-3">
-              <span className="flex h-10 w-10 sm:h-11 sm:w-11 shrink-0 items-center justify-center border-2 border-neo-black bg-neo-black text-white">
+              <span className="flex h-10 w-10 sm:h-11 sm:w-11 shrink-0 items-center justify-center rounded-lg bg-neo-accent text-white">
                 {isRegister ? <UserPlus size={20} aria-hidden="true" /> : <User size={20} aria-hidden="true" />}
               </span>
               <div>
-                <h2 className="text-lg sm:text-xl font-black">{isRegister ? "Buat akun" : "Masuk"}</h2>
-                <p className="text-xs sm:text-sm text-neo-border">
+                <h2 className="text-lg sm:text-xl font-semibold">{isRegister ? "Buat akun" : "Masuk"}</h2>
+                <p className="text-xs sm:text-sm text-ui-muted">
                   {isRegister ? "Daftarkan akun GeoMatch Anda" : "Masuk ke akun GeoMatch Anda"}
                 </p>
               </div>
@@ -80,19 +80,19 @@ export default function LoginPage() {
 
           <form onSubmit={handleSubmit} className="space-y-4 sm:space-y-5 px-5 py-5 sm:px-8 sm:py-8">
             {error && (
-              <div role="alert" className="border-2 border-[#dc2626] bg-[#fee2e2] px-3 py-2 text-xs sm:text-sm font-semibold text-[#991b1b]">
+              <div role="alert" className="border border-[#dc2626] bg-[#fee2e2] px-3 py-2 text-xs sm:text-sm font-semibold text-[#991b1b]">
                 {error}
               </div>
             )}
 
             <div>
-              <label htmlFor="username" className="mb-1.5 block text-xs sm:text-sm font-bold">Username</label>
+              <label htmlFor="username" className="mb-1.5 block text-xs sm:text-sm font-semibold">Username</label>
               <div className="relative">
-                <User className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-neo-border" aria-hidden="true" />
+                <User className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-ui-muted" aria-hidden="true" />
                 <input
                   id="username"
                   autoComplete="username"
-                  className="mobile-input w-full border-2 border-neo-black bg-white py-2.5 sm:py-3 pl-10 pr-3 text-neo-black placeholder:text-gray-500 focus:outline-none focus:ring-2 focus:ring-neo-accent text-sm"
+                  className="mobile-input w-full border border-ui-border bg-white py-2.5 sm:py-3 pl-10 pr-3 text-neo-black placeholder:text-gray-500 focus:outline-none focus:ring-2 focus:ring-neo-accent text-sm"
                   value={username}
                   onChange={(e) => setUsername(e.target.value)}
                   placeholder="Username"
@@ -103,13 +103,13 @@ export default function LoginPage() {
 
             {isRegister && (
               <div>
-                <label htmlFor="email" className="mb-1.5 block text-xs sm:text-sm font-bold">Email</label>
+                <label htmlFor="email" className="mb-1.5 block text-xs sm:text-sm font-semibold">Email</label>
                 <div className="relative">
-                  <Mail className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-neo-border" aria-hidden="true" />
+                  <Mail className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-ui-muted" aria-hidden="true" />
                   <input
                     id="email"
                     autoComplete="email"
-                    className="mobile-input w-full border-2 border-neo-black bg-white py-2.5 sm:py-3 pl-10 pr-3 text-neo-black placeholder:text-gray-500 focus:outline-none focus:ring-2 focus:ring-neo-accent text-sm"
+                    className="mobile-input w-full border border-ui-border bg-white py-2.5 sm:py-3 pl-10 pr-3 text-neo-black placeholder:text-gray-500 focus:outline-none focus:ring-2 focus:ring-neo-accent text-sm"
                     type="email"
                     value={email}
                     onChange={(e) => setEmail(e.target.value)}
@@ -121,13 +121,13 @@ export default function LoginPage() {
             )}
 
             <div>
-              <label htmlFor="password" className="mb-1.5 block text-xs sm:text-sm font-bold">Password</label>
+              <label htmlFor="password" className="mb-1.5 block text-xs sm:text-sm font-semibold">Password</label>
               <div className="relative">
-                <Lock className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-neo-border" aria-hidden="true" />
+                <Lock className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-ui-muted" aria-hidden="true" />
                 <input
                   id="password"
                   autoComplete={isRegister ? "new-password" : "current-password"}
-                  className="mobile-input w-full border-2 border-neo-black bg-white py-2.5 sm:py-3 pl-10 pr-3 text-neo-black placeholder:text-gray-500 focus:outline-none focus:ring-2 focus:ring-neo-accent text-sm"
+                  className="mobile-input w-full border border-ui-border bg-white py-2.5 sm:py-3 pl-10 pr-3 text-neo-black placeholder:text-gray-500 focus:outline-none focus:ring-2 focus:ring-neo-accent text-sm"
                   type="password"
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
@@ -139,13 +139,13 @@ export default function LoginPage() {
 
             {isRegister && (
               <div>
-                <label htmlFor="confirm-password" className="mb-1.5 block text-xs sm:text-sm font-bold">Konfirmasi password</label>
+                <label htmlFor="confirm-password" className="mb-1.5 block text-xs sm:text-sm font-semibold">Konfirmasi password</label>
                 <div className="relative">
-                  <Lock className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-neo-border" aria-hidden="true" />
+                  <Lock className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-ui-muted" aria-hidden="true" />
                   <input
                     id="confirm-password"
                     autoComplete="new-password"
-                    className="mobile-input w-full border-2 border-neo-black bg-white py-2.5 sm:py-3 pl-10 pr-3 text-neo-black placeholder:text-gray-500 focus:outline-none focus:ring-2 focus:ring-neo-accent text-sm"
+                    className="mobile-input w-full border border-ui-border bg-white py-2.5 sm:py-3 pl-10 pr-3 text-neo-black placeholder:text-gray-500 focus:outline-none focus:ring-2 focus:ring-neo-accent text-sm"
                     type="password"
                     value={confirmPassword}
                     onChange={(e) => setConfirmPassword(e.target.value)}
@@ -159,17 +159,17 @@ export default function LoginPage() {
             <button
               type="submit"
               disabled={loading}
-              className="touch-min w-full border-2 border-neo-black bg-neo-black px-4 py-3 sm:py-3.5 font-bold text-white shadow-[3px_3px_0_#ff6b35] transition hover:translate-x-[1px] hover:translate-y-[1px] hover:shadow-[2px_2px_0_#ff6b35] active:translate-y-0.5 disabled:cursor-not-allowed disabled:opacity-50"
+              className="touch-min w-full rounded-md border border-ui-primary bg-ui-primary px-4 py-3 sm:py-3.5 font-semibold text-white  transition-colors hover:bg-ui-primary-hover   disabled:cursor-not-allowed disabled:opacity-50"
             >
               {loading ? "Memproses..." : isRegister ? "Daftar" : "Masuk"}
             </button>
 
-            <p className="border-t border-neo-border pt-4 sm:pt-5 text-center text-xs sm:text-sm text-neo-border">
+            <p className="border-t border-ui-border pt-4 sm:pt-5 text-center text-xs sm:text-sm text-ui-muted">
               {isRegister ? "Sudah punya akun?" : "Belum punya akun?"}{" "}
               <button
                 type="button"
                 onClick={() => switchMode(isRegister ? "login" : "register")}
-                className="font-bold text-neo-black underline decoration-neo-accent decoration-2 underline-offset-4 hover:text-neo-border focus:outline-none focus:ring-2 focus:ring-neo-accent p-1"
+                className="font-semibold text-neo-black underline decoration-neo-accent decoration-2 underline-offset-4 hover:text-ui-muted focus:outline-none focus:ring-2 focus:ring-neo-accent p-1"
               >
                 {isRegister ? "Masuk" : "Daftar sekarang"}
               </button>
@@ -177,7 +177,7 @@ export default function LoginPage() {
           </form>
         </section>
 
-        <p className="mt-5 sm:mt-6 text-center text-xs text-neo-border">
+        <p className="mt-5 sm:mt-6 text-center text-xs text-ui-muted">
           Phase 1 · Autentikasi simulasi
         </p>
       </div>

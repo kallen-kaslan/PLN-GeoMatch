@@ -1,8 +1,11 @@
 """Real map interactions, stored-radius reuse, choices, and responsive fallback."""
 
+from workspace_controls import open_radius_controls
+
 import httpx
+import re
 import pytest
-from playwright.sync_api import Page, expect
+from playwright.sync_api import Page, Route, expect
 from test_corrections_browser import prepare, upload
 
 
@@ -49,8 +52,7 @@ def test_map_all_points_hover_selection_and_candidate_pagination(
     page: Page, servers: tuple[str, str]
 ) -> None:
     setup_map(page, servers[1], count=127)
-    show = page.get_by_role("button", name="Tampilkan kandidat target", exact=True)
-    expect(show).to_be_disabled()
+    expect(page.get_by_role("button", name="Tampilkan kandidat target", exact=True)).to_have_count(0)
     # Load all API pages (>100 rows), independently of the 25-row table page.
     point = page.get_by_role("button", name="127 target bertumpuk", exact=True)
     expect(point).to_be_visible(timeout=20000)
@@ -64,8 +66,6 @@ def test_map_all_points_hover_selection_and_candidate_pagination(
     expect(
         page.get_by_role("region", name="Detail target terpilih", exact=True)
     ).to_contain_text("Target 127")
-    expect(show).to_be_enabled()
-    show.click()
     candidates = page.get_by_role("region", name="Kandidat target peta", exact=True)
     expect(candidates).to_contain_text("12 kandidat tersimpan", timeout=20000)
     expect(candidates.get_by_role("article")).to_have_count(10)
@@ -74,7 +74,7 @@ def test_map_all_points_hover_selection_and_candidate_pagination(
     page.get_by_role("button", name="Halaman peta berikutnya", exact=True).click()
     page.get_by_label("Cari target peta", exact=True).fill("Tanpa koordinat")
     page.get_by_role("button", name="Pilih target baris 129", exact=True).click()
-    expect(show).to_be_disabled()
+    expect(page.get_by_role("region", name="Kandidat target peta", exact=True)).to_have_count(0)
     expect(
         page.get_by_role("region", name="Detail target terpilih", exact=True)
     ).to_contain_text("belum mempunyai koordinat lengkap")
@@ -92,7 +92,7 @@ def test_map_highlights_selected_target_and_links_candidate_to_later_card_page(
     expect(
         page.get_by_role("button", name="Titik koreksi baris 3", exact=True)
     ).to_have_attribute("fill", "#9ca3af")
-    page.get_by_role("button", name="Tampilkan kandidat target", exact=True).click()
+
     candidates = page.get_by_role("region", name="Kandidat target peta", exact=True)
     expect(candidates).to_contain_text("12 kandidat tersimpan", timeout=20000)
     page.locator(".leaflet-overlay-pane path[fill='#22c55e']").click()
@@ -109,8 +109,6 @@ def test_choose_replace_radius_expansion_history_and_category_isolation(
     batch, process = setup_map(page, servers[1], kind="idpel_tidak_ketemu", count=2)
     page.get_by_role("button", name="Pilih target baris 2", exact=True).click()
     page.get_by_label("Petugas peta", exact=True).fill("Petugas Browser")
-    show = page.get_by_role("button", name="Tampilkan kandidat target", exact=True)
-    show.click()
     candidates = page.get_by_role("region", name="Kandidat target peta", exact=True)
     expect(candidates).to_contain_text("12 kandidat tersimpan", timeout=20000)
     candidates.get_by_role("button", name="Pilih kandidat 1", exact=True).click()
@@ -126,6 +124,7 @@ def test_choose_replace_radius_expansion_history_and_category_isolation(
     expect(detail).to_contain_text("Pilihan aktif: 003", timeout=10000)
     detail.get_by_text("Riwayat pilihan (2)", exact=True).click()
     expect(detail).to_contain_text("IDPEL 002")
+    open_radius_controls(page)
     page.get_by_label("Radius perluasan (meter)", exact=True).fill("100")
     page.get_by_role(
         "button", name="Perluas pemeriksaan dan tampilkan kandidat", exact=True
@@ -136,7 +135,6 @@ def test_choose_replace_radius_expansion_history_and_category_isolation(
     ).to_have_count(0)
     expect(detail).to_contain_text("Pilihan aktif: 003")
     page.get_by_label("Radius peta (meter)", exact=True).fill("1")
-    show.click()
     expect(candidates).to_contain_text("12 kandidat tersimpan", timeout=15000)
     assert (
         len(
@@ -169,12 +167,53 @@ def test_map_unavailable_keeps_mobile_table_and_choice_flow(
     page.route("**/leaflet.js", lambda route: route.abort())
     setup_map(page, servers[1], count=1)
     expect(page.get_by_text("Peta belum dapat dimuat.", exact=False)).to_be_visible()
+    page.get_by_role("tab", name="Daftar", exact=True).click()
     page.get_by_role("button", name="Pilih target baris 2", exact=True).click()
-    page.get_by_role("button", name="Tampilkan kandidat target", exact=True).click()
+
     expect(
         page.get_by_role("region", name="Kandidat target peta", exact=True)
     ).to_contain_text("12 kandidat tersimpan", timeout=20000)
     assert page.evaluate("document.documentElement.scrollWidth <= window.innerWidth")
+
+
+def test_select_target_loads_candidates_automatically_and_preserves_read_only_flow(
+    page: Page, servers: tuple[str, str]
+) -> None:
+    _, process = setup_map(page, servers[1], count=2, stacked=False)
+    requests: list[Route] = []
+    candidate_url = re.compile(r"/corrections/idpel_kosong/records/\d+\?.*radius_meters=")
+    page.route(candidate_url, lambda route: requests.append(route))
+    with page.expect_request(candidate_url):
+        page.get_by_role("button", name="Pilih target baris 2", exact=True).click()
+    panel = page.get_by_role("region", name="Kandidat target peta", exact=True)
+    expect(panel).to_have_attribute("aria-busy", "true")
+    expect(panel.get_by_role("status")).to_contain_text("Memuat kandidat")
+    expect(panel.get_by_text("0 kandidat tersimpan", exact=False)).to_have_count(0)
+    assert requests
+    requests[0].continue_()
+    page.unroute(candidate_url)
+    expect(panel).to_contain_text("12 kandidat tersimpan")
+    expect(panel).to_have_attribute("aria-busy", "false")
+    page.get_by_role("button", name="Pilih target baris 3", exact=True).click()
+    expect(panel).to_contain_text("1 kandidat tersimpan")
+    expect(panel.get_by_role("article")).to_have_count(1)
+    expect(panel.get_by_role("article")).to_contain_text("099")
+    expect(page.get_by_role("button", name="Titik koreksi baris 3", exact=True)).to_have_attribute("fill", "#2563eb")
+    map_box = page.get_by_role("region", name="Pemetaan koreksi", exact=True).bounding_box()
+    assert map_box and 0 <= map_box["y"] < page.viewport_size["height"] / 3
+    page.reload()
+    expect(panel).to_contain_text("1 kandidat tersimpan")
+    expect(panel.get_by_role("article")).to_contain_text("099")
+    history = httpx.get(f"{servers[1]}/corrections/idpel_kosong/checks/{process}/results/history")
+    history.raise_for_status()
+    assert history.json()["total"] == 0
+    # A row without coordinates exposes its explanation without issuing a candidate request.
+    rejected_requests: list[Route] = []
+    page.route(candidate_url, lambda route: (rejected_requests.append(route), route.continue_()))
+    page.get_by_role("button", name="Pilih target baris 4", exact=True).click()
+    expect(page.get_by_role("region", name="Detail target terpilih", exact=True)).to_contain_text("belum mempunyai koordinat lengkap")
+    expect(panel).to_have_count(0)
+    assert not rejected_requests
 
 
 @pytest.mark.parametrize("kind", ["idpel_kosong", "idpel_tidak_ketemu"])
@@ -225,6 +264,7 @@ def test_map_preview_page_input_sizes_filters_and_mobile(
     expect(jump).to_have_value("1")
     expect(footer).to_contain_text("Menampilkan 1–25")
     page.set_viewport_size({"width": 390, "height": 844})
+    page.get_by_role("tab", name="Daftar", exact=True).click()
     expect(jump).to_be_visible()
     expect(size).to_be_visible()
     assert page.evaluate("document.documentElement.scrollWidth <= window.innerWidth")

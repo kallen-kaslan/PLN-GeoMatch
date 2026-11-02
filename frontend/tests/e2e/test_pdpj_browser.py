@@ -97,6 +97,8 @@ def test_duplicate_pdpj_identities_allow_normal_completion_with_different_coordi
         page.get_by_role("list", name="Catatan data PDPJ", exact=True)
     ).to_contain_text("Validasi tetap dapat dilanjutkan")
     expect(page.get_by_role("button", name="Setujui baris", exact=True)).to_be_enabled()
+    if page.get_by_role("dialog", name="Panel pemeriksaan PDPJ", exact=True).count():
+        page.get_by_role("button", name="Tutup detail PDPJ", exact=True).click()
     finish.click()
     expect(
         page.get_by_role("dialog", name="PDPJ selesai divalidasi", exact=True)
@@ -188,7 +190,7 @@ def test_bulk_exceptions_enable_correction_map_and_preserve_reserved_identities(
     point = page.get_by_role("button", name="Titik koreksi baris 2", exact=True)
     expect(point).to_be_visible(timeout=20000)
     point.click()
-    page.get_by_role("button", name="Tampilkan kandidat target", exact=True).click()
+
     candidates = page.get_by_role("region", name="Kandidat target peta", exact=True)
     expect(candidates).to_contain_text("1 kandidat tersimpan", timeout=20000)
     expect(candidates).to_contain_text("003")
@@ -263,6 +265,7 @@ def test_pdpj_import_recommendations_manual_exception_completion_and_matching(
     expect(
         detail.get_by_text("Pengisian manual · Petugas Browser", exact=True)
     ).to_be_visible()
+    page.get_by_role("button", name="Tutup detail PDPJ", exact=True).click()
     page.get_by_role("button", name="Detail PDPJ baris 3", exact=True).click()
     expect(detail.get_by_text("IDPEL tidak ditemukan", exact=True)).to_be_visible()
     detail.get_by_label("Alasan perubahan / pengecualian", exact=True).fill(
@@ -272,6 +275,8 @@ def test_pdpj_import_recommendations_manual_exception_completion_and_matching(
         "button", name="Simpan pengecualian kelengkapan", exact=True
     ).click()
     expect(finish).to_be_enabled()
+    if page.get_by_role("dialog", name="Panel pemeriksaan PDPJ", exact=True).count():
+        page.get_by_role("button", name="Tutup detail PDPJ", exact=True).click()
     finish.click()
     dialog = page.get_by_role("dialog", name="PDPJ selesai divalidasi", exact=True)
     expect(dialog).to_be_visible()
@@ -335,6 +340,7 @@ def test_replacing_filled_recommendation_requires_explicit_overwrite(
     apply.click()
     expect(detail.get_by_role("cell", name="Nama Rujukan", exact=True)).to_be_visible()
     expect(detail.get_by_role("cell", name="Nama Asli", exact=True)).to_be_visible()
+    page.get_by_role("button", name="Tutup detail PDPJ", exact=True).click()
     page.get_by_role("button", name="Selesaikan validasi PDPJ", exact=True).click()
     page.get_by_role("dialog").get_by_role(
         "button", name="Lihat hasil validasi", exact=True
@@ -378,6 +384,7 @@ def test_mobile_pending_pdpj_mapping_and_manual_coordinates(
     detail.get_by_role("button", name="Simpan perubahan manual", exact=True).click()
     expect(detail.get_by_text("Koordinat lengkap", exact=True)).to_be_visible()
     assert page.evaluate("document.documentElement.scrollWidth <= window.innerWidth")
+    page.get_by_role("button", name="Tutup detail PDPJ", exact=True).click()
     page.get_by_role("button", name="Selesaikan validasi PDPJ", exact=True).click()
     expect(
         page.get_by_role("dialog", name="PDPJ selesai divalidasi", exact=True)

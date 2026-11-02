@@ -1,5 +1,7 @@
 """Historical radius views and XLSX downloads stay on the selected search version."""
 
+from workspace_controls import open_radius_controls
+
 from pathlib import Path
 
 import httpx
@@ -16,11 +18,12 @@ def test_radius_dropdown_historical_choices_and_versioned_xlsx(
     batch, process = setup_map(page, servers[1], kind=kind, count=2)
     page.get_by_role("button", name="Pilih target baris 2", exact=True).click()
     page.get_by_label("Petugas peta", exact=True).fill("Petugas Radius")
-    page.get_by_role("button", name="Tampilkan kandidat target", exact=True).click()
+
     candidates = page.get_by_role("region", name="Kandidat target peta", exact=True)
     candidates.get_by_role("button", name="Pilih kandidat 1", exact=True).click()
     detail = page.get_by_role("region", name="Detail target terpilih", exact=True)
     expect(detail).to_contain_text("Pilihan aktif: 002")
+    open_radius_controls(page)
     page.get_by_label("Radius perluasan (meter)", exact=True).fill("100")
     page.get_by_role(
         "button", name="Perluas pemeriksaan dan tampilkan kandidat", exact=True
@@ -56,7 +59,7 @@ def test_radius_dropdown_historical_choices_and_versioned_xlsx(
     expect(
         detail.get_by_role("button", name="Batalkan pilihan", exact=True)
     ).to_be_disabled()
-    page.get_by_role("button", name="Tampilkan kandidat target", exact=True).click()
+
     expect(candidates).to_contain_text("12 kandidat tersimpan")
 
     def verify_download(

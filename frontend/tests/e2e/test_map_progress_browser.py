@@ -1,5 +1,7 @@
 """Radius expansion exposes real checkpoints and recovers scope during server work."""
 
+from workspace_controls import open_radius_controls
+
 import re
 from pathlib import Path
 
@@ -23,12 +25,13 @@ def test_radius_expansion_progress_refresh_pause_resume_and_retained_choices(
     _, process = setup_map(page, servers[1], kind=kind, count=205)
     page.get_by_role("button", name="Pilih target baris 2", exact=True).click()
     page.get_by_label("Petugas peta", exact=True).fill("Petugas Perluasan")
-    page.get_by_role("button", name="Tampilkan kandidat target", exact=True).click()
+
     candidates = page.get_by_role("region", name="Kandidat target peta", exact=True)
     expect(candidates).to_contain_text("12 kandidat tersimpan")
     candidates.get_by_role("button", name="Pilih kandidat 1", exact=True).click()
     detail = page.get_by_role("region", name="Detail target terpilih", exact=True)
     expect(detail).to_contain_text("Pilihan aktif: 002")
+    open_radius_controls(page)
     page.get_by_label("Radius perluasan (meter)", exact=True).fill("150")
     (activity_files / "block").write_text("correction_matching")
     page.get_by_role(
@@ -100,7 +103,7 @@ def test_radius_expansion_progress_refresh_pause_resume_and_retained_choices(
         )
         expect(refresh).to_be_enabled()
         refresh.click()
-        page.get_by_role("button", name="Tampilkan kandidat target", exact=True).click()
+
         expect(candidates).to_contain_text("12 kandidat tersimpan")
         assert len(httpx.get(base).json()["runs"]) == 2
         versions.select_option("2")
@@ -121,7 +124,7 @@ def test_radius_expansion_progress_refresh_pause_resume_and_retained_choices(
         .locator("dd")
     ).to_have_text("0")
     expect(detail).to_contain_text("Pilihan aktif: 002")
-    page.get_by_role("button", name="Tampilkan kandidat target", exact=True).click()
+
     expect(progress.get_by_label("Estimasi waktu tahap koreksi")).to_contain_text(
         "Perkiraan waktu kerja tersisa"
     )

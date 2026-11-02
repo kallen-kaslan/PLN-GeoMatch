@@ -31,7 +31,7 @@ def test_partial_results_export_history_resume_replace_and_cancel(
     page.goto(f"/peta-koreksi?category={kind}&batch_id={batch}&process_id={process}")
     page.get_by_role("button", name="Pilih target baris 2", exact=True).click()
     page.get_by_label("Petugas peta", exact=True).fill("Petugas Hasil")
-    page.get_by_role("button", name="Tampilkan kandidat target", exact=True).click()
+
     candidates = page.get_by_role("region", name="Kandidat target peta", exact=True)
     candidates.get_by_role("button", name="Pilih kandidat 1", exact=True).click()
     expect(page.get_by_role("region", name="Detail target terpilih", exact=True)).to_contain_text("Pilihan aktif: 002")
@@ -98,7 +98,7 @@ def test_partial_results_export_history_resume_replace_and_cancel(
     page.get_by_role("link", name="Buka Peta Koreksi", exact=True).click()
     page.get_by_role("button", name="Pilih target baris 2", exact=True).click()
     page.get_by_label("Petugas peta", exact=True).fill("Petugas Hasil")
-    page.get_by_role("button", name="Tampilkan kandidat target", exact=True).click()
+
     page.get_by_label("Alasan perubahan pilihan", exact=True).fill("Meter kandidat kedua lebih sesuai")
     candidates.get_by_role("button", name="Pilih kandidat 2", exact=True).click()
     expect(page.get_by_role("region", name="Detail target terpilih", exact=True)).to_contain_text("Pilihan aktif: 003")
