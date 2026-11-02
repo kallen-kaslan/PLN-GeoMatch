@@ -1,6 +1,7 @@
 {
   "enabledPlugins": {
     "agent-skills@addy-agent-skills": true,
-    "supermemory@supermemory-plugins": true
+    "supermemory@supermemory-plugins": true,
+    "gsap-skills@gsap-skills": true
   }
 }

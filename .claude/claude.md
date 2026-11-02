@@ -45,3 +45,14 @@ Do not launch browser automation for unrelated tasks. Ask for authorization befo
 - Gunakan ukuran, warna, dan stroke yang konsisten dengan desain.
 - Import hanya ikon yang diperlukan.
 - Periksa framework dan package yang sudah digunakan sebelum memasang dependency baru.
+
+### GSAP Animation Guidelines
+
+- Pertimbangkan GSAP untuk animasi kompleks, timeline berurutan, stagger, scroll-triggered animation, SVG, dan transisi yang membutuhkan kontrol presisi.
+- Sebelum implementasi, periksa framework dan dependency project.
+- Jika GSAP diperlukan tetapi belum terpasang, pasang dependency di project menggunakan package manager yang sesuai.
+- Gunakan dokumentasi dan skill resmi GSAP untuk memilih API dan plugin yang tepat.
+- Untuk React, pastikan animasi dibersihkan dengan benar saat komponen dilepas; pertimbangkan `@gsap/react` dan `useGSAP()`.
+- Untuk animasi sederhana seperti hover atau perubahan warna, prioritaskan CSS jika sudah memadai.
+- Hormati `prefers-reduced-motion` dan hindari animasi yang mengganggu aksesibilitas atau performa.
+- Jangan memasang GSAP atau plugin tambahan jika tidak dibutuhkan oleh implementasi.

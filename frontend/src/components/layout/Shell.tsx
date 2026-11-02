@@ -4,7 +4,7 @@ import Sidebar from "./Sidebar";
 
 export default function Shell() {
   return (
-    <div className="min-h-[100vh] min-h-[100dvh] flex flex-col bg-neo-white text-neo-black border-neo-border border-l-0 lg:border-l-2 border-r-0 lg:border-r-2 max-w-[1920px] mx-auto w-full">
+    <div className="min-h-[100dvh] flex flex-col bg-neo-white text-neo-black border-neo-border border-l-0 lg:border-l-2 border-r-0 lg:border-r-2 max-w-[1920px] mx-auto w-full">
       <Navbar />
       <div className="flex-1 flex overflow-hidden relative">
         <Sidebar />
