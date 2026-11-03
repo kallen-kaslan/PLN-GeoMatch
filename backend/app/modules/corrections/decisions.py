@@ -2,7 +2,7 @@
 
 from typing import Annotated, Any
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 from sqlalchemy.orm import Session
 
@@ -54,16 +54,16 @@ def decision_info(event: CorrectionDecision) -> dict[str, Any]:
     }
 
 
-def choice_history(db: Session, process_id: int, record_id: int) -> dict[str, Any]:
-    events = (
-        db.query(CorrectionDecision)
-        .filter(
-            CorrectionDecision.process_id == process_id,
-            CorrectionDecision.target_record_id == record_id,
-        )
-        .order_by(CorrectionDecision.revision.desc())
-        .all()
+def choice_history(
+    db: Session, process_id: int, record_id: int, generation: int | None = None
+) -> dict[str, Any]:
+    query = db.query(CorrectionDecision).filter(
+        CorrectionDecision.process_id == process_id,
+        CorrectionDecision.target_record_id == record_id,
     )
+    if generation is not None:
+        query = query.filter(CorrectionDecision.generation <= generation)
+    events = query.order_by(CorrectionDecision.revision.desc()).all()
     return {
         "revision": events[0].revision if events else 0,
         "current": decision_info(events[0]) if events else None,
@@ -90,10 +90,16 @@ def target_scope(
 
 @router.get("/{kind}/checks/{process_id}/records/{record_id}/choice")
 def get_choice(
-    kind: CorrectionKind, process_id: int, record_id: int, db: DbSession
+    kind: CorrectionKind,
+    process_id: int,
+    record_id: int,
+    db: DbSession,
+    generation: int | None = Query(None, ge=1),
 ) -> dict[str, Any]:
-    target_scope(db, kind, process_id, record_id)
-    return choice_history(db, process_id, record_id)
+    process = target_scope(db, kind, process_id, record_id)
+    if generation is not None:
+        selected_run(db, process, generation, include_partial=True)
+    return choice_history(db, process_id, record_id, generation)
 
 
 @router.post("/{kind}/checks/{process_id}/records/{record_id}/choice")

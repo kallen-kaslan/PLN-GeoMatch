@@ -11,6 +11,7 @@ from app.models.correction import CorrectionAttempt, CorrectionCheck
 from app.models.matching import MatchingRun, ProcessStatus, ReconciliationProcess
 from app.models.pdpj import PdpjReview
 from app.models.upload import BatchStatus, DatasetType, UploadBatch
+from app.modules.corrections.observations import ALL_OBSERVATIONS_POLICY
 from app.modules.pdpj.service import completed_review, lock_review_session
 from app.modules.spatial.pipeline import pin_pipeline_sources
 from app.modules.upload.normalization import (
@@ -112,7 +113,14 @@ def selected_run(
             .order_by(MatchingRun.generation.desc())
             .first()
         )
-        if latest is not None and latest.processing:
+        if (
+            latest is not None
+            and latest.processing
+            and not (
+                latest.status == ProcessStatus.FAILED
+                and latest.processing.get("background_execution")
+            )
+        ):
             return latest
     number = generation if generation is not None else process.current_generation
     if not number:
@@ -137,6 +145,7 @@ def reserve_run(
     request_key: str,
     actor: str,
     radius: float,
+    restart_paused: bool = False,
 ) -> MatchingRun:
     """Reserve all candidates in radius; never delete an earlier search or decision."""
     pending = (
@@ -148,7 +157,14 @@ def reserve_run(
         .first()
     )
     if pending:
-        raise HTTPException(409, "Masih ada pemeriksaan yang sedang berjalan")
+        if not (
+            restart_paused
+            and pending.candidate_policy == 1
+            and (pending.processing or {}).get("state") == "paused"
+        ):
+            raise HTTPException(409, "Masih ada pemeriksaan yang sedang berjalan")
+        pending.status = ProcessStatus.FAILED
+        pending.failure_code = "superseded_by_observation_policy"
     latest = (
         db.query(func.max(MatchingRun.generation))
         .filter(MatchingRun.process_id == process.id)
@@ -158,6 +174,7 @@ def reserve_run(
     run = MatchingRun(
         process_id=process.id,
         generation=latest + 1,
+        candidate_policy=ALL_OBSERVATIONS_POLICY,
         status=ProcessStatus.QUEUED,
         radius_meters=radius,
         max_candidates=None,
@@ -289,7 +306,7 @@ def retry_check(
         raise HTTPException(
             409, "Pemeriksaan telah berubah. Muat ulang sebelum memeriksa ulang."
         )
-    run = reserve_run(db, process, request_key, actor, radius)
+    run = reserve_run(db, process, request_key, actor, radius, restart_paused=True)
     if incremental:
         from app.modules.corrections.progress import initialize_progress
 

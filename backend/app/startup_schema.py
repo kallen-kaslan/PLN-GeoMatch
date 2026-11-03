@@ -39,6 +39,7 @@ def apply_once(
 def prepare_database(connection: Connection) -> None:
     from app.coordinate_schema import repair_xy_coordinates
     from app.correction_map_schema import upgrade_correction_map
+    from app.correction_observation_schema import upgrade_correction_observations
     from app.correction_progress_schema import upgrade_correction_progress
     from app.correction_schema import upgrade_corrections
     from app.master_preparation_schema import upgrade_master_preparation
@@ -71,6 +72,12 @@ def prepare_database(connection: Connection) -> None:
         connection, "correction_progress", "c13d94f26e85", upgrade_correction_progress
     )
     apply_once(connection, "correction_map", "a4b19c7e6201", upgrade_correction_map)
+    apply_once(
+        connection,
+        "correction_observations",
+        "a72f06e391bd",
+        upgrade_correction_observations,
+    )
     apply_once(
         connection, "master_preparation", "d24ea5037f96", upgrade_master_preparation
     )

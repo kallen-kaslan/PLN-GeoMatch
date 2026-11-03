@@ -7,7 +7,7 @@ import { api, type ApiError } from "@/lib/api";
 import { uploadFilesApi, type UploadFileHistory } from "@/lib/upload-files";
 import { MASTER_TYPES, displayValue, guessMasterMapping, hasSourceHeaders, masterFields, normalizeSourceHeaders, type ImportResult, type MasterBatchPreview, type SourceKind } from "@/lib/master";
 
-const inputClass = "w-full rounded-sm border-2 border-neo-border bg-white px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-neo-accent disabled:opacity-60";
+const inputClass = "w-full rounded-lg border border-ui-border bg-white px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-neo-accent disabled:opacity-60";
 const MAX_UPLOAD_BYTES = 500 * 1024 * 1024;
 type ImportPreview = { headers: string[]; rows: Record<string, unknown>[]; headerRow?: number };
 const readError = (error: unknown) => error instanceof Error ? error.message : (error as ApiError)?.message ?? "Berkas tidak dapat dibaca.";
@@ -232,13 +232,13 @@ export function MasterImport({ kind, saved, onSaved, onCancel }: {
   };
   const lockedFile = mutation.isPending;
   return (
-    <section aria-label={kind === "pdpj" ? "Impor PDPJ" : correction ? `Impor koreksi ${label}` : `Impor master ${label}`} className="space-y-5 rounded-sm border-2 border-neo-border bg-white p-4 shadow-[3px_3px_0_#0a0a0a] sm:p-6">
-      <div className="flex items-start justify-between gap-3 border-b border-neo-border pb-3">
-        <div><h2 className="flex items-center gap-2 text-base font-black"><Upload size={18} />{saved ? "Lanjutkan mapping" : kind === "pdpj" || correction ? "Unggah" : "Unggah master"} {label}</h2>
-          <p className="mt-1 text-xs text-neo-border">{kind === "idpel_kosong" ? "IDPEL boleh kosong. Petakan referensi dan koordinat yang tersedia; semua baris tetap disimpan." : "IDPEL wajib dipetakan. Koordinat dan informasi lain dapat dilengkapi kemudian."}</p></div>
-        <button type="button" onClick={onCancel} disabled={mutation.isPending} aria-label="Tutup formulir unggah" className="touch-min rounded-sm border border-neo-border hover:bg-neo-white disabled:opacity-40"><X size={18} /></button>
+    <section aria-label={kind === "pdpj" ? "Impor PDPJ" : correction ? `Impor koreksi ${label}` : `Impor master ${label}`} className="space-y-5 rounded-lg border border-ui-border bg-white p-4  sm:p-6">
+      <div className="flex items-start justify-between gap-3 border-b border-ui-border pb-3">
+        <div><h2 className="flex items-center gap-2 text-base font-semibold"><Upload size={18} />{saved ? "Lanjutkan mapping" : kind === "pdpj" || correction ? "Unggah" : "Unggah master"} {label}</h2>
+          <p className="mt-1 text-xs text-ui-muted">{kind === "idpel_kosong" ? "IDPEL boleh kosong. Petakan referensi dan koordinat yang tersedia; semua baris tetap disimpan." : "IDPEL wajib dipetakan. Koordinat dan informasi lain dapat dilengkapi kemudian."}</p></div>
+        <button type="button" onClick={onCancel} disabled={mutation.isPending} aria-label="Tutup formulir unggah" className="touch-min rounded-lg border border-ui-border hover:bg-neo-white disabled:opacity-40"><X size={18} /></button>
       </div>
-      <label className="block space-y-2 text-xs font-bold">Riwayat berkas unggahan
+      <label className="block space-y-2 text-xs font-semibold">Riwayat berkas unggahan
         <select aria-label="Riwayat berkas unggahan" value={activeArchiveId ?? ""} disabled={lockedFile || reading || history.isPending} onChange={(event) => {
           const archive = history.data?.find((item) => item.id === Number(event.target.value));
           if (!archive) return;
@@ -252,45 +252,45 @@ export function MasterImport({ kind, saved, onSaved, onCancel }: {
       </label>
       {history.isError && <p role="alert" className="text-xs text-red-700">Riwayat berkas belum dapat dimuat. <button type="button" onClick={() => void history.refetch()} className="underline">Coba lagi</button></p>}
       {!saved && <div className="grid gap-4 sm:grid-cols-2">
-        <label className="space-y-2 text-xs font-bold">Berkas CSV atau Excel
-          <input type="file" accept=".csv,.xlsx" disabled={lockedFile || reading} onChange={chooseFile} className="block w-full text-xs file:mr-3 file:rounded-sm file:border-2 file:border-neo-border file:bg-neo-white file:px-3 file:py-2 file:font-bold" />
+        <label className="space-y-2 text-xs font-semibold">Berkas CSV atau Excel
+          <input type="file" accept=".csv,.xlsx" disabled={lockedFile || reading} onChange={chooseFile} className="block w-full text-xs file:mr-3 file:rounded-lg file:border file:border-ui-border file:bg-neo-white file:px-3 file:py-2 file:font-semibold" />
           <span className="block font-normal">Maksimal 500 MB per berkas.</span>
         </label>
-        <label className="space-y-2 text-xs font-bold">Periode berkas (opsional)
+        <label className="space-y-2 text-xs font-semibold">Periode berkas (opsional)
           <input type="month" value={period} onChange={(event) => { setPeriod(event.target.value); setUploadId(null); mutation.reset(); }} disabled={lockedFile || reading} className={inputClass} />
         </label>
       </div>}
       {saved && <p className="flex items-center gap-2 text-sm font-semibold"><FileSpreadsheet size={17} />{selectedArchive?.filename ?? saved.filename}</p>}
-      {sheetNames.length > 0 && <label className="block max-w-md space-y-2 text-xs font-bold">Sheet yang diimpor
+      {sheetNames.length > 0 && <label className="block max-w-md space-y-2 text-xs font-semibold">Sheet yang diimpor
         <select aria-label="Sheet yang diimpor" value={sheet} disabled={lockedFile || reading} onChange={(event) => void selectArchivedSheet(event.target.value)} className={`${inputClass} ${alreadySaved ? "border-green-700 bg-green-50" : ""}`}>
           {sheetNames.map((name) => <option key={name} value={name}>{sheetImport(name)?.status === "completed" ? "✓ " : ""}{name}</option>)}
         </select>
       </label>}
-      {alreadySaved && <p role="status" className="rounded-sm border-2 border-green-700 bg-green-50 p-3 text-xs text-green-900">✓ Sheet ini sudah disimpan dan divalidasi untuk {label}{period ? ` periode ${period}` : " tanpa periode"}. Pilih sheet lain untuk menyimpan data berikutnya.</p>}
-      {activeArchiveId && !alreadySaved && <p className="text-xs text-neo-border">Pratinjau belum menjadi data acuan. Sheet hanya diaktifkan setelah Anda menekan Simpan dan validasi.</p>}
+      {alreadySaved && <p role="status" className="rounded-lg border border-green-700 bg-green-50 p-3 text-xs text-green-900">✓ Sheet ini sudah disimpan dan divalidasi untuk {label}{period ? ` periode ${period}` : " tanpa periode"}. Pilih sheet lain untuk menyimpan data berikutnya.</p>}
+      {activeArchiveId && !alreadySaved && <p className="text-xs text-ui-muted">Pratinjau belum menjadi data acuan. Sheet hanya diaktifkan setelah Anda menekan Simpan dan validasi.</p>}
       {reading && <p role="status" className="flex items-center gap-2 text-sm"><LoaderCircle size={16} className="animate-spin" />Membaca pratinjau berkas…</p>}
-      {(parseError || mutation.error) && <p role="alert" className="flex items-start gap-2 rounded-sm border-2 border-red-600 bg-red-50 p-3 text-sm text-red-700"><AlertCircle size={17} className="mt-0.5 shrink-0" />{parseError ?? mutation.error?.message}</p>}
+      {(parseError || mutation.error) && <p role="alert" className="flex items-start gap-2 rounded-lg border border-red-600 bg-red-50 p-3 text-sm text-red-700"><AlertCircle size={17} className="mt-0.5 shrink-0" />{parseError ?? mutation.error?.message}</p>}
       {headers.length > 0 && <>
-        {sheetNames.length > 0 && <p className="text-xs text-neo-border">Nama kolom dibaca dari baris {firstDataRow - 1}. Baris kosong di awal dilewati.</p>}
-        <div><h3 className="text-sm font-black">Pemetaan kolom</h3><p className="mt-1 text-xs text-neo-border">{correction || kind === "pdpj" ? "Nomor agenda boleh sama dengan PDPJ. Petakan nomor meter dan referensi survei secara terpisah untuk memeriksa benturan identitas." : "Periksa hasil deteksi kolom. KODEDLPD, KDDK, kode gardu, dan kode lain disimpan terpisah. Kolom tanpa nama diberi label sesuai posisinya."}</p></div>
+        {sheetNames.length > 0 && <p className="text-xs text-ui-muted">Nama kolom dibaca dari baris {firstDataRow - 1}. Baris kosong di awal dilewati.</p>}
+        <div><h3 className="text-sm font-semibold">Pemetaan kolom</h3><p className="mt-1 text-xs text-ui-muted">{correction || kind === "pdpj" ? "Nomor agenda boleh sama dengan PDPJ. Petakan nomor meter dan referensi survei secara terpisah untuk memeriksa benturan identitas." : "Periksa hasil deteksi kolom. KODEDLPD, KDDK, kode gardu, dan kode lain disimpan terpisah. Kolom tanpa nama diberi label sesuai posisinya."}</p></div>
         <fieldset disabled={mutation.isPending} className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
-          {fields.map((field) => <label key={field.key} className="space-y-1.5 text-xs font-bold">{field.label}{field.required && <span className="text-red-600"> *</span>}
+          {fields.map((field) => <label key={field.key} className="space-y-1.5 text-xs font-semibold">{field.label}{field.required && <span className="text-red-600"> *</span>}
             <select aria-label={`Kolom ${field.label}`} value={mapping[field.key] ?? ""} onChange={(event) => setMapping((previous) => ({ ...previous, [field.key]: event.target.value }))} className={inputClass}>
               <option value="">{field.required ? "Pilih kolom IDPEL" : "Otomatis bila tersedia"}</option>
               {headers.map((header) => <option key={header} value={header}>{header}</option>)}
             </select>
           </label>)}
         </fieldset>
-        <div><h3 className="mb-2 text-sm font-black">Pratinjau lima baris pertama</h3>
-          <div className="neo-scrollbar max-h-64 overflow-auto rounded-sm border border-neo-border"><table className="w-full whitespace-nowrap text-left text-xs">
-            <thead className="sticky top-0 bg-gray-100"><tr><th className="border-b border-neo-border p-2">Baris</th>{headers.map((header) => <th key={header} className="border-b border-neo-border p-2">{header}</th>)}</tr></thead>
+        <div><h3 className="mb-2 text-sm font-semibold">Pratinjau lima baris pertama</h3>
+          <div className="neo-scrollbar max-h-64 overflow-auto rounded-lg border border-ui-border"><table className="w-full whitespace-nowrap text-left text-[13px]">
+            <thead className="sticky top-0 bg-gray-100"><tr><th className="border-b border-ui-border p-2">Baris</th>{headers.map((header) => <th key={header} className="border-b border-ui-border p-2">{header}</th>)}</tr></thead>
             <tbody>{rows.map((row, index) => <tr key={index} className="border-b border-gray-200"><td className="p-2 font-mono">{(uploadId === saved?.id ? saved?.row_numbers?.[index] : undefined) ?? firstDataRow + index}</td>{headers.map((header) => <td key={header} className="max-w-64 truncate p-2">{displayValue(row[header])}</td>)}</tr>)}</tbody>
           </table></div>
         </div>
       </>}
-      <div className="flex flex-col justify-between gap-3 border-t border-neo-border pt-4 sm:flex-row sm:items-center">
-        <p className="max-w-xl text-xs text-neo-border">Simpan IDPEL sebagai teks agar nol di depan tetap utuh. Data asli tetap tersedia pada detail setiap baris.</p>
-        <button type="button" disabled={alreadySaved || !headers.length || fields.some((field) => field.required && !mapping[field.key]) || reading || mutation.isPending || !!parseError} onClick={() => mutation.mutate()} className="touch-min shrink-0 gap-2 rounded-sm border-2 border-neo-border bg-neo-black px-4 py-2.5 text-xs font-bold text-white shadow-[2px_2px_0_#ff6b35] hover:bg-neutral-800 disabled:cursor-not-allowed disabled:opacity-40">
+      <div className="flex flex-col justify-between gap-3 border-t border-ui-border pt-4 sm:flex-row sm:items-center">
+        <p className="max-w-xl text-xs text-ui-muted">Simpan IDPEL sebagai teks agar nol di depan tetap utuh. Data asli tetap tersedia pada detail setiap baris.</p>
+        <button type="button" disabled={alreadySaved || !headers.length || fields.some((field) => field.required && !mapping[field.key]) || reading || mutation.isPending || !!parseError} onClick={() => mutation.mutate()} className="touch-min shrink-0 gap-2 rounded-lg border border-ui-border bg-ui-primary px-4 py-2.5 text-xs font-semibold text-white  hover:bg-ui-primary-hover disabled:cursor-not-allowed disabled:opacity-40">
           {mutation.isPending ? <LoaderCircle size={16} className="animate-spin" /> : <ArrowRight size={16} />}{mutation.isPending ? "Menyimpan dan memvalidasi…" : `Simpan dan validasi ${noun}`}
         </button>
       </div>

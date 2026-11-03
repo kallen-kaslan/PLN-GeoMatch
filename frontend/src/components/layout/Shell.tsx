@@ -27,18 +27,21 @@ export default function Shell() {
 
   if (!user) return null;
 
+  const isMap = location.pathname === "/peta-koreksi";
+
   return (
-    <div className="min-h-[100dvh] flex flex-col bg-neo-white text-neo-black border-neo-border border-l-0 lg:border-l-2 border-r-0 lg:border-r-2 max-w-[1920px] mx-auto w-full">
+    <div className="flex h-dvh min-h-0 flex-col bg-neo-white text-neo-black">
       <Navbar />
-      <div className="flex-1 flex overflow-hidden relative">
+      <div className="flex min-h-0 flex-1">
         <Sidebar />
         <main
-          className="flex-1 overflow-y-auto overflow-x-hidden p-3.5 sm:p-5 lg:p-6 neo-scrollbar focus:outline-none"
-          role="main"
           id="main-content"
           tabIndex={-1}
+          className={`min-w-0 flex-1 overflow-y-auto overflow-x-hidden neo-scrollbar focus:outline-none ${
+            isMap ? "p-3 md:p-4" : "p-4 md:p-6"
+          }`}
         >
-          <div className="max-w-[1600px] mx-auto w-full">
+          <div className="mx-auto w-full max-w-[1680px]">
             <Outlet />
           </div>
         </main>

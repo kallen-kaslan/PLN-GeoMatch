@@ -1,15 +1,30 @@
 @import "tailwindcss";
 
 @theme {
-  --color-neo-black: #0a0a0a;
-  --color-neo-white: #fafafa;
-  --color-neo-gray: #1a1a1a;
-  --color-neo-border: #333333;
-  --color-neo-accent: #ff6b35;
-  --font-sans: "IBM Plex Sans", system-ui, "Segoe UI", Roboto, sans-serif;
-  --font-mono: "IBM Plex Mono", ui-monospace, Consolas, monospace;
+  --color-neo-black: #24314b;
+  --color-neo-white: #f2f4f9;
+  --color-neo-gray: #3e4d68;
+  --color-neo-border: #5d6b83;
+  --color-neo-accent: #6a58c5;
+  --color-ui-border: #dce3ef;
+  --color-ui-muted: #5d6b83;
+  --color-ui-primary: #4256be;
+  --color-ui-primary-hover: #35479f;
+  --color-ui-primary-text: #354b9c;
+  --color-ui-accent-soft: #eeeafa;
+  --color-ui-accent-text: #5b439d;
+  --color-ui-context: #eef1fc;
+  --color-ui-context-border: #d9e0f5;
+  --color-ui-table-head: #f0f3fa;
+  --color-ui-nav: #1c2946;
+  --color-ui-nav-hover: #273959;
+  --color-ui-nav-active: #334872;
+  --color-ui-nav-text: #d5dded;
+  --color-ui-nav-muted: #a1b0ce;
+  --color-ui-nav-border: #3b4b6b;
+  --font-sans: "Segoe UI", system-ui, -apple-system, BlinkMacSystemFont, sans-serif;
+  --font-mono: "Cascadia Code", "SFMono-Regular", Consolas, monospace;
 }
-
 :root {
   --auth-bg: #F1F0ED;
   --auth-ink: #15171D;
@@ -23,97 +38,142 @@
   --console-cool-gray: #A8AFBA;
   --console-cobalt: #4F86F7;
   --console-copper: #C89263;
-  --color-neo-accent: var(--auth-light-blue);
 
-  /* Neo-brutalism design tokens (PRD §12.1) */
-  --geo-bg: #fafafa;
-  --geo-text: #0a0a0a;
-  --geo-border: #333333;
-  --geo-shadow: 0 4px 0 #0a0a0a;
-  --geo-shadow-pressed: 0 2px 0 #0a0a0a;
-  --geo-accent: #ff6b35;
-  --geo-accent-hover: #e55a2b;
-  --geo-status-valid: #16a34a;
-  --geo-status-review: #d97706;
-  --geo-status-invalid: #dc2626;
-  --geo-status-info: #2563eb;
-  --geo-radius: 4px;
-  --geo-border-width: 2px;
+  --geo-bg: var(--color-neo-white);
+  --geo-text: var(--color-neo-black);
+  --geo-border: var(--color-ui-border);
+  --geo-accent: var(--color-neo-accent);
+  --geo-accent-hover: #5846ad;
+  --geo-status-valid: #047857;
+  --geo-status-review: #92400e;
+  --geo-status-invalid: #b91c1c;
+  --geo-status-info: var(--color-ui-primary-text);
+  --geo-shadow: 0 8px 24px rgb(28 41 70 / 8%);
+  --geo-shadow-pressed: none;
+  --geo-radius: 8px;
+  --geo-border-width: 1px;
   --geo-font-sans: var(--font-sans);
   --geo-font-mono: var(--font-mono);
 }
-
-body {
-  margin: 0;
-  background: var(--geo-bg);
-  color: var(--geo-text);
-  font-family: var(--geo-font-sans);
-  font-size: 16px;
-  line-height: 1.5;
-  color-scheme: light;
-  overflow-x: hidden;
-  padding-top: env(safe-area-inset-top, 0px);
-  padding-bottom: env(safe-area-inset-bottom, 0px);
-  padding-left: env(safe-area-inset-left, 0px);
-  padding-right: env(safe-area-inset-right, 0px);
-}
-
-html, body, #root {
-  min-height: 100%;
-  min-height: 100dvh;
-}
-
-/* Fluid Heading Utilities */
-.fluid-h1 {
-  font-size: clamp(1.35rem, 2.5vw + 0.8rem, 2rem);
-  line-height: 1.2;
-}
-
-.fluid-h2 {
-  font-size: clamp(1.15rem, 2vw + 0.6rem, 1.5rem);
-  line-height: 1.3;
-}
-
-.fluid-body {
-  font-size: clamp(0.8125rem, 1vw + 0.55rem, 0.9375rem);
-}
-
-/* Touch Target Minimum (44x44px for accessibility) */
-.touch-min {
-  min-height: 44px;
-  min-width: 44px;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-}
-
-/* Mobile-friendly input height */
-.mobile-input {
-  min-height: 44px;
-  font-size: 16px !important; /* Mencegah auto-zoom di iOS Safari */
-}
-
-@media (min-width: 768px) {
-  .mobile-input {
-    min-height: 38px;
-    font-size: 0.875rem !important; /* 14px on desktop/tablet */
+@layer base {
+  html { color-scheme: light; }
+  body {
+    margin: 0; background: var(--geo-bg); color: var(--geo-text);
+    font-family: var(--geo-font-sans); font-size: 14px; line-height: 1.55;
+    -webkit-font-smoothing: antialiased;
+    padding: env(safe-area-inset-top, 0px) env(safe-area-inset-right, 0px) env(safe-area-inset-bottom, 0px) env(safe-area-inset-left, 0px);
   }
+  html, body, #root { min-height: 100%; }
+  button, input, select, textarea { font: inherit; }
+  button:not(:disabled), summary { cursor: pointer; }
+  input:not([type="checkbox"]):not([type="radio"]):not([type="range"]), select, textarea { min-height: 38px; border-radius: 6px; }
+  input[type="checkbox"], input[type="radio"] { accent-color: var(--color-ui-primary); }
+  input:focus-visible, select:focus-visible, textarea:focus-visible, button:focus-visible, a:focus-visible, summary:focus-visible { outline: 2px solid var(--color-ui-primary); outline-offset: 3px; }
+  h1, h2, h3, h4 { color: var(--geo-text); }
+  h1 { letter-spacing: -.035em; }
+  dt { color: var(--color-ui-muted); }
+  dd { font-variant-numeric: tabular-nums; }
+  table { font-size: 13px; line-height: 1.5; }
+  thead { background: var(--color-ui-table-head); }
+  th { color: #4c5d7d; font-weight: 600; white-space: nowrap; }
+  td, th { border-color: var(--geo-border); }
+  tbody tr { transition: background-color 120ms; }
+  tbody tr:hover { background-color: #f4f6fd; }
+  tbody tr[aria-selected="true"] { background: #edf1ff; box-shadow: inset 3px 0 var(--color-ui-primary); }
+  table .font-mono { font-size: 12px; font-variant-numeric: tabular-nums; }
+  summary { list-style-position: inside; color: var(--color-ui-muted); }
+  summary:hover { color: var(--color-ui-primary-text); }
+  details[open] > summary { margin-bottom: 12px; }
+  dialog { color: var(--geo-text); border-color: var(--geo-border); }
+  dialog::backdrop { background: rgb(28 41 70 / 30%); }
+  progress { accent-color: #4d67ce; border: 0; border-radius: 999px; overflow: hidden; }
+  progress::-webkit-progress-bar { background: #e6eaf6; border-radius: 999px; }
+  progress::-webkit-progress-value { background: #4d67ce; border-radius: 999px; }
+  progress::-moz-progress-bar { background: #4d67ce; border-radius: 999px; }
+  ::selection { background: #e5dff8; }
 }
-
-/* Badge yang membungkus teks menjadi satu kesatuan, bukan terpecah per baris */
-.neo-highlight {
-  display: inline-block;
-  max-width: 100%;
-  box-sizing: border-box;
-  white-space: normal;
-  overflow-wrap: anywhere;
+@layer components {
+  .geo-panel { @apply rounded-lg border border-ui-border bg-white; box-shadow: 0 2px 8px rgb(28 41 70 / 3%); }
+  .geo-context { @apply rounded-lg border border-ui-context-border bg-ui-context p-4; }
+  .geo-topbar { box-shadow: 0 1px 4px rgb(28 41 70 / 4%); }
+  .geo-toolbar { @apply flex flex-wrap items-center gap-3; }
+  .geo-metrics { @apply grid grid-cols-2 gap-2.5; }
+  .geo-metrics-4 { @apply lg:grid-cols-4; }
+  .geo-metrics-6 { @apply md:grid-cols-3 xl:grid-cols-6; }
+  .geo-metrics-8 { @apply md:grid-cols-4 xl:grid-cols-8; }
+  .geo-metric {
+    --metric-ink: #5d6b83;
+    --metric-soft: #edf1f7;
+    --metric-surface: #ffffff;
+    --metric-edge: #dce3ef;
+    @apply relative min-w-0 rounded-lg border p-4;
+    container-name: metric;
+    container-type: inline-size;
+    border-color: var(--metric-edge);
+    background: var(--metric-surface);
+    box-shadow: 0 2px 7px rgb(28 41 70 / 4%), inset 0 1px 0 rgb(255 255 255 / 85%);
+  }
+  .geo-metric::before { content: ""; position: absolute; top: -1px; left: 16px; width: 28px; height: 3px; border-radius: 0 0 3px 3px; background: var(--metric-ink); opacity: .65; }
+  .geo-metric[data-tone="primary"] { --metric-ink: #354b9c; --metric-soft: #dee5ff; --metric-surface: #edf1ff; --metric-edge: #cdd7f4; }
+  .geo-metric[data-tone="success"] { --metric-ink: #08765b; --metric-soft: #e0f2e9; --metric-surface: #f8fcfa; --metric-edge: #d7e9e0; }
+  .geo-metric[data-tone="warning"] { --metric-ink: #915815; --metric-soft: #f8ecd6; --metric-surface: #fefbf6; --metric-edge: #ede1cc; }
+  .geo-metric[data-tone="danger"] { --metric-ink: #b13850; --metric-soft: #f8e3e8; --metric-surface: #fef9fa; --metric-edge: #efdce2; }
+  .geo-metric[data-tone="violet"] { --metric-ink: #6544a3; --metric-soft: #eee6f8; --metric-surface: #fbf9fe; --metric-edge: #e6ddf2; }
+  .geo-metric-label { @apply min-h-8 pr-8 text-xs font-medium leading-4 text-ui-muted; }
+  .geo-metric-value { @apply mt-2 text-[28px] font-semibold leading-8 tracking-tight tabular-nums; color: var(--metric-ink); overflow-wrap: anywhere; }
+  .geo-metric-icon { @apply absolute right-3 top-3 flex size-7 items-center justify-center rounded-lg; color: var(--metric-ink); background: var(--metric-soft); }
+  .geo-metric-compact { @apply p-3; }
+  .geo-metric-compact .geo-metric-label { @apply pr-0; }
+  .geo-metric-compact .geo-metric-value { @apply mt-1.5 pr-8 text-2xl; }
+  .geo-metric-compact .geo-metric-icon { @apply bottom-3 top-auto size-6 rounded-md; }
+  @media (min-width: 1280px) { .geo-metrics-8 .geo-metric-label { min-height: 48px; } }
+  @container metric (max-width: 125px) {
+    .geo-metric-icon { display: none; }
+    .geo-metric-label { padding-right: 0; }
+    .geo-metric-value { font-size: 22px; }
+    .geo-metric-compact .geo-metric-value { padding-right: 0; }
+  }
+  .geo-process { @apply space-y-3 rounded-lg border border-ui-border border-l-[3px] border-l-ui-primary/50 bg-white p-4; }
+  .geo-process.geo-process-compact { @apply space-y-2 p-3; }
+  .geo-process-stats { @apply grid grid-cols-2 gap-x-5 gap-y-3 text-xs lg:grid-cols-4; }
+  .geo-process-stats dd { @apply mt-1 font-medium text-neo-black; }
+  .geo-drawer { @apply fixed inset-y-0 right-0 left-auto m-0 h-dvh max-h-none w-full max-w-[620px] overflow-y-auto border-0 border-l border-ui-border bg-white p-0 shadow-xl; }
+  .geo-drawer > section { @apply space-y-5 p-5; }
+  .geo-drawer > section > header { @apply sticky top-0 z-10 -mx-5 -mt-5 border-b border-ui-context-border bg-ui-context px-5 py-4; }
+  .geo-map-layout { @apply grid min-w-0 gap-4 xl:grid-cols-[minmax(0,1fr)_360px]; }
+  .geo-map-main { @apply min-w-0 space-y-4; }
+  .geo-map-inspector { @apply min-w-0 space-y-4 xl:sticky xl:top-4 xl:max-h-[calc(100dvh-100px)] xl:overflow-y-auto; }
+  .geo-map-dock { @apply min-w-0 rounded-lg border border-ui-border bg-white p-4; }
+  .geo-map-dock > .geo-dock-body { @apply mt-4 space-y-3; }
+  .geo-map-dock .geo-dock-table { max-height: 260px; overflow: auto; }
+  .geo-map-dock thead { position: sticky; top: 0; z-index: 1; }
+  .geo-sidebar { @apply border-ui-nav-border bg-ui-nav text-ui-nav-text; }
+  .geo-sidebar .neo-scrollbar { scrollbar-color: #526687 transparent; }
+  .geo-sidebar :focus-visible { outline-color: #bcb4ff; }
+  .geo-nav-link { @apply flex min-h-10 items-center gap-3 rounded-md px-3 py-2 text-[13px] font-medium text-ui-nav-text transition-colors hover:bg-ui-nav-hover hover:text-white; }
+  .geo-nav-link[aria-current="page"] { @apply bg-ui-nav-active font-semibold text-white; box-shadow: inset 3px 0 #beb4ff; }
+  .geo-nav-parent-active { @apply text-white; }
+  .geo-nav-group { @apply mb-2 mt-5 px-3 text-[11px] font-semibold uppercase tracking-[.12em] text-ui-nav-muted; }
+  .geo-page-heading { @apply flex flex-wrap items-start justify-between gap-4; }
+  .geo-page-heading h1 { @apply text-[26px] font-semibold leading-8; }
+  .geo-page-heading p { @apply mt-1 text-sm text-ui-muted; }
 }
-
-/* Controlled Neo-Brutalist Table Scrollbars */
-.neo-scrollbar {
-  scrollbar-width: thin;
-  scrollbar-color: #0a0a0a #e5e4e7;
+.fluid-h1 { font-size: clamp(1.4rem, 1.6vw + .6rem, 1.75rem); line-height: 1.25; }
+.fluid-h2 { font-size: clamp(1.05rem, 1vw + .5rem, 1.25rem); line-height: 1.4; }
+.fluid-body { font-size: 14px; }
+@layer components { .touch-min { min-height: 38px; min-width: 38px; display: inline-flex; align-items: center; justify-content: center; } }
+.mobile-input { min-height: 44px; font-size: 16px; }
+.neo-highlight { display: inline-block; max-width: 100%; white-space: normal; overflow-wrap: anywhere; }
+.neo-scrollbar { scrollbar-width: thin; scrollbar-color: #c2cbd5 transparent; }
+.neo-scrollbar::-webkit-scrollbar { height: 7px; width: 7px; }
+.neo-scrollbar::-webkit-scrollbar-track { background: transparent; }
+.neo-scrollbar::-webkit-scrollbar-thumb { background: #c2cbd5; border-radius: 6px; }
+.lucide { stroke-width: 1.75; }
+@media (pointer: coarse) {
+  .touch-min, button, select { min-height: 44px; }
+  input:not([type="checkbox"]):not([type="radio"]):not([type="range"]), textarea { font-size: 16px; min-height: 44px; }
 }
+<<<<<<< HEAD
 
 .neo-scrollbar::-webkit-scrollbar {
   height: 8px;
@@ -182,6 +242,10 @@ html, body, #root {
   .auth-flip-card {
     transition: none !important;
   }
+=======
+@media (prefers-reduced-motion: reduce) {
+  *, ::before, ::after { animation-duration: .01ms !important; animation-iteration-count: 1 !important; transition-duration: .01ms !important; scroll-behavior: auto !important; }
+>>>>>>> origin/diohaw
 }
 
 /* Respect reduced motion */

@@ -91,6 +91,7 @@ def test_not_found_import_conflicts_candidates_missing_coordinates_and_category_
     expect(
         detail.get_by_role("heading", name="Kandidat tersimpan (0)", exact=True)
     ).to_be_visible()
+    page.get_by_role("button", name="Tutup detail koreksi", exact=True).click()
     page.get_by_role("button", name="Detail koreksi baris 3", exact=True).click()
     expect(
         detail.get_by_role("heading", name="Kandidat tersimpan (7)", exact=True)
@@ -101,12 +102,14 @@ def test_not_found_import_conflicts_candidates_missing_coordinates_and_category_
         "Detail kandidat dan sumber", exact=True
     ).click()
     expect(detail.get_by_text("dil.csv", exact=True).first).to_be_visible()
+    page.get_by_role("button", name="Tutup detail koreksi", exact=True).click()
     page.get_by_role("button", name="Detail koreksi baris 4", exact=True).click()
     expect(
         detail.get_by_text(
             "Kandidat belum dapat dicari karena koordinat belum lengkap.", exact=True
         )
     ).to_be_visible()
+    page.get_by_role("button", name="Tutup detail koreksi", exact=True).click()
     page.get_by_role(
         "navigation", name="Kategori data koreksi", exact=True
     ).get_by_role("link", name="IDPEL Kosong", exact=True).click()
@@ -160,6 +163,7 @@ def test_mobile_empty_idpel_import_pagination_summary_and_candidate_pages(
     detail.get_by_role("button", name="Kandidat berikutnya", exact=True).click()
     expect(detail.get_by_role("article")).to_have_count(3)
     assert page.evaluate("document.documentElement.scrollWidth <= window.innerWidth")
+    page.get_by_role("button", name="Tutup detail koreksi", exact=True).click()
     page.get_by_label("Filter hasil koreksi", exact=True).select_option("pdpj_conflict")
     expect(
         page.get_by_role("button", name="Detail koreksi baris 2", exact=True)
@@ -183,6 +187,7 @@ def test_radius_retry_preserves_previous_candidate_generation(
     expect(
         detail.get_by_role("heading", name="Kandidat tersimpan (7)", exact=True)
     ).to_be_visible()
+    page.get_by_role("button", name="Tutup detail koreksi", exact=True).click()
     page.get_by_label("Radius pemeriksaan (meter)", exact=True).fill("100")
     page.get_by_role("button", name="Periksa ulang", exact=True).click()
     dialog = page.get_by_role("dialog", name="Pemeriksaan koreksi selesai", exact=True)
@@ -193,6 +198,7 @@ def test_radius_retry_preserves_previous_candidate_generation(
     expect(
         detail.get_by_role("heading", name="Kandidat tersimpan (8)", exact=True)
     ).to_be_visible()
+    page.get_by_role("button", name="Tutup detail koreksi", exact=True).click()
     page.get_by_label("Versi hasil", exact=True).select_option("1")
     page.get_by_role("button", name="Detail koreksi baris 2", exact=True).click()
     expect(

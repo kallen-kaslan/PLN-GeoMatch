@@ -18,6 +18,10 @@ from app.models.matching import (
 )
 from app.models.upload import SourceRecord
 from app.modules.corrections.engine import run_correction_matching
+from app.modules.corrections.observations import (
+    ALL_OBSERVATIONS_POLICY,
+    advance_observations,
+)
 from app.modules.corrections.service import CorrectionKind, check_process
 from app.modules.pdpj.service import lock_review_session
 from app.modules.spatial.master_preparation import advance_preparation
@@ -47,6 +51,8 @@ def initialize_progress(
         "started_at": now,
         "updated_at": now,
         "elapsed_seconds": 0.0,
+        "stage_elapsed_seconds": 0.0,
+        "stage_timed_rows": 0,
         "error": None,
     }
     run.total_targets = total
@@ -174,6 +180,8 @@ def advance_progress(
             409, "Pemeriksaan dijeda. Pilih Lanjutkan pemeriksaan koreksi."
         )
     progress = dict(run.processing)
+    previous_stage = progress["stage"]
+    previous_validated = progress["validated_rows"]
     started = monotonic()
     try:
         if progress["stage"] == "matching":
@@ -187,7 +195,20 @@ def advance_progress(
                 db, process, progress.get("preparation")
             )
             if progress["preparation"]["phase"] == "ready":
-                progress["stage"] = "matching"
+                if run.candidate_policy == ALL_OBSERVATIONS_POLICY:
+                    observations = advance_observations(db, process)
+                    preparation = progress["preparation"]
+                    preparation.update(
+                        phase="ready" if observations["ready"] else "observations",
+                        work_done=preparation["work_done"] + observations["work_done"],
+                        work_total=preparation["work_total"]
+                        + observations["work_total"],
+                        observation_rows=observations["observation_rows"],
+                        observation_source_rows=observations["work_done"],
+                        observation_source_total=observations["work_total"],
+                    )
+                if progress["preparation"]["phase"] == "ready":
+                    progress["stage"] = "matching"
         elif progress["stage"] == "validating":
             validate_chunk(db, run, progress, chunk_size)
         elif progress["stage"] == "publishing":
@@ -204,10 +225,23 @@ def advance_progress(
             process.review_status = ReviewStatus.IN_PROGRESS
             run.completed_at = process.completed_at = utc_now()
             progress.update(state="ready", stage="done")
+        spent = monotonic() - started
         progress.update(
             revision=progress["revision"] + 1,
             updated_at=utc_now().isoformat(),
-            elapsed_seconds=progress["elapsed_seconds"] + monotonic() - started,
+            elapsed_seconds=progress["elapsed_seconds"] + spent,
+            stage_elapsed_seconds=(
+                progress.get("stage_elapsed_seconds", 0.0) + spent
+                if progress["stage"] == previous_stage
+                else 0.0
+            ),
+            stage_timed_rows=(
+                progress.get("stage_timed_rows", 0)
+                + progress["validated_rows"]
+                - previous_validated
+                if progress["stage"] == previous_stage
+                else 0
+            ),
         )
         run.processing = progress
         db.commit()

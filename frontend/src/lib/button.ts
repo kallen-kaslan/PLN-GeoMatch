@@ -1,12 +1,11 @@
-const base = "touch-min gap-2 rounded-sm border-2 px-3 py-2 text-xs font-bold transition-[transform,colors,box-shadow] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-neo-accent disabled:cursor-not-allowed disabled:border-gray-400 disabled:bg-gray-200 disabled:text-gray-600 disabled:shadow-none disabled:hover:bg-gray-200 active:translate-x-[1px] active:translate-y-[1px]";
+const base = "touch-min gap-2 rounded-md border px-3 py-2 text-[13px] font-medium transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ui-primary disabled:cursor-not-allowed disabled:border-slate-200 disabled:bg-slate-100 disabled:text-slate-400 disabled:shadow-none";
 
-// Each variant owns its colors so Tailwind never has to choose between two backgrounds.
 export const buttonClass = {
-  primary: `${base} border-neo-border bg-neo-black text-white shadow-[2px_2px_0_#4F86F7] hover:bg-neutral-800 hover:shadow-[1px_1px_0_#4F86F7] active:shadow-none`,
-  secondary: `${base} border-neo-border bg-gray-100 text-neo-black shadow-[2px_2px_0_#0a0a0a] hover:bg-gray-200 hover:shadow-[1px_1px_0_#0a0a0a] active:shadow-none`,
-  success: `${base} border-green-800 bg-green-700 text-white shadow-[2px_2px_0_#0a0a0a] hover:bg-green-800 hover:shadow-[1px_1px_0_#0a0a0a] active:shadow-none`,
-  warning: `${base} border-amber-700 bg-amber-100 text-amber-950 shadow-[2px_2px_0_#0a0a0a] hover:bg-amber-200 hover:shadow-[1px_1px_0_#0a0a0a] active:shadow-none`,
-  outline: `${base} border-neo-border bg-white text-neo-black shadow-[2px_2px_0_#0a0a0a] hover:bg-gray-50 hover:shadow-[1px_1px_0_#0a0a0a] active:shadow-none`,
-  ghost: "touch-min gap-2 rounded-sm border border-transparent px-3 py-2 text-xs font-bold text-neo-black transition-colors hover:bg-gray-200/60 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-neo-accent disabled:opacity-50",
-  danger: `${base} border-red-800 bg-red-600 text-white shadow-[2px_2px_0_#0a0a0a] hover:bg-red-700 hover:shadow-[1px_1px_0_#0a0a0a] active:shadow-none`,
+  primary: `${base} border-ui-primary bg-ui-primary text-white shadow-sm hover:bg-ui-primary-hover`,
+  secondary: `${base} border-ui-border bg-white text-ui-primary-text hover:border-ui-primary/35 hover:bg-ui-context`,
+  success: `${base} border-emerald-700 bg-emerald-700 text-white hover:bg-emerald-800`,
+  warning: `${base} border-amber-200 bg-amber-50 text-amber-900 hover:bg-amber-100`,
+  outline: `${base} border-ui-border bg-white text-ui-primary-text hover:bg-slate-50`,
+  ghost: "touch-min gap-2 rounded-md border border-transparent px-3 py-2 text-[13px] font-medium text-ui-primary-text transition-colors hover:bg-slate-100 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ui-primary disabled:opacity-50",
+  danger: `${base} border-red-200 bg-white text-red-700 hover:bg-red-50`,
 } as const;

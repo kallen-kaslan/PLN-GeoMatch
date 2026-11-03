@@ -323,7 +323,43 @@ def test_resume_and_new_search_preserve_choices_and_allow_historical_result_expo
     export = client.get(partial["base"] + "/results/export", params={"generation": 1})
     book = load_workbook(io.BytesIO(export.content))
     assert sheet_rows(book, "Hasil Koreksi")[0]["idpelanggan"] == "002"
+    assert "radius_10m_v1.xlsx" in export.headers["content-disposition"]
+    info = dict(list(book["Informasi"].values)[1:])
+    assert info["Radius pemeriksaan (meter)"] == 10
+    assert info["Versi pemeriksaan"] == 1
+    assert sheet_rows(book, "Pemeriksaan Radius")[0]["radius_meter"] == 10
+    assert sheet_rows(book, "Keputusan Aktif")[0]["radius_pilihan_meter"] == 10
     book.close()
+    newer_file = client.get(
+        partial["base"] + "/results/export", params={"generation": 2}
+    )
+    assert "radius_100m_v2.xlsx" in newer_file.headers["content-disposition"]
+    newer_book = load_workbook(io.BytesIO(newer_file.content))
+    assert sheet_rows(newer_book, "Hasil Koreksi")[0]["idpelanggan"] == "003"
+    assert (
+        dict(list(newer_book["Informasi"].values)[1:])["Radius pemeriksaan (meter)"]
+        == 100
+    )
+    assert sheet_rows(newer_book, "Keputusan Aktif")[0]["radius_pilihan_meter"] == 100
+    newer_book.close()
+    historical_choice = client.get(
+        partial["base"] + f"/records/{partial['record']}/choice",
+        params={"generation": 1},
+    ).json()
+    assert historical_choice["current"]["candidate"]["fields"]["idpel"] == "002"
+    historical_events = client.get(
+        partial["base"] + "/results/history", params={"generation": 1}
+    ).json()
+    assert historical_events["total"] == 1
+    history_file = client.get(
+        partial["base"] + "/results/history/export", params={"generation": 1}
+    )
+    assert "radius_10m_v1.xlsx" in history_file.headers["content-disposition"]
+    history_book = load_workbook(io.BytesIO(history_file.content))
+    events = sheet_rows(history_book, "Riwayat Pilihan")
+    assert len(events) == 1 and events[0]["idpelanggan"] == "002"
+    assert events[0]["radius_pilihan_meter"] == 10
+    history_book.close()
     assert (
         client.get(partial["base"] + "/results", params={"generation": 99}).status_code
         == 404

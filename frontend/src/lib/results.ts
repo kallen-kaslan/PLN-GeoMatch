@@ -21,16 +21,27 @@ export type ResultFilter = "selected" | "all" | "not_selected" | "cancelled" | "
 export interface SavedResult { record_id: number; row_number: number; status: ResultFilter | "not_processed";
   search_status: string; target_fields: Fields; choice: CorrectionDecision | null }
 export interface DecisionEvent extends CorrectionDecision { record_id: number; row_number: number }
+export interface SpreadsheetDownload { blob: Blob; filename: string }
+export function radiusFilename(prefix: "hasil" | "riwayat", kind: CorrectionKind, process: number, generation: number, radius: number): string {
+  return `${prefix}_koreksi_${kind}_${process}_radius_${String(radius).replace(".", "_")}m_v${generation}.xlsx`;
+}
+async function spreadsheet(path: string, params: Record<string, unknown>, fallback: string): Promise<SpreadsheetDownload> {
+  const response = await api.get<Blob>(path, { params, responseType: "blob" });
+  const filename = /filename="([^"\\/]+)"/.exec(String(response.headers["content-disposition"] ?? ""))?.[1] ?? fallback;
+  return { blob: response.data, filename };
+}
 export const resultsApi = {
   processes: async (signal?: AbortSignal) => (await api.get<ProcessHistory[]>("/history/processes", { signal })).data,
-  rows: async (kind: CorrectionKind, id: number, params: { q: string; status: ResultFilter; skip: number; limit: number }, signal?: AbortSignal) =>
+  rows: async (kind: CorrectionKind, id: number, params: { q: string; status: ResultFilter; skip: number; limit: number; generation?: number }, signal?: AbortSignal) =>
     (await api.get<{ summary: ResultSummary; total: number; items: SavedResult[] }>(`/corrections/${kind}/checks/${id}/results`, { params, signal })).data,
-  history: async (kind: CorrectionKind, id: number, record_id: number | undefined, skip: number, signal?: AbortSignal) =>
-    (await api.get<{ total: number; items: DecisionEvent[] }>(`/corrections/${kind}/checks/${id}/results/history`, { params: { record_id, skip, limit: 20 }, signal })).data,
-  export: async (kind: CorrectionKind, id: number, params: { q: string; status: ResultFilter }) =>
+  history: async (kind: CorrectionKind, id: number, record_id: number | undefined, skip: number, signal?: AbortSignal, generation?: number) =>
+    (await api.get<{ total: number; items: DecisionEvent[] }>(`/corrections/${kind}/checks/${id}/results/history`, { params: { record_id, skip, limit: 20, generation }, signal })).data,
+  export: async (kind: CorrectionKind, id: number, params: { q: string; status: ResultFilter; generation?: number }) =>
     (await api.get<Blob>(`/corrections/${kind}/checks/${id}/results/export`, { params, responseType: "blob" })).data,
   exportHistory: async (kind: CorrectionKind, id: number, record_id?: number) =>
     (await api.get<Blob>(`/corrections/${kind}/checks/${id}/results/history/export`, { params: { record_id }, responseType: "blob" })).data,
+  download: (kind: CorrectionKind, id: number, generation: number, radius: number, q = "", status: ResultFilter = "selected") => spreadsheet(`/corrections/${kind}/checks/${id}/results/export`, { generation, q, status }, radiusFilename("hasil", kind, id, generation, radius)),
+  downloadHistory: (kind: CorrectionKind, id: number, generation: number, radius: number, record_id?: number) => spreadsheet(`/corrections/${kind}/checks/${id}/results/history/export`, { generation, record_id }, radiusFilename("riwayat", kind, id, generation, radius)),
 };
 
 export function downloadSpreadsheet(blob: Blob, filename: string): void {
