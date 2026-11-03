@@ -2,13 +2,15 @@ import { MetricCard } from "@/components/data/MetricCard";
 import { useState, useEffect, useCallback } from "react";
 import { useAppStore } from "@/store/app";
 import { supabase } from "@/lib/supabase";
-import { UserCog, Shield, Trash2, Search, Mail, Calendar, UserPlus } from "lucide-react";
+import { UserCog, Shield, Trash2, Search, Mail, Calendar, UserPlus, CheckCircle, XCircle } from "lucide-react";
 
 interface RealUser {
   id: string;
   username: string;
   email?: string;
   role: "admin" | "auditor" | "analis";
+  status?: string;
+  created_at?: string;
   updated_at: string | null;
 }
 
@@ -306,14 +308,6 @@ export default function AdminPage() {
                         {u.username}
                       </div>
                     </td>
-<<<<<<< HEAD
-                    <td className="p-3 border-r border-neo-border text-[#666]">{u.email || "-"}</td>
-                    <td className="p-3 border-r border-neo-border">
-                      <span
-                        className={`px-2 py-1 rounded text-[10px] font-black border-2 ${getRoleBadgeClass(
-                          u.role
-                        )}`}
-=======
                     <td className="p-3 border-r border-ui-border text-[#666]">{u.email}</td>
                     <td className="p-3 border-r border-ui-border">
                       <span
@@ -324,15 +318,10 @@ export default function AdminPage() {
                             ? "bg-[#16a34a] text-white border-[#15803d]"
                             : "bg-[#d97706] text-white border-[#b45309]"
                         }`}
->>>>>>> origin/diohaw
                       >
                         {u.role.toUpperCase()}
                       </span>
                     </td>
-<<<<<<< HEAD
-                    <td className="p-3 border-r border-neo-border text-[#666] font-mono text-[11px]">
-                      {formatDate(u.updated_at)}
-=======
                     <td className="p-3 border-r border-ui-border">
                       {u.status === "active" ? (
                         <span className="flex items-center gap-1 text-[#16a34a] font-semibold">
@@ -347,8 +336,7 @@ export default function AdminPage() {
                       )}
                     </td>
                     <td className="p-3 border-r border-ui-border text-[#666] font-mono text-xs">
-                      {new Date(u.created_at).toLocaleDateString("id-ID")}
->>>>>>> origin/diohaw
+                      {u.created_at ? new Date(u.created_at).toLocaleDateString("id-ID") : '-'}
                     </td>
                     <td className="p-3 text-center">
                       <div className="flex justify-center gap-2">
