@@ -1,3 +1,4 @@
+import type { SearchPage } from "@/lib/search";
 import { api } from "@/lib/api";
 import type { CorrectionKind, MasterBatch, MasterBatchPreview } from "@/lib/master";
 import type { Fields, PdpjPublication } from "@/lib/pdpj";
@@ -84,7 +85,7 @@ export const correctionApi = {
   resume: async (kind: CorrectionKind, id: number, runId: number) => (await api.post<CorrectionRun>(`/corrections/${kind}/checks/${id}/resume`, { run_id: runId })).data,
   summary: async (kind: CorrectionKind, scope: CorrectionScope) => (await api.get<CorrectionSummary>(`/corrections/${kind}/summary`, { params: scope })).data,
   mapSummary: async (kind: CorrectionKind, process_id: number, generation: number, radius_meters: number, signal: AbortSignal) => (await api.get<MapRadiusSummary>(`/corrections/${kind}/map-summary`, { params: { process_id, generation, radius_meters }, signal })).data,
-  rows: async (kind: CorrectionKind, params: CorrectionScope & { q: string; status: CorrectionFilter; skip: number; limit: number }, signal?: AbortSignal) => (await api.get<{ total: number; items: CorrectionRow[] }>(`/corrections/${kind}/records`, { params, signal })).data,
+  rows: async (kind: CorrectionKind, params: CorrectionScope & { q: string; status: CorrectionFilter; skip: number; limit: number }, signal?: AbortSignal) => (await api.get<SearchPage<CorrectionRow>>(`/corrections/${kind}/records`, { params, signal })).data,
   detail: async (kind: CorrectionKind, id: number, scope: CorrectionScope, skip: number, radius_meters?: number) => (await api.get<CorrectionDetail>(`/corrections/${kind}/records/${id}`, { params: { ...scope, skip, limit: 10, radius_meters } })).data,
   allRows: async (kind: CorrectionKind, scope: CorrectionScope, signal: AbortSignal) => {
     const items: CorrectionRow[] = [];

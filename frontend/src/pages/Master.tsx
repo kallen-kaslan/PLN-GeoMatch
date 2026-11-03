@@ -1,5 +1,8 @@
+import { useDebouncedSearch } from "@/hooks/useDebouncedSearch";
+import { SearchFeedback } from "@/components/data/SearchFeedback";
+import { searchPreparing, searchRefreshInterval } from "@/lib/search";
 import { MetricCard, type MetricTone } from "@/components/data/MetricCard";
-import { useDeferredValue, useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Link, Navigate, useParams } from "react-router-dom";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { AlertCircle, CheckCircle2, Database, FileSpreadsheet, LoaderCircle, MapPin, Plus, RefreshCw, Search, X } from "lucide-react";
@@ -61,7 +64,7 @@ function MasterWorkspace({ kind }: { kind: MasterKind }) {
   const descriptor = MASTER_TYPES.find((item) => item.key === kind)!;
   const [batchId, setBatchId] = useState<number | undefined>();
   const [search, setSearch] = useState("");
-  const deferredSearch = useDeferredValue(search);
+  const deferredSearch = useDebouncedSearch(search);
   const [status, setStatus] = useState<MasterStatus>("all");
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(25);
@@ -74,7 +77,8 @@ function MasterWorkspace({ kind }: { kind: MasterKind }) {
   const summary = useQuery({ queryKey: ["masters", kind, "summary", batchId], queryFn: ({ signal }) => masterApi.summary(kind, batchId, signal, false), staleTime: 30_000 });
   const statistics = useQuery({ queryKey: ["masters", kind, "statistics", batchId, summary.data?.source_signature], queryFn: ({ signal }) => masterApi.summary(kind, batchId, signal), enabled: summary.data?.statistics_ready === false, staleTime: Infinity, retry: false });
   const totals = statistics.data?.source_signature === summary.data?.source_signature && statistics.data?.statistics_ready ? statistics.data : summary.data;
-  const records = useQuery({ queryKey: ["masters", kind, "records", batchId, deferredSearch, status, page, pageSize], queryFn: ({ signal }) => masterApi.records(kind, { batch_id: batchId, q: deferredSearch, status, skip: (page - 1) * pageSize, limit: pageSize }, signal), staleTime: 30_000 });
+  const records = useQuery({ queryKey: ["masters", kind, "records", batchId, deferredSearch, status, page, pageSize], queryFn: ({ signal }) => masterApi.records(kind, { batch_id: batchId, q: deferredSearch, status, skip: (page - 1) * pageSize, limit: pageSize }, signal), enabled: search === deferredSearch, refetchInterval: searchRefreshInterval, staleTime: 30_000 });
+  const searchBusy = search !== deferredSearch || searchPreparing(records.data);
   const selectedBatch = batches.data?.find((batch) => batch.id === batchId);
   const failed = batches.isError || summary.isError || records.isError;
 
@@ -88,7 +92,7 @@ function MasterWorkspace({ kind }: { kind: MasterKind }) {
   return <div className="space-y-5 sm:space-y-6">
     <header className="geo-page-heading">
       <div><p className="text-xs font-semibold uppercase tracking-[0.18em] text-ui-muted">Referensi pelanggan</p><h1 className="fluid-h1 mt-1 flex items-center gap-2 font-semibold"><Database size={25} className="shrink-0" />Data Master {descriptor.label}</h1><p className="mt-1 text-xs text-ui-muted sm:text-sm">{descriptor.description}</p></div>
-      <div className="flex gap-2"><button type="button" aria-label="Muat ulang data master" onClick={() => void queryClient.invalidateQueries({ queryKey: ["masters", kind] })} className="touch-min rounded-lg border border-ui-border bg-white px-3  hover:bg-gray-100"><RefreshCw size={16} className={batches.isFetching || summary.isFetching || records.isFetching ? "animate-spin" : ""} /></button>
+      <div className="flex gap-2"><button type="button" aria-label="Muat ulang data master" onClick={() => void queryClient.invalidateQueries({ queryKey: ["masters", kind] })} className="touch-min rounded-lg border border-ui-border bg-white px-3  hover:bg-gray-100"><RefreshCw size={16} className={batches.isFetching || summary.isFetching || (records.isFetching || searchBusy) ? "animate-spin" : ""} /></button>
         <button type="button" onClick={() => { setResumeId(null); setShowImport(true); }} disabled={showImport} className="touch-min gap-2 rounded-lg border border-ui-border bg-ui-primary px-4 text-xs font-semibold text-white  hover:bg-ui-primary-hover disabled:opacity-40"><Plus size={16} />Unggah berkas</button></div>
     </header>
     <nav aria-label="Jenis data master" className="flex gap-2 overflow-x-auto pb-1">
@@ -118,13 +122,14 @@ function MasterWorkspace({ kind }: { kind: MasterKind }) {
       </div>
       {!!totals?.pending_files && !selectedBatch && <div className="rounded-lg border border-amber-600 bg-amber-50 p-3 text-xs text-amber-900">Ada {totals.pending_files} berkas menunggu mapping. Pilih berkas tersebut untuk melanjutkan impor.</div>}
       {selectedBatch && selectedBatch.status !== "completed" && <div className="flex flex-col justify-between gap-3 rounded-lg border border-amber-600 bg-amber-50 p-3 text-xs text-amber-900 sm:flex-row sm:items-center"><p><strong>{selectedBatch.filename}</strong> memiliki {count(selectedBatch.total_rows)} baris. Selesaikan mapping agar masuk data referensi.</p><button type="button" onClick={() => { setResumeId(selectedBatch.id); setShowImport(true); }} className="touch-min shrink-0 rounded-lg border border-amber-700 bg-white px-3 font-semibold">Lanjutkan mapping</button></div>}
-      <div className="flex flex-col gap-3 sm:flex-row"><label className="relative flex-1"><span className="sr-only">Cari data master</span><Search size={16} className="pointer-events-none absolute top-3 left-3 text-ui-muted" /><input type="search" value={search} onChange={(event) => { setSearch(event.target.value); setPage(1); }} placeholder="Cari IDPEL, nama, kode, atau nomor meter…" className={`${controlClass} w-full pl-9`} /></label>
+      <div className="flex flex-col gap-3 sm:flex-row"><label className="relative flex-1"><span className="sr-only">Cari data master</span><Search size={16} className="pointer-events-none absolute top-3 left-3 text-ui-muted" /><input type="search" maxLength={120} value={search} onChange={(event) => { setSearch(event.target.value); setPage(1); }} placeholder="Cari IDPEL, nama, kode, atau nomor meter…" className={`${controlClass} w-full pl-9`} /></label>
         <select aria-label="Status kelengkapan data" value={status} onChange={(event) => { setStatus(event.target.value as MasterStatus); setPage(1); }} className={controlClass}><option value="all">Semua kondisi</option><option value="valid">Lolos validasi</option><option value="incomplete">Koordinat belum lengkap</option><option value="invalid">Perlu perbaikan</option></select></div>
+      <SearchFeedback state={records.data?.search_index} waiting={search !== deferredSearch} fetching={Boolean(search) && records.isFetching} />
       <p className="text-xs text-ui-muted">Ringkasan menghitung seluruh data pada berkas terpilih. Observasi IDPEL yang berulang tetap dapat ditelusuri per sumber.</p>
-      <div className="neo-scrollbar overflow-x-auto rounded-lg border border-ui-border" aria-busy={records.isFetching}>
+      <div className="neo-scrollbar overflow-x-auto rounded-lg border border-ui-border" aria-busy={(records.isFetching || searchBusy)}>
         <table className="w-full min-w-[1050px] whitespace-nowrap text-left text-[13px]">
           <thead className="border-b border-ui-border bg-gray-100"><tr>{["Baris", "IDPEL / Nama", "Koordinat", "Kode sumber / Gardu", "Periode", "Berkas sumber", "Kondisi", "Detail"].map((label) => <th key={label} className="p-3 font-semibold">{label}</th>)}</tr></thead>
-          <tbody>{records.isPending ? <tr><td colSpan={8} className="p-10 text-center text-sm" role="status">Memuat data master…</td></tr> : records.isError ? <tr><td colSpan={8} className="p-10 text-center text-red-700">Daftar data tidak dapat dimuat.</td></tr> : records.data?.items.length ? records.data.items.map((record) => <tr key={record.id} className="border-b border-gray-200 hover:bg-neo-white">
+          <tbody>{(records.isPending || searchBusy) ? <tr><td colSpan={8} className="p-10 text-center text-sm" role="status">Memuat data master…</td></tr> : records.isError ? <tr><td colSpan={8} className="p-10 text-center text-red-700">Daftar data tidak dapat dimuat.</td></tr> : records.data?.items.length ? records.data.items.map((record) => <tr key={record.id} className="border-b border-gray-200 hover:bg-neo-white">
             <td className="p-3 font-mono">{displayValue(record.row_number)}</td>
             <td className="p-3"><p className="font-mono font-semibold">{displayValue(record.fields.idpel)}</p><p className="mt-1 max-w-56 truncate text-ui-muted">{displayValue(record.fields.nama)}</p></td>
             <td className="p-3 font-mono"><p>{displayValue(record.fields.lat)}</p><p className="mt-1">{displayValue(record.fields.lon)}</p></td>
@@ -134,7 +139,7 @@ function MasterWorkspace({ kind }: { kind: MasterKind }) {
           </tr>) : <tr><td colSpan={8} className="p-10 text-center"><Database size={28} className="mx-auto mb-3 text-ui-muted" /><p className="text-sm font-semibold">{search || status !== "all" ? "Tidak ada data sesuai pencarian." : "Belum ada data master yang siap ditampilkan."}</p><p className="mt-1 text-xs text-ui-muted">{search || status !== "all" ? "Sesuaikan pencarian atau filter kondisi data." : "Unggah berkas dan konfirmasi pemetaan kolom untuk menambahkan referensi."}</p></td></tr>}</tbody>
         </table>
       </div>
-      <PreviewPagination context="master" page={page} pageSize={pageSize} total={records.data?.total} loading={records.isFetching} key={`${batchId}-${deferredSearch}-${status}-${pageSize}`} onPageChange={setPage} onPageSizeChange={setPageSize} />
+      <PreviewPagination context="master" page={page} pageSize={pageSize} total={searchBusy ? undefined : records.data?.total} loading={(records.isFetching || searchBusy)} key={`${batchId}-${deferredSearch}-${status}-${pageSize}`} onPageChange={setPage} onPageSizeChange={setPageSize} />
     </section>
     {detailId !== null && <RecordDetail key={detailId} kind={kind} id={detailId} onClose={() => setDetailId(null)} />}
   </div>;

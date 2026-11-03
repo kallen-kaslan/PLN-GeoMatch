@@ -46,6 +46,7 @@ from app.modules.upload.normalization import (
 from app.modules.upload.pagination import load_original_cells, source_page_ids
 from app.modules.upload.storage import database_write_error
 from app.processing_activity import monitor_request, request_activity
+from app.search_index import pending_search, prepare_search, search_candidates
 from app.tasks.spatial_tasks import (
     execute_batch_reconciliation_pipeline,
     mark_process_failed,
@@ -579,6 +580,10 @@ def list_records(
     if saved_only:
         query = query.filter(CorrectionTarget.id.is_not(None))
     if q.strip():
+        state = prepare_search(db, ("source",))
+        if state and not state["ready"]:
+            return pending_search(state)
+        query = query.filter(search_candidates(db, (("source", SourceRecord.id),), q))
         pattern = (
             "%"
             + q.strip().replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
@@ -597,6 +602,8 @@ def list_records(
                         "meter_ref",
                         "agenda_ref",
                         "survey_ref",
+                        "nomor_meter_kwh",
+                        "nomor_meter_prepaid",
                     )
                 )
             )

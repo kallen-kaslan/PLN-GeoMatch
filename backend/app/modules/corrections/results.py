@@ -34,6 +34,7 @@ from app.modules.corrections.spreadsheet import (
     Spreadsheet,
 )
 from app.modules.upload.normalization import extract_standard_fields
+from app.search_index import pending_search, prepare_search, search_candidates
 
 router = APIRouter()
 DbSession = Annotated[Session, Depends(get_db)]
@@ -195,6 +196,10 @@ def result_query(
     elif status == "not_processed":
         query = query.filter(CorrectionTarget.id.is_(None))
     if q.strip():
+        query = query.filter(search_candidates(db, (
+            ("source", SourceRecord.id), ("target", CorrectionTarget.id),
+            ("decision", CorrectionDecision.id),
+        ), q))
         pattern = (
             "%"
             + q.strip().replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
@@ -267,6 +272,13 @@ def saved_results(
     limit: int = Query(25, ge=1, le=100),
 ) -> dict[str, Any]:
     _, process, run = result_scope(db, kind, process_id, generation)
+    if q.strip():
+        state = prepare_search(db, ("source", "target", "decision"))
+        if state and not state["ready"]:
+            return {
+                **pending_search(state),
+                "summary": results_summary(db, kind, process_id, run.generation),
+            }
     query = result_query(db, process, run, q, status)
     total = query.count()
     batch = db.get(UploadBatch, process.target_batch_id)

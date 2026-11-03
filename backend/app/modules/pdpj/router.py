@@ -27,6 +27,7 @@ from app.modules.pdpj.service import (
 from app.modules.upload.storage import database_write_error
 from app.pdpj_warning_schema import DUPLICATE_IDPEL
 from app.processing_activity import monitor_request, request_activity
+from app.search_index import pending_search, prepare_search, search_candidates
 
 DbSession = Annotated[Session, Depends(get_db)]
 router = APIRouter(prefix="/pdpj", tags=["Validasi PDPJ"])
@@ -316,6 +317,10 @@ def list_rows(
     get_review(db, review_id)
     query = db.query(PdpjRow).filter(PdpjRow.review_id == review_id)
     if q.strip():
+        state = prepare_search(db, ("pdpj",))
+        if state and not state["ready"]:
+            return pending_search(state)
+        query = query.filter(search_candidates(db, (("pdpj", PdpjRow.id),), q))
         pattern = (
             "%"
             + q.strip().replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
@@ -325,7 +330,7 @@ def list_rows(
             or_(
                 *(
                     PdpjRow.current_fields[key].as_string().ilike(pattern, escape="\\")
-                    for key in ("idpel", "nama", "target_ref")
+                    for key in ("idpel", "nama", "target_ref", "meter_ref", "nomor_meter_kwh", "nomor_meter_prepaid")
                 )
             )
         )

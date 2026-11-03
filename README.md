@@ -131,6 +131,9 @@ REDIS_URL=redis://localhost:6379/0
 
 ## Fitur
 
+Cara kerja pencarian, persiapan indeks data lama, dan batas pengukurannya dijelaskan
+pada [panduan pencarian data](docs/pencarian-data.md).
+
 - Upload data pelanggan dan koordinat
 - Pencocokan otomatis berdasarkan radius
 - Validasi IDPEL dan koordinat

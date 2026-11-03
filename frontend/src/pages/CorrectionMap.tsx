@@ -1,6 +1,8 @@
+import { SearchFeedback } from "@/components/data/SearchFeedback";
+import { useDebouncedSearch } from "@/hooks/useDebouncedSearch";
 import { CandidateCoordinateSource } from "@/components/corrections/CandidateCoordinateSource";
 import { buttonClass } from "@/lib/button";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Link, useSearchParams, type SetURLSearchParams } from "react-router-dom";
 import { LoaderCircle, X } from "lucide-react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
@@ -65,6 +67,7 @@ function MapWorkspace({ kind, batchParam, processParam, generationParam, params,
     catch { /* Keep editing available when browser storage is disabled. */ }
   }, [kind, actor]);
   const [search, setSearch] = useState("");
+  const searchQuery = useDebouncedSearch(search);
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(25);
   const [candidatePage, setCandidatePage] = useState(1);
@@ -114,14 +117,14 @@ function MapWorkspace({ kind, batchParam, processParam, generationParam, params,
   const validRadius = Number.isFinite(radius) && radius > 0 && radius <= 100000;
   const displayRadius = validRadius && run ? Math.min(radius, run.radius_meters) : null;
   const radiusSummary = useMapRadiusSummary(kind, process, run, displayRadius, scopeReady);
-  const mapRows = radiusSummary.data ? (rows.data ?? []).map((row) => {
+  const mapRows = useMemo(() => radiusSummary.data ? (rows.data ?? []).map((row) => {
     if (!["matched", "no_candidates"].includes(row.search_status)) return row;
     const count = radiusSummary.data.candidate_counts[row.id] ?? 0;
     return { ...row, candidate_count: count, search_status: count ? "matched" as const : "no_candidates" as const };
-  }) : [];
+  }) : [], [rows.data, radiusSummary.data]);
   const active = mapRows.find((row) => row.id === selected);
   const statusChoice = params.get("status") ?? "all";
-  const statusRows = mapRows.filter((row) => statusChoice === "all" || row.search_status === statusChoice);
+  const statusRows = useMemo(() => mapRows.filter((row) => statusChoice === "all" || row.search_status === statusChoice), [mapRows, statusChoice]);
   const busy = ["queued", "running"].includes(check.data?.latest_run.status ?? "");
   const blockedBySearch = busy && !check.data?.latest_run.processing;
   const completedView = run?.status === "completed";
@@ -133,7 +136,7 @@ function MapWorkspace({ kind, batchParam, processParam, generationParam, params,
   const searchableTarget = Boolean(active && coordinates(active.fields) && ["matched", "no_candidates"].includes(active.search_status));
   const requested = selected && validRadius && (!active || searchableTarget) ? { id: selected, radius } : null;
   const candidateQuery = useQuery({ queryKey: ["correction-map-candidates", kind, process, generation, requested], queryFn: ({ signal }) => correctionApi.mapCandidates(kind, requested!.id, scope, requested!.radius, signal), enabled: Boolean(scopeReady && searchableTarget && run && requested && requested.radius <= run.radius_meters && !readSearchBlocked) });
-  const candidates = requested?.id === selected && requested?.radius === radius ? candidateQuery.data ?? [] : [];
+  const candidates = useMemo(() => requested?.id === selected && requested?.radius === radius ? candidateQuery.data ?? [] : [], [requested?.id, requested?.radius, selected, radius, candidateQuery.data]);
   const waitingForExpansion = Boolean(run?.id === check.data?.latest_run.id && expanding && busy && check.data?.latest_run.processing?.state === "running" && (check.data.latest_run.activity?.active || autoRunId === check.data.latest_run.id));
   const waitingForTarget = Boolean(requested && partial && !active && !targetLoading);
   const processStarted = useCallback(() => setNotice(""), []);
@@ -174,9 +177,13 @@ function MapWorkspace({ kind, batchParam, processParam, generationParam, params,
     heading?.scrollIntoView({ block: "start", behavior: "auto" });
     heading?.focus({ preventScroll: true });
   }, [selected, mobileView]);
-  const candidateFocus = (id: number) => { updateView({ map_view: "detail" }); const index = candidates.findIndex((item) => item.id === id); if (index >= 0) { setCandidatePage(Math.floor(index / 10) + 1); setFocusedCandidate(id); } };
+  const candidateFocus = useCallback((id: number) => { updateView({ map_view: "detail" }); const index = candidates.findIndex((item) => item.id === id); if (index >= 0) { setCandidatePage(Math.floor(index / 10) + 1); setFocusedCandidate(id); } }, [updateView, candidates]);
   useEffect(() => { if (focusedCandidate !== null) { const element = document.getElementById(`candidate-${focusedCandidate}`); element?.scrollIntoView({ behavior: window.matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth", block: "center" }); element?.focus({ preventScroll: true }); } }, [focusedCandidate, candidatePage]);
-  const filtered = statusRows.filter((row) => !search.trim() || Object.values(row.fields).some((value) => String(value ?? "").toLowerCase().includes(search.trim().toLowerCase())));
+  const searchableRows = useMemo(() => statusRows.map((row) => ({ row, values: Object.values(row.fields).map((value) => String(value ?? "").toLowerCase()) })), [statusRows]);
+  const filtered = useMemo(() => {
+    const needle = searchQuery.trim().toLowerCase();
+    return searchableRows.filter((item) => !needle || item.values.some((value) => value.includes(needle))).map((item) => item.row);
+  }, [searchableRows, searchQuery]);
   const activePage = Math.min(page, Math.max(1, Math.ceil(filtered.length / pageSize)));
   const pageRows = filtered.slice((activePage - 1) * pageSize, activePage * pageSize);
   const candidatePages = Math.max(1, Math.ceil(candidates.length / 10));
@@ -264,6 +271,7 @@ function MapWorkspace({ kind, batchParam, processParam, generationParam, params,
 </div>
         <div className={mobileView === "targets" ? "block" : "hidden xl:block"}><details open className="geo-map-dock"><summary className="font-medium">Daftar target · {descriptor.label}</summary>    <section className="geo-dock-body" aria-label="Tabel target peta">
       <h2 id="map-target-list-title" tabIndex={-1} className="scroll-mt-16 text-sm font-semibold focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-ui-primary">Target {descriptor.label}</h2><input type="search" aria-label="Cari target peta" value={search} onChange={(event) => { setSearch(event.target.value); setPage(1); }} placeholder="Cari data target…" className={`${control} w-full`} />
+      <SearchFeedback waiting={search !== searchQuery} fetching={false} />
       <label className="flex flex-col gap-1 text-xs font-semibold">Filter hasil pada radius terpilih<select aria-label="Filter hasil peta" value={statusChoice} onChange={(event) => { setPage(1); updateView({ status: event.target.value, record_id: null }); }} className={control}><option value="all">Semua hasil tersimpan</option>{Object.entries(searchLabel).filter(([key]) => key !== "not_checked").map(([key, label]) => <option key={key} value={key}>{label}</option>)}</select></label>
       <div className="geo-dock-table neo-scrollbar resize-y"><table className="w-full min-w-[620px] text-left text-[13px]"><thead><tr>{["Baris", "IDPEL / Nama", "Koordinat", "Hasil", "Kandidat", "Aksi"].map((label) => <th className="p-3" key={label}>{label}</th>)}</tr></thead><tbody>{pageRows.map((row) => <tr key={row.id} onClick={() => { if (!choose.isPending) select(row.id); }} aria-selected={selected === row.id} className={`cursor-pointer border-t ${selected === row.id ? "bg-blue-50" : "hover:bg-gray-50"}`}><td className="p-3">{row.row_number}</td><td className="p-3">{displayValue(row.fields.idpel)}<p>{displayValue(row.fields.nama)}</p></td><td className="p-3">{coordinates(row.fields) ? `${row.fields.lat}, ${row.fields.lon}` : "Koordinat belum lengkap"}</td><td className="p-3">{searchLabel[row.search_status]}</td><td className="p-3">{row.candidate_count}</td><td className="p-3"><button aria-label={`Pilih target baris ${row.row_number}`} disabled={choose.isPending} onClick={(event) => { event.stopPropagation(); select(row.id); }} className={selected === row.id ? buttonClass.primary : button}>{selected === row.id ? "Terpilih" : "Pilih target"}</button></td></tr>)}</tbody></table>{!rows.isFetching && !pageRows.length && <p className="p-5 text-center text-sm">Tidak ada target sesuai cakupan atau pencarian.</p>}</div>
       <PreviewPagination key={`${generation}-${radius}-${statusChoice}-${search}-${pageSize}`} context="peta" page={activePage} pageSize={pageSize} total={run ? rows.data && radiusSummary.data ? filtered.length : undefined : 0} loading={restoring || rows.isFetching || radiusSummary.isFetching} onPageChange={setPage} onPageSizeChange={setPageSize} />
