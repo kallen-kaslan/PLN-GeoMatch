@@ -1,79 +1,129 @@
 import { useState, useEffect, useCallback } from "react";
 import { useAppStore } from "@/store/app";
-import { UserCog, Shield, Ban, Trash2, CheckCircle, XCircle, Search, Mail, Calendar } from "lucide-react";
+import { supabase } from "@/lib/supabase";
+import { UserCog, Shield, Trash2, Search, Mail, Calendar, UserPlus } from "lucide-react";
 
-interface MockUser {
+interface RealUser {
   id: string;
   username: string;
-  email: string;
-  role: "admin" | "analis" | "auditor";
-  status: "active" | "blocked";
-  created_at: string;
+  email?: string;
+  role: "admin" | "auditor" | "analis";
+  updated_at: string | null;
+}
+
+function formatDate(value: string | null): string {
+  if (!value) return "-";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "-";
+  return date.toLocaleDateString("id-ID");
 }
 
 export default function AdminPage() {
   const { user } = useAppStore();
-  const [users, setUsers] = useState<MockUser[]>([]);
+  const [users, setUsers] = useState<RealUser[]>([]);
   const [searchQuery, setSearchQuery] = useState("");
   const [loading, setLoading] = useState(true);
   const [actionLoading, setActionLoading] = useState<string | null>(null);
+  const [newAdminEmail, setNewAdminEmail] = useState("");
+  const [newAdminPassword, setNewAdminPassword] = useState("");
+  const [showAddForm, setShowAddForm] = useState(false);
+  const [formError, setFormError] = useState("");
 
-  const loadUsers = useCallback(() => {
-    // Mock data - replace with real API call
-    setTimeout(() => {
-      setUsers([
-        { id: "u_1", username: "admin", email: "admin@pln.co.id", role: "admin", status: "active", created_at: "2026-01-15" },
-        { id: "u_2", username: "petugas", email: "petugas@pln.co.id", role: "analis", status: "active", created_at: "2026-02-10" },
-        { id: "u_3", username: "auditor1", email: "audit@pln.co.id", role: "auditor", status: "active", created_at: "2026-03-05" },
-        { id: "u_4", username: "analis2", email: "analis2@pln.co.id", role: "analis", status: "blocked", created_at: "2026-01-20" },
-      ]);
-      setLoading(false);
-    }, 500);
+  const loadUsers = useCallback(async () => {
+    setLoading(true);
+    const { data, error } = await supabase.from("profiles").select("*");
+    if (error) {
+      console.error("Gagal memuat profil:", error);
+    } else if (data) {
+      setUsers(data as RealUser[]);
+    }
+    setLoading(false);
   }, []);
 
   useEffect(() => {
     loadUsers();
   }, [loadUsers]);
 
-  const handleBlockUser = async (userId: string, currentStatus: string) => {
-    if (!window.confirm(`${currentStatus === "active" ? "Blokir" : "Aktifkan"} user ini?`)) return;
-
+  const handleUpdateRole = async (userId: string, newRole: "admin" | "auditor" | "analis") => {
+    if (!window.confirm(`Ubah role user ini menjadi ${newRole}?`)) return;
     setActionLoading(userId);
-    // Mock action - replace with real API call
-    setTimeout(() => {
-      setUsers((prev) =>
-        prev.map((u) =>
-          u.id === userId ? { ...u, status: u.status === "active" ? "blocked" : "active" } : u
-        )
-      );
-      setActionLoading(null);
-    }, 300);
+    const { error } = await supabase.from("profiles").update({ role: newRole }).eq("id", userId);
+    if (error) {
+      alert("Gagal mengubah role: " + error.message);
+    } else {
+      setUsers((prev) => prev.map((u) => (u.id === userId ? { ...u, role: newRole } : u)));
+    }
+    setActionLoading(null);
+  };
+
+  const getNextRole = (current: "admin" | "auditor" | "analis"): "admin" | "auditor" | "analis" => {
+    if (current === "admin") return "auditor";
+    if (current === "auditor") return "analis";
+    return "admin";
+  };
+
+  const getRoleBadgeClass = (role: "admin" | "auditor" | "analis") => {
+    switch (role) {
+      case "admin":
+        return "bg-[#2563eb] text-white border-[#1e40af]";
+      case "auditor":
+        return "bg-[#7c3aed] text-white border-[#5b21b6]";
+      case "analis":
+        return "bg-[#059669] text-white border-[#047857]";
+      default:
+        return "bg-gray-500 text-white border-gray-700";
+    }
   };
 
   const handleDeleteUser = async (userId: string, username: string) => {
     if (!window.confirm(`HAPUS PERMANEN user "${username}"? Tindakan ini tidak bisa dibatalkan!`)) return;
-
     setActionLoading(userId);
-    // Mock action - replace with real API call
-    setTimeout(() => {
+    const { error } = await supabase.from("profiles").delete().eq("id", userId);
+    if (error) {
+      alert("Gagal menghapus user: " + error.message);
+    } else {
       setUsers((prev) => prev.filter((u) => u.id !== userId));
-      setActionLoading(null);
-    }, 300);
+    }
+    setActionLoading(null);
+  };
+
+  const handleAddAdmin = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setFormError("");
+    if (!newAdminEmail || !newAdminPassword) return;
+
+    setActionLoading("new");
+    const { data, error } = await supabase.auth.signUp({
+      email: newAdminEmail,
+      password: newAdminPassword,
+      options: { data: { username: newAdminEmail.split("@")[0] } }
+    });
+
+    if (error) {
+      setFormError(error.message);
+    } else if (data.user) {
+      // Role default 'admin' sudah diatur oleh trigger database
+      setNewAdminEmail("");
+      setNewAdminPassword("");
+      setShowAddForm(false);
+      loadUsers();
+    }
+    setActionLoading(null);
   };
 
   const filteredUsers = users.filter((u) =>
-    u.username.toLowerCase().includes(searchQuery.toLowerCase()) ||
-    u.email.toLowerCase().includes(searchQuery.toLowerCase())
+    (u.username || "").toLowerCase().includes(searchQuery.toLowerCase()) ||
+    (u.email || "").toLowerCase().includes(searchQuery.toLowerCase())
   );
 
   const stats = {
     total: users.length,
-    active: users.filter((u) => u.status === "active").length,
-    blocked: users.filter((u) => u.status === "blocked").length,
     admins: users.filter((u) => u.role === "admin").length,
+    auditors: users.filter((u) => u.role === "auditor").length,
+    analysts: users.filter((u) => u.role === "analis").length,
   };
 
-  // Check if current user is admin
+  // Hanya admin yang boleh mengelola akun pengguna
   if (user?.role !== "admin") {
     return (
       <div className="p-6 border-2 border-neo-border rounded-sm bg-white shadow-[0_4px_0_#0a0a0a]">
@@ -104,22 +154,71 @@ export default function AdminPage() {
       {/* Stats Cards */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4">
         <div className="p-3.5 sm:p-4 border-2 sm:border-3 border-neo-black rounded-lg bg-white shadow-[3px_3px_0_#0a0a0a]">
-          <p className="text-[11px] sm:text-xs text-[#666] font-bold mb-1">Total User</p>
+          <p className="text-[11px] sm:text-xs text-[#666] font-bold mb-1">Total Pengguna</p>
           <p className="text-xl sm:text-2xl font-black text-neo-black">{stats.total}</p>
-        </div>
-        <div className="p-3.5 sm:p-4 border-2 sm:border-3 border-[#16a34a] rounded-lg bg-[#dcfce7] shadow-[3px_3px_0_#16a34a]">
-          <p className="text-[11px] sm:text-xs text-[#16a34a] font-bold mb-1">Aktif</p>
-          <p className="text-xl sm:text-2xl font-black text-[#16a34a]">{stats.active}</p>
-        </div>
-        <div className="p-3.5 sm:p-4 border-2 sm:border-3 border-[#dc2626] rounded-lg bg-[#fee2e2] shadow-[3px_3px_0_#dc2626]">
-          <p className="text-[11px] sm:text-xs text-[#dc2626] font-bold mb-1">Diblokir</p>
-          <p className="text-xl sm:text-2xl font-black text-[#dc2626]">{stats.blocked}</p>
         </div>
         <div className="p-3.5 sm:p-4 border-2 sm:border-3 border-[#2563eb] rounded-lg bg-[#dbeafe] shadow-[3px_3px_0_#2563eb]">
           <p className="text-[11px] sm:text-xs text-[#2563eb] font-bold mb-1">Admin</p>
           <p className="text-xl sm:text-2xl font-black text-[#2563eb]">{stats.admins}</p>
         </div>
+        <div className="p-3.5 sm:p-4 border-2 sm:border-3 border-[#7c3aed] rounded-lg bg-[#f5f3ff] shadow-[3px_3px_0_#7c3aed]">
+          <p className="text-[11px] sm:text-xs text-[#7c3aed] font-bold mb-1">Auditor</p>
+          <p className="text-xl sm:text-2xl font-black text-[#7c3aed]">{stats.auditors}</p>
+        </div>
+        <div className="p-3.5 sm:p-4 border-2 sm:border-3 border-[#059669] rounded-lg bg-[#ecfdf5] shadow-[3px_3px_0_#059669]">
+          <p className="text-[11px] sm:text-xs text-[#059669] font-bold mb-1">Analis</p>
+          <p className="text-xl sm:text-2xl font-black text-[#059669]">{stats.analysts}</p>
+        </div>
       </div>
+
+      {/* Add Admin Form */}
+      <div className="flex justify-end">
+        <button
+          onClick={() => setShowAddForm(!showAddForm)}
+          className="flex items-center gap-2 px-4 py-2 border-2 border-neo-black bg-neo-black text-white rounded text-sm font-bold shadow-[3px_3px_0_#6B82CB] hover:translate-y-0.5 active:translate-y-1 transition-all"
+        >
+          <UserPlus size={18} />
+          {showAddForm ? "Batal" : "Tambah Admin Baru"}
+        </button>
+      </div>
+
+      {showAddForm && (
+        <form onSubmit={handleAddAdmin} className="p-4 border-2 border-neo-black bg-white rounded-sm shadow-[4px_4px_0_#0a0a0a] space-y-4">
+          <h3 className="font-black text-lg">Registrasi Admin Baru</h3>
+          {formError && <div className="text-red-600 text-xs font-bold bg-red-50 p-2 border border-red-200">{formError}</div>}
+          <div className="grid sm:grid-cols-2 gap-4">
+            <div>
+              <label className="block text-xs font-bold mb-1">Email</label>
+              <input
+                type="email"
+                required
+                value={newAdminEmail}
+                onChange={(e) => setNewAdminEmail(e.target.value)}
+                className="w-full border-2 border-neo-border p-2 text-sm focus:outline-none focus:border-neo-black"
+                placeholder="admin@pln.co.id"
+              />
+            </div>
+            <div>
+              <label className="block text-xs font-bold mb-1">Password</label>
+              <input
+                type="password"
+                required
+                value={newAdminPassword}
+                onChange={(e) => setNewAdminPassword(e.target.value)}
+                className="w-full border-2 border-neo-border p-2 text-sm focus:outline-none focus:border-neo-black"
+                placeholder="Minimal 6 karakter"
+              />
+            </div>
+          </div>
+          <button
+            type="submit"
+            disabled={actionLoading === "new"}
+            className="px-6 py-2 bg-neo-black text-white font-bold text-sm border-2 border-neo-black hover:bg-neutral-800 disabled:opacity-50"
+          >
+            {actionLoading === "new" ? "Memproses..." : "Simpan Admin"}
+          </button>
+        </form>
+      )}
 
       {/* Search Bar */}
       <div className="p-3.5 sm:p-4 border-2 border-neo-border rounded-sm bg-white shadow-[0_4px_0_#0a0a0a]">
@@ -157,54 +256,33 @@ export default function AdminPage() {
                     </h3>
                     <p className="text-xs text-gray-600 flex items-center gap-1 mt-0.5">
                       <Mail className="w-3 h-3 text-gray-400" />
-                      {u.email}
+                      {u.email || "Email tidak tersedia"}
                     </p>
                   </div>
                   <span
-                    className={`shrink-0 px-2 py-0.5 rounded text-[10px] font-black border-2 ${
-                      u.role === "admin"
-                        ? "bg-[#2563eb] text-white border-[#1e40af]"
-                        : u.role === "analis"
-                        ? "bg-[#16a34a] text-white border-[#15803d]"
-                        : "bg-[#d97706] text-white border-[#b45309]"
-                    }`}
+                    className={`shrink-0 px-2 py-0.5 rounded text-[10px] font-black border-2 ${getRoleBadgeClass(
+                      u.role
+                    )}`}
                   >
                     {u.role.toUpperCase()}
                   </span>
                 </div>
 
                 <div className="flex items-center justify-between text-xs">
-                  <div className="flex items-center gap-1.5">
-                    {u.status === "active" ? (
-                      <span className="flex items-center gap-1 text-[#16a34a] font-bold">
-                        <CheckCircle className="w-3.5 h-3.5" />
-                        Aktif
-                      </span>
-                    ) : (
-                      <span className="flex items-center gap-1 text-[#dc2626] font-bold">
-                        <XCircle className="w-3.5 h-3.5" />
-                        Diblokir
-                      </span>
-                    )}
-                  </div>
                   <span className="text-gray-500 text-[11px] flex items-center gap-1 font-mono">
                     <Calendar className="w-3 h-3" />
-                    {new Date(u.created_at).toLocaleDateString("id-ID")}
+                    {formatDate(u.updated_at)}
                   </span>
                 </div>
 
                 <div className="pt-2 border-t border-neo-border flex items-center gap-2">
                   <button
-                    onClick={() => handleBlockUser(u.id, u.status)}
-                    disabled={actionLoading === u.id}
-                    className={`touch-min flex-1 flex items-center justify-center gap-1.5 px-3 py-2 border-2 rounded text-xs font-bold shadow-[2px_2px_0_#0a0a0a] active:translate-y-0.5 disabled:opacity-50 ${
-                      u.status === "active"
-                        ? "border-[#d97706] bg-[#fef3c7] text-[#92400e]"
-                        : "border-[#16a34a] bg-[#dcfce7] text-[#15803d]"
-                    }`}
+                    onClick={() => handleUpdateRole(u.id, getNextRole(u.role))}
+                    disabled={actionLoading === u.id || u.id === user.id}
+                    className="touch-min flex-1 flex items-center justify-center gap-1.5 px-3 py-2 border-2 border-neo-black bg-white text-neo-black rounded text-xs font-bold shadow-[2px_2px_0_#0a0a0a] active:translate-y-0.5 disabled:opacity-50"
                   >
-                    <Ban className="w-3.5 h-3.5" />
-                    {u.status === "active" ? "Blokir" : "Aktifkan"}
+                    <Shield className="w-3.5 h-3.5" />
+                    Ganti Role
                   </button>
                   <button
                     onClick={() => handleDeleteUser(u.id, u.username)}
@@ -228,7 +306,6 @@ export default function AdminPage() {
                   <th className="p-3 border-r border-neo-border font-black">Username</th>
                   <th className="p-3 border-r border-neo-border font-black">Email</th>
                   <th className="p-3 border-r border-neo-border font-black">Role</th>
-                  <th className="p-3 border-r border-neo-border font-black">Status</th>
                   <th className="p-3 border-r border-neo-border font-black">Terdaftar</th>
                   <th className="p-3 text-center font-black">Aksi</th>
                 </tr>
@@ -242,49 +319,28 @@ export default function AdminPage() {
                         {u.username}
                       </div>
                     </td>
-                    <td className="p-3 border-r border-neo-border text-[#666]">{u.email}</td>
+                    <td className="p-3 border-r border-neo-border text-[#666]">{u.email || "-"}</td>
                     <td className="p-3 border-r border-neo-border">
                       <span
-                        className={`px-2 py-1 rounded text-[10px] font-black border-2 ${
-                          u.role === "admin"
-                            ? "bg-[#2563eb] text-white border-[#1e40af]"
-                            : u.role === "analis"
-                            ? "bg-[#16a34a] text-white border-[#15803d]"
-                            : "bg-[#d97706] text-white border-[#b45309]"
-                        }`}
+                        className={`px-2 py-1 rounded text-[10px] font-black border-2 ${getRoleBadgeClass(
+                          u.role
+                        )}`}
                       >
                         {u.role.toUpperCase()}
                       </span>
                     </td>
-                    <td className="p-3 border-r border-neo-border">
-                      {u.status === "active" ? (
-                        <span className="flex items-center gap-1 text-[#16a34a] font-bold">
-                          <CheckCircle className="w-4 h-4" />
-                          Aktif
-                        </span>
-                      ) : (
-                        <span className="flex items-center gap-1 text-[#dc2626] font-bold">
-                          <XCircle className="w-4 h-4" />
-                          Diblokir
-                        </span>
-                      )}
-                    </td>
                     <td className="p-3 border-r border-neo-border text-[#666] font-mono text-[11px]">
-                      {new Date(u.created_at).toLocaleDateString("id-ID")}
+                      {formatDate(u.updated_at)}
                     </td>
                     <td className="p-3 text-center">
                       <div className="flex justify-center gap-2">
                         <button
-                          onClick={() => handleBlockUser(u.id, u.status)}
-                          disabled={actionLoading === u.id}
-                          className={`touch-min px-3 py-1.5 border-2 rounded text-[11px] font-bold shadow-[2px_2px_0_#0a0a0a] hover:-translate-y-0.5 active:translate-y-0.5 transition-all disabled:opacity-50 ${
-                            u.status === "active"
-                              ? "border-[#d97706] bg-[#fef3c7] text-[#92400e] hover:bg-[#fde68a]"
-                              : "border-[#16a34a] bg-[#dcfce7] text-[#15803d] hover:bg-[#bbf7d0]"
-                          }`}
+                          onClick={() => handleUpdateRole(u.id, getNextRole(u.role))}
+                          disabled={actionLoading === u.id || u.id === user.id}
+                          className="touch-min px-3 py-1.5 border-2 border-neo-black bg-white text-neo-black rounded text-[11px] font-bold shadow-[2px_2px_0_#0a0a0a] hover:-translate-y-0.5 active:translate-y-0.5 transition-all disabled:opacity-50"
                         >
-                          <Ban className="w-3 h-3 inline mr-1" />
-                          {u.status === "active" ? "Blokir" : "Aktifkan"}
+                          <Shield className="w-3 h-3 inline mr-1" />
+                          Ganti Role
                         </button>
                         <button
                           onClick={() => handleDeleteUser(u.id, u.username)}
@@ -313,12 +369,12 @@ export default function AdminPage() {
 
       {/* Info Footer */}
       <div className="p-4 border-2 border-[#2563eb] bg-[#dbeafe] rounded-sm text-xs text-[#1e40af]">
-        <p className="font-bold mb-1">ℹ️ Informasi Admin:</p>
+        <p className="font-bold mb-1">ℹ️ Informasi Administrator:</p>
         <ul className="list-disc list-inside space-y-1 text-[#1e40af]/80">
-          <li>User yang diblokir tidak dapat login ke sistem</li>
-          <li>Penghapusan user bersifat permanen dan tidak dapat dibatalkan</li>
-          <li>Admin tidak dapat menghapus akun sendiri</li>
-          <li>Phase 1: Mock data (Backend RBAC akan diimplementasikan pada Phase 1C+)</li>
+          <li>Halaman ini untuk manajemen akun (Admin, Auditor, Analis).</li>
+          <li>Tombol 'Ganti Role' akan merotasi role user (Admin &rarr; Auditor &rarr; Analis &rarr; Admin).</li>
+          <li>Penghapusan user bersifat permanen dan tidak dapat dibatalkan.</li>
+          <li>Admin tidak dapat menghapus akun sendiri.</li>
         </ul>
       </div>
     </div>

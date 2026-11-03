@@ -165,7 +165,7 @@ export default function Navbar() {
             <div className="px-4 py-3 border-b-2 border-neo-border bg-white">
               <p className="text-sm font-bold text-neo-black truncate">{user?.username ?? "Pengguna"}</p>
               <p className="text-xs text-neo-border mt-1">
-                Role: <span className="font-black uppercase text-neo-black">{user?.role ?? "analis"}</span>
+                Role: <span className="font-black uppercase text-neo-black">{user?.role ?? "admin"}</span>
               </p>
             </div>
             <button

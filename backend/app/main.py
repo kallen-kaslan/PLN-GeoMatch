@@ -39,6 +39,8 @@ from .modules.master.router import router as master_router
 from .modules.pdpj.router import router as pdpj_router
 from .modules.spatial.router import router as spatial_router
 from .modules.upload.router import router as upload_router
+from .auth import get_current_user
+from fastapi import Depends
 
 app = FastAPI(title="PLN GeoMatch API", version="1.0.0")
 register_database_error_handlers(app)
@@ -51,13 +53,17 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+# Auth router tetap publik untuk backward compatibility
 app.include_router(auth_router)
-app.include_router(upload_router)
-app.include_router(spatial_router)
-app.include_router(history_router)
-app.include_router(master_router)
-app.include_router(pdpj_router)
-app.include_router(correction_router)
+
+# Seluruh router operasional data diproteksi dengan JWT Supabase
+auth_dep = [Depends(get_current_user)]
+app.include_router(upload_router, dependencies=auth_dep)
+app.include_router(spatial_router, dependencies=auth_dep)
+app.include_router(history_router, dependencies=auth_dep)
+app.include_router(master_router, dependencies=auth_dep)
+app.include_router(pdpj_router, dependencies=auth_dep)
+app.include_router(correction_router, dependencies=auth_dep)
 
 
 @app.get("/")

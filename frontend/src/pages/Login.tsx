@@ -1,9 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useAppStore } from "@/store/app";
-import { Eye, EyeOff, Lock, Mail, User, UserPlus } from "lucide-react";
-
-type AuthMode = "login" | "register";
+import { Eye, EyeOff, Lock, Mail, User } from "lucide-react";
 
 const inputClass =
   "mobile-input w-full border-2 border-neo-black bg-white py-2.5 sm:py-3 pl-10 pr-11 text-sm text-neo-black placeholder:text-gray-500 transition-colors focus:outline-none focus:ring-2 focus:ring-neo-accent focus:ring-offset-0";
@@ -149,17 +147,14 @@ function RightSpatialBackground() {
 }
 
 export default function LoginPage() {
-  const [mode, setMode] = useState<AuthMode>("login");
-  const [username, setUsername] = useState("");
-  const [email, setEmail] = useState("");
+  const [loginEmail, setLoginEmail] = useState("");
   const [password, setPassword] = useState("");
-  const [confirmPassword, setConfirmPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
   const [error, setError] = useState("");
+  const [notice, setNotice] = useState("");
   const [loading, setLoading] = useState(false);
   const navigate = useNavigate();
   const { login } = useAppStore();
-  const isRegister = mode === "register";
 
   const ambientCanvasRef = useRef<HTMLCanvasElement>(null);
 
@@ -266,38 +261,27 @@ export default function LoginPage() {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError("");
+    setNotice("");
 
-    if (isRegister) {
-      if (password !== confirmPassword) {
-        setError("Password tidak cocok!");
-        return;
-      }
-      if (password.length < 6) {
-        setError("Password minimal 6 karakter!");
-        return;
-      }
+    if (!loginEmail.trim()) {
+      setError("Email atau username wajib diisi!");
+      return;
     }
 
     setLoading(true);
     try {
-      // Phase 1 scaffold: mock login/register until backend auth ready
-      await login(username, password);
+      // Jika pengguna hanya mengetik username tanpa domain, otomatis coba dengan format email domain PLN
+      const emailToSend = loginEmail.includes("@")
+        ? loginEmail.trim()
+        : `${loginEmail.trim()}@pln.co.id`;
+      await login(emailToSend, password);
       navigate("/");
-    } catch {
-      setError(isRegister ? "Registrasi gagal. Coba lagi." : "Login gagal. Coba lagi.");
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : "";
+      setError(msg || "Login gagal. Periksa kembali email/username dan password.");
     } finally {
       setLoading(false);
     }
-  };
-
-  const switchMode = (newMode: AuthMode) => {
-    setMode(newMode);
-    setUsername("");
-    setEmail("");
-    setPassword("");
-    setConfirmPassword("");
-    setShowPassword(false);
-    setError("");
   };
 
   return (
@@ -316,235 +300,94 @@ export default function LoginPage() {
         <RightSpatialBackground />
 
         {/* Frosted glass neo-brutalist card: white/88 semi-transparent + restrained offset shadow */}
-        <div className="auth-flip-viewport relative z-10 w-full max-w-[460px]">
-          <div className={`auth-flip-card ${isRegister ? "is-flipped" : ""}`}>
-            {/* FRONT FACE: LOGIN */}
-            <section
-              className={`auth-flip-face ${isRegister ? "auth-flip-face-inactive" : ""} auth-spotlight-card rounded-[4px] border-2 border-neo-black bg-white/88 p-6 sm:p-8 lg:p-9 backdrop-blur-[12px] shadow-[5px_5px_0_#111111,7px_7px_0_rgba(107,130,203,0.22)] overflow-hidden`}
-              style={{ "--pointer-x": "50%", "--pointer-y": "50%", "--border-alpha": "0" } as React.CSSProperties}
-              aria-labelledby="auth-title-login"
-              aria-hidden={isRegister}
-              inert={isRegister}
-            >
-              <div className="mb-6 sm:mb-7">
-                <div className="flex items-center gap-3">
-                  <span className="flex size-10 shrink-0 items-center justify-center border-2 border-neo-black bg-[#111111] text-white shadow-[2px_2px_0_rgba(107,130,203,0.7)]">
-                    <User size={18} aria-hidden="true" />
-                  </span>
-                  <div>
-                    <h2 id="auth-title-login" className="text-xl font-black tracking-tight text-neo-black sm:text-2xl">
-                      Masuk ke GeoMatch
-                    </h2>
-                    <p className="mt-0.5 text-xs text-neo-border sm:text-sm">
-                      Gunakan akun GeoMatch Anda untuk melanjutkan
-                    </p>
-                  </div>
+        <div className="relative z-10 w-full max-w-[460px]">
+          <section
+            className="auth-spotlight-card rounded-[4px] border-2 border-neo-black bg-white/88 p-6 sm:p-8 lg:p-9 backdrop-blur-[12px] shadow-[5px_5px_0_#111111,7px_7px_0_rgba(107,130,203,0.22)] overflow-hidden"
+            style={{ "--pointer-x": "50%", "--pointer-y": "50%", "--border-alpha": "0" } as React.CSSProperties}
+            aria-labelledby="auth-title-login"
+          >
+            <div className="mb-6 sm:mb-7">
+              <div className="flex items-center gap-3">
+                <span className="flex size-10 shrink-0 items-center justify-center border-2 border-neo-black bg-[#111111] text-white shadow-[2px_2px_0_rgba(107,130,203,0.7)]">
+                  <User size={18} aria-hidden="true" />
+                </span>
+                <div>
+                  <h2 id="auth-title-login" className="text-xl font-black tracking-tight text-neo-black sm:text-2xl">
+                    Masuk ke GeoMatch
+                  </h2>
+                  <p className="mt-0.5 text-xs text-neo-border sm:text-sm">
+                    Gunakan akun GeoMatch Anda untuk melanjutkan
+                  </p>
+                </div>
+              </div>
+            </div>
+
+            <form onSubmit={handleSubmit} noValidate={false} className="space-y-4 sm:space-y-4.5">
+              {error && (
+                <div role="alert" className="border-2 border-[#dc2626] bg-[#fee2e2] px-3 py-2.5 text-xs font-semibold text-[#991b1b] sm:text-sm">
+                  {error}
+                </div>
+              )}
+              {notice && (
+                <div role="status" className="border-2 border-emerald-600 bg-emerald-50 px-3 py-2.5 text-xs font-semibold text-emerald-800 sm:text-sm">
+                  {notice}
+                </div>
+              )}
+
+              <div>
+                <label htmlFor="username-login" className="mb-1.5 block text-xs font-bold uppercase tracking-wide sm:text-sm">Email / Akun</label>
+                <div className="group relative has-[:focus-visible]:[&>svg]:translate-x-0.5 has-[:focus-visible]:[&>svg]:text-neo-accent">
+                  <Mail className={iconClass} aria-hidden="true" />
+                  <input
+                    id="username-login"
+                    autoComplete="username"
+                    type="text"
+                    className={`${inputClass} peer`}
+                    value={loginEmail}
+                    onChange={(e) => setLoginEmail(e.target.value)}
+                    placeholder="nama@pln.co.id atau username"
+                    required
+                  />
                 </div>
               </div>
 
-              <form onSubmit={handleSubmit} noValidate={false} className="space-y-4 sm:space-y-4.5">
-                {error && !isRegister && (
-                  <div role="alert" className="border-2 border-[#dc2626] bg-[#fee2e2] px-3 py-2.5 text-xs font-semibold text-[#991b1b] sm:text-sm">
-                    {error}
-                  </div>
-                )}
-
-                <div>
-                  <label htmlFor="username-login" className="mb-1.5 block text-xs font-bold uppercase tracking-wide sm:text-sm">Username</label>
-                  <div className="group relative has-[:focus-visible]:[&>svg]:translate-x-0.5 has-[:focus-visible]:[&>svg]:text-neo-accent">
-                    <User className={iconClass} aria-hidden="true" />
-                    <input
-                      id="username-login"
-                      autoComplete="username"
-                      className={`${inputClass} peer`}
-                      value={username}
-                      onChange={(e) => setUsername(e.target.value)}
-                      placeholder="Username"
-                      required
-                    />
-                  </div>
-                </div>
-
-                <div>
-                  <label htmlFor="password-login" className="mb-1.5 block text-xs font-bold uppercase tracking-wide sm:text-sm">Password</label>
-                  <div className="group relative has-[:focus-visible]:[&>svg]:translate-x-0.5 has-[:focus-visible]:[&>svg]:text-neo-accent">
-                    <Lock className={iconClass} aria-hidden="true" />
-                    <input
-                      id="password-login"
-                      autoComplete="current-password"
-                      className={`${inputClass} peer`}
-                      type={showPassword ? "text" : "password"}
-                      value={password}
-                      onChange={(e) => setPassword(e.target.value)}
-                      placeholder="Password"
-                      required
-                    />
-                    <button
-                      type="button"
-                      onClick={() => setShowPassword((p) => !p)}
-                      aria-label="Tampilkan password"
-                      className="absolute right-1.5 top-1/2 flex size-8 -translate-y-1/2 items-center justify-center rounded-sm text-neo-border transition-colors hover:bg-gray-100 hover:text-neo-black"
-                    >
-                      {showPassword ? <EyeOff size={16} aria-hidden="true" /> : <Eye size={16} aria-hidden="true" />}
-                    </button>
-                  </div>
-                </div>
-
-                <button
-                  type="submit"
-                  disabled={loading}
-                  className="touch-min w-full border-2 border-neo-black bg-[#111111] px-4 py-3 text-sm font-bold text-white shadow-[3px_3px_0_#6B82CB] transition-[transform,box-shadow,background-color] duration-200 hover:translate-x-[1px] hover:translate-y-[1px] hover:bg-neutral-800 hover:shadow-[2px_2px_0_#4F86F7] active:translate-x-[3px] active:translate-y-[3px] active:shadow-none disabled:opacity-50"
-                >
-                  {loading ? "Memproses..." : "Masuk"}
-                </button>
-
-                <p className="border-t border-neo-border/20 pt-4 text-center text-xs text-neo-border sm:text-sm">
-                  Belum punya akun?{" "}
+              <div>
+                <label htmlFor="password-login" className="mb-1.5 block text-xs font-bold uppercase tracking-wide sm:text-sm">Password</label>
+                <div className="group relative has-[:focus-visible]:[&>svg]:translate-x-0.5 has-[:focus-visible]:[&>svg]:text-neo-accent">
+                  <Lock className={iconClass} aria-hidden="true" />
+                  <input
+                    id="password-login"
+                    autoComplete="current-password"
+                    className={`${inputClass} peer`}
+                    type={showPassword ? "text" : "password"}
+                    value={password}
+                    onChange={(e) => setPassword(e.target.value)}
+                    placeholder="Password"
+                    required
+                  />
                   <button
                     type="button"
-                    onClick={() => switchMode("register")}
-                    className="font-bold text-neo-black underline decoration-neo-accent decoration-2 underline-offset-4 transition-colors hover:text-neo-border"
+                    onClick={() => setShowPassword((p) => !p)}
+                    aria-label="Tampilkan password"
+                    className="absolute right-1.5 top-1/2 flex size-8 -translate-y-1/2 items-center justify-center rounded-sm text-neo-border transition-colors hover:bg-gray-100 hover:text-neo-black"
                   >
-                    Daftar sekarang
+                    {showPassword ? <EyeOff size={16} aria-hidden="true" /> : <Eye size={16} aria-hidden="true" />}
                   </button>
-                </p>
-              </form>
-              <p className="mt-5 text-center font-mono text-[10px] uppercase tracking-widest text-neo-border/70 sm:text-[11px]">
-                Fase 1 · Autentikasi simulasi
-              </p>
-            </section>
-
-            {/* BACK FACE: REGISTER */}
-            <section
-              className={`auth-flip-face auth-flip-face-back ${!isRegister ? "auth-flip-face-inactive" : ""} auth-spotlight-card rounded-[4px] border-2 border-neo-black bg-white/88 p-6 sm:p-8 lg:p-9 backdrop-blur-[12px] shadow-[5px_5px_0_#111111,7px_7px_0_rgba(107,130,203,0.22)] overflow-hidden`}
-              style={{ "--pointer-x": "50%", "--pointer-y": "50%", "--border-alpha": "0" } as React.CSSProperties}
-              aria-labelledby="auth-title-register"
-              aria-hidden={!isRegister}
-              inert={!isRegister}
-            >
-              <div className="mb-6 sm:mb-7">
-                <div className="flex items-center gap-3">
-                  <span className="flex size-10 shrink-0 items-center justify-center border-2 border-neo-black bg-[#111111] text-white shadow-[2px_2px_0_rgba(107,130,203,0.7)]">
-                    <UserPlus size={18} aria-hidden="true" />
-                  </span>
-                  <div>
-                    <h2 id="auth-title-register" className="text-xl font-black tracking-tight text-neo-black sm:text-2xl">
-                      Buat akun GeoMatch
-                    </h2>
-                    <p className="mt-0.5 text-xs text-neo-border sm:text-sm">
-                      Daftarkan akun untuk ruang kerja Anda
-                    </p>
-                  </div>
                 </div>
               </div>
 
-              <form onSubmit={handleSubmit} noValidate={false} className="space-y-4 sm:space-y-4.5">
-                {error && isRegister && (
-                  <div role="alert" className="border-2 border-[#dc2626] bg-[#fee2e2] px-3 py-2.5 text-xs font-semibold text-[#991b1b] sm:text-sm">
-                    {error}
-                  </div>
-                )}
-
-                <div>
-                  <label htmlFor="username-register" className="mb-1.5 block text-xs font-bold uppercase tracking-wide sm:text-sm">Username</label>
-                  <div className="group relative has-[:focus-visible]:[&>svg]:translate-x-0.5 has-[:focus-visible]:[&>svg]:text-neo-accent">
-                    <User className={iconClass} aria-hidden="true" />
-                    <input
-                      id="username-register"
-                      autoComplete="username"
-                      className={`${inputClass} peer`}
-                      value={username}
-                      onChange={(e) => setUsername(e.target.value)}
-                      placeholder="Username"
-                      required
-                    />
-                  </div>
-                </div>
-
-                <div>
-                  <label htmlFor="email-register" className="mb-1.5 block text-xs font-bold uppercase tracking-wide sm:text-sm">Email</label>
-                  <div className="group relative has-[:focus-visible]:[&>svg]:translate-x-0.5 has-[:focus-visible]:[&>svg]:text-neo-accent">
-                    <Mail className={iconClass} aria-hidden="true" />
-                    <input
-                      id="email-register"
-                      autoComplete="email"
-                      className={`${inputClass} peer`}
-                      type="email"
-                      value={email}
-                      onChange={(e) => setEmail(e.target.value)}
-                      placeholder="nama@pln.co.id"
-                      required
-                    />
-                  </div>
-                </div>
-
-                <div>
-                  <label htmlFor="password-register" className="mb-1.5 block text-xs font-bold uppercase tracking-wide sm:text-sm">Password</label>
-                  <div className="group relative has-[:focus-visible]:[&>svg]:translate-x-0.5 has-[:focus-visible]:[&>svg]:text-neo-accent">
-                    <Lock className={iconClass} aria-hidden="true" />
-                    <input
-                      id="password-register"
-                      autoComplete="new-password"
-                      className={`${inputClass} peer`}
-                      type={showPassword ? "text" : "password"}
-                      value={password}
-                      onChange={(e) => setPassword(e.target.value)}
-                      placeholder="Minimal 6 karakter"
-                      required
-                    />
-                    <button
-                      type="button"
-                      onClick={() => setShowPassword((previous) => !previous)}
-                      aria-label={showPassword ? "Sembunyikan password" : "Tampilkan password"}
-                      aria-pressed={showPassword}
-                      className="absolute right-1.5 top-1/2 flex size-8 -translate-y-1/2 items-center justify-center rounded-sm text-neo-border transition-colors hover:bg-gray-100 hover:text-neo-black focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-neo-accent"
-                    >
-                      {showPassword ? <EyeOff size={16} aria-hidden="true" /> : <Eye size={16} aria-hidden="true" />}
-                    </button>
-                  </div>
-                </div>
-
-                <div>
-                  <label htmlFor="confirm-password" className="mb-1.5 block text-xs font-bold uppercase tracking-wide sm:text-sm">Konfirmasi password</label>
-                  <div className="group relative has-[:focus-visible]:[&>svg]:translate-x-0.5 has-[:focus-visible]:[&>svg]:text-neo-accent">
-                    <Lock className={iconClass} aria-hidden="true" />
-                    <input
-                      id="confirm-password"
-                      autoComplete="new-password"
-                      className={`${inputClass} peer`}
-                      type={showPassword ? "text" : "password"}
-                      value={confirmPassword}
-                      onChange={(e) => setConfirmPassword(e.target.value)}
-                      placeholder="Ulangi password"
-                      required
-                    />
-                  </div>
-                </div>
-
-                <button
-                  type="submit"
-                  disabled={loading}
-                  className="touch-min w-full border-2 border-neo-black bg-[#111111] px-4 py-3 text-sm font-bold text-white shadow-[3px_3px_0_#6B82CB] transition-[transform,box-shadow,background-color] duration-200 hover:translate-x-[1px] hover:translate-y-[1px] hover:bg-neutral-800 hover:shadow-[2px_2px_0_#4F86F7] active:translate-x-[3px] active:translate-y-[3px] active:shadow-none disabled:opacity-50"
-                >
-                  {loading ? "Memproses..." : "Daftar"}
-                </button>
-
-                <p className="border-t border-neo-border/20 pt-4 text-center text-xs text-neo-border sm:text-sm">
-                  Sudah punya akun?{" "}
-                  <button
-                    type="button"
-                    onClick={() => switchMode("login")}
-                    className="font-bold text-neo-black underline decoration-neo-accent decoration-2 underline-offset-4 transition-colors hover:text-neo-border"
-                  >
-                    Masuk
-                  </button>
-                </p>
-              </form>
-              <p className="mt-5 text-center font-mono text-[10px] uppercase tracking-widest text-neo-border/70 sm:text-[11px]">
-                Fase 1 · Autentikasi simulasi
-              </p>
-            </section>
-          </div>
+              <button
+                type="submit"
+                disabled={loading}
+                className="touch-min w-full border-2 border-neo-black bg-[#111111] px-4 py-3 text-sm font-bold text-white shadow-[3px_3px_0_#6B82CB] transition-[transform,box-shadow,background-color] duration-200 hover:translate-x-[1px] hover:translate-y-[1px] hover:bg-neutral-800 hover:shadow-[2px_2px_0_#4F86F7] active:translate-x-[3px] active:translate-y-[3px] active:shadow-none disabled:opacity-50"
+              >
+                {loading ? "Memproses..." : "Masuk"}
+              </button>
+            </form>
+            <p className="mt-5 text-center font-mono text-[10px] uppercase tracking-widest text-neo-border/70 sm:text-[11px]">
+              Autentikasi Supabase Terkelola
+            </p>
+          </section>
         </div>
       </main>
     </div>

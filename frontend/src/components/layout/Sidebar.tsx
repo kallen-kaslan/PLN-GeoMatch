@@ -69,7 +69,7 @@ export default function Sidebar() {
     { to: "/history", label: "Riwayat Proses", icon: History },
   ];
 
-  // Tambahkan menu Admin jika pengguna memiliki role admin atau untuk eksplorasi admin
+  // Menu manajemen pengguna hanya untuk admin
   if (user?.role === "admin") {
     menu.push({ to: "/admin", label: "Manajemen Pengguna", icon: ShieldCheck });
   }
@@ -192,7 +192,7 @@ export default function Sidebar() {
               </div>
               <div className="flex-1 min-w-0">
                 <p className="text-xs font-bold text-neo-black truncate">{user?.username ?? "Pengguna"}</p>
-                <p className="text-[10px] text-neo-border font-semibold uppercase">{user?.role ?? "analis"}</p>
+                <p className="text-[10px] text-neo-border font-semibold uppercase">{user?.role ?? "admin"}</p>
               </div>
             </div>
 
@@ -275,11 +275,11 @@ export default function Sidebar() {
             <div className="flex items-center justify-between text-[11px] text-neo-border">
               <span className="font-semibold truncate max-w-[140px]">{user?.username ?? "Petugas"}</span>
               <span className="font-mono text-[10px] uppercase font-bold px-1 bg-neo-white border border-neo-border rounded-xs">
-                {user?.role ?? "analis"}
+                {user?.role ?? "admin"}
               </span>
             </div>
           ) : (
-            <div className="flex justify-center" title={`${user?.username ?? "User"} (${user?.role ?? "analis"})`}>
+            <div className="flex justify-center" title={`${user?.username ?? "User"} (${user?.role ?? "admin"})`}>
               <div className="w-7 h-7 rounded-xs border border-neo-border bg-neo-black text-white flex items-center justify-center">
                 <User size={14} />
               </div>

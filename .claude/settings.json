@@ -2,6 +2,8 @@
   "enabledPlugins": {
     "agent-skills@addy-agent-skills": true,
     "supermemory@supermemory-plugins": true,
-    "gsap-skills@gsap-skills": true
+    "gsap-skills@gsap-skills": true,
+    "supabase@claude-plugins-official": true,
+    "supabase-expert@anthropic-plugin-directory": true
   }
 }

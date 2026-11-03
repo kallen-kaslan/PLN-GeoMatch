@@ -1,6 +1,27 @@
 import { create } from "zustand";
+import type { Session } from "@supabase/supabase-js";
+import { supabase } from "@/lib/supabase";
 
-export type Role = "admin" | "analis" | "auditor";
+export type Role = "admin" | "auditor" | "analis";
+
+const VALID_ROLES: readonly Role[] = ["admin", "auditor", "analis"];
+
+function readRole(session: Session | null): Role {
+  const raw = (session?.user?.app_metadata as Record<string, unknown> | undefined)?.role;
+  if (typeof raw === "string" && (VALID_ROLES as readonly string[]).includes(raw)) {
+    return raw as Role;
+  }
+  // Default aman non-privileged
+  return "analis";
+}
+
+function readUsername(session: Session | null): string {
+  const meta = session?.user?.user_metadata as Record<string, unknown> | undefined;
+  const username = typeof meta?.username === "string" ? meta.username.trim() : "";
+  if (username) return username;
+  const email = session?.user?.email ?? "";
+  return email.split("@")[0] || "Pengguna";
+}
 
 export type User = {
   id: string;
@@ -11,6 +32,7 @@ export type User = {
 export type AppState = {
   user: User | null;
   token: string | null;
+  initialized: boolean;
   theme: "light" | "dark";
   activeProcessId: string | null;
   isMobileMenuOpen: boolean;
@@ -23,8 +45,10 @@ export type AppState = {
   toggleMobileMenu: () => void;
   setIsSidebarCollapsed: (collapsed: boolean) => void;
   toggleSidebarCollapsed: () => void;
-  login: (username: string, password: string) => Promise<void>;
-  logout: () => void;
+  applySession: (session: Session | null) => void;
+  initAuth: () => Promise<void>;
+  login: (email: string, password: string) => Promise<void>;
+  logout: () => Promise<void>;
 };
 
 const getInitialSidebarCollapsed = (): boolean => {
@@ -35,9 +59,10 @@ const getInitialSidebarCollapsed = (): boolean => {
   }
 };
 
-export const useAppStore = create<AppState>((set) => ({
+export const useAppStore = create<AppState>((set, get) => ({
   user: null,
   token: null,
+  initialized: false,
   theme: "light",
   activeProcessId: null,
   isMobileMenuOpen: false,
@@ -66,19 +91,30 @@ export const useAppStore = create<AppState>((set) => ({
       }
       return { isSidebarCollapsed: next };
     }),
-  login: async (username, _password) => {
-    // Phase 1 scaffold: mock login until backend auth is ready (Phase 1C+).
-    // Mock user roles based on username
-    let role: Role = "analis";
-    if (username.toLowerCase() === "admin") {
-      role = "admin";
-    } else if (username.toLowerCase().includes("audit")) {
-      role = "auditor";
+  applySession: (session) => {
+    if (!session) {
+      set({ user: null, token: null, initialized: true });
+      return;
     }
-
-    const mockUser: User = { id: `u_${Date.now()}`, username, role };
-    const mockToken = `mock-token-${Date.now()}`;
-    set({ user: mockUser, token: mockToken });
+    set({
+      user: { id: session.user.id, username: readUsername(session), role: readRole(session) },
+      token: session.access_token,
+      initialized: true,
+    });
   },
-  logout: () => set({ user: null, token: null, activeProcessId: null, isMobileMenuOpen: false }),
+  initAuth: async () => {
+    const { data } = await supabase.auth.getSession();
+    get().applySession(data.session);
+    supabase.auth.onAuthStateChange((_event, session) => {
+      get().applySession(session);
+    });
+  },
+  login: async (email, password) => {
+    const { error } = await supabase.auth.signInWithPassword({ email, password });
+    if (error) throw new Error(error.message);
+  },
+  logout: async () => {
+    await supabase.auth.signOut();
+    set({ user: null, token: null, activeProcessId: null, isMobileMenuOpen: false });
+  },
 }));

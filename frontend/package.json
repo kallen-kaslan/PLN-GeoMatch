@@ -13,6 +13,7 @@
   },
   "dependencies": {
     "@lucasmarkes/hairline": "^0.5.1",
+    "@supabase/supabase-js": "^2.118.0",
     "@tanstack/react-query": "^5.104.4",
     "axios": "^1.20.0",
     "lucide-react": "^1.59.0",
