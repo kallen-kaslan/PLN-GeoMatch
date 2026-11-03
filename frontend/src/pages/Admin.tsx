@@ -249,43 +249,14 @@ export default function AdminPage() {
                     </p>
                   </div>
                   <span
-<<<<<<< HEAD
-                    className={`shrink-0 px-2 py-0.5 rounded text-[10px] font-black border-2 ${getRoleBadgeClass(
-                      u.role
-                    )}`}
-=======
-                    className={`shrink-0 px-2 py-0.5 rounded text-xs font-semibold border ${
-                      u.role === "admin"
-                        ? "bg-[#2563eb] text-white border-[#1e40af]"
-                        : u.role === "analis"
-                        ? "bg-[#16a34a] text-white border-[#15803d]"
-                        : "bg-[#d97706] text-white border-[#b45309]"
-                    }`}
->>>>>>> origin/diohaw
+                    className={`shrink-0 px-2 py-0.5 rounded text-xs font-semibold border ${getRoleBadgeClass(u.role)}`}
                   >
                     {u.role.toUpperCase()}
                   </span>
                 </div>
 
                 <div className="flex items-center justify-between text-xs">
-<<<<<<< HEAD
-                  <span className="text-gray-500 text-[11px] flex items-center gap-1 font-mono">
-=======
-                  <div className="flex items-center gap-1.5">
-                    {u.status === "active" ? (
-                      <span className="flex items-center gap-1 text-[#16a34a] font-semibold">
-                        <CheckCircle className="w-3.5 h-3.5" />
-                        Aktif
-                      </span>
-                    ) : (
-                      <span className="flex items-center gap-1 text-[#dc2626] font-semibold">
-                        <XCircle className="w-3.5 h-3.5" />
-                        Diblokir
-                      </span>
-                    )}
-                  </div>
                   <span className="text-gray-500 text-xs flex items-center gap-1 font-mono">
->>>>>>> origin/diohaw
                     <Calendar className="w-3 h-3" />
                     {formatDate(u.updated_at)}
                   </span>
@@ -293,19 +264,9 @@ export default function AdminPage() {
 
                 <div className="pt-2 border-t border-ui-border flex items-center gap-2">
                   <button
-<<<<<<< HEAD
                     onClick={() => handleUpdateRole(u.id, getNextRole(u.role))}
                     disabled={actionLoading === u.id || u.id === user.id}
-                    className="touch-min flex-1 flex items-center justify-center gap-1.5 px-3 py-2 border-2 border-neo-black bg-white text-neo-black rounded text-xs font-bold shadow-[2px_2px_0_#0a0a0a] active:translate-y-0.5 disabled:opacity-50"
-=======
-                    onClick={() => handleBlockUser(u.id, u.status)}
-                    disabled={actionLoading === u.id}
-                    className={`touch-min flex-1 flex items-center justify-center gap-1.5 px-3 py-2 border rounded text-xs font-semibold   disabled:opacity-50 ${
-                      u.status === "active"
-                        ? "border-[#d97706] bg-[#fef3c7] text-[#92400e]"
-                        : "border-[#16a34a] bg-[#dcfce7] text-[#15803d]"
-                    }`}
->>>>>>> origin/diohaw
+                    className="touch-min flex-1 flex items-center justify-center gap-1.5 px-3 py-2 border border-ui-border bg-white text-neo-black rounded text-xs font-semibold disabled:opacity-50"
                   >
                     <Shield className="w-3.5 h-3.5" />
                     Ganti Role
@@ -329,20 +290,11 @@ export default function AdminPage() {
             <table className="w-full text-left text-[13px] border-collapse min-w-[700px]">
               <thead className="bg-ui-table-head text-neo-black border-b border-ui-border">
                 <tr>
-<<<<<<< HEAD
-                  <th className="p-3 border-r border-neo-border font-black">Username</th>
-                  <th className="p-3 border-r border-neo-border font-black">Email</th>
-                  <th className="p-3 border-r border-neo-border font-black">Role</th>
-                  <th className="p-3 border-r border-neo-border font-black">Terdaftar</th>
-                  <th className="p-3 text-center font-black">Aksi</th>
-=======
                   <th className="p-3 border-r border-ui-border font-semibold">Username</th>
                   <th className="p-3 border-r border-ui-border font-semibold">Email</th>
                   <th className="p-3 border-r border-ui-border font-semibold">Role</th>
-                  <th className="p-3 border-r border-ui-border font-semibold">Status</th>
                   <th className="p-3 border-r border-ui-border font-semibold">Terdaftar</th>
                   <th className="p-3 text-center font-semibold">Aksi</th>
->>>>>>> origin/diohaw
                 </tr>
               </thead>
               <tbody>
@@ -401,19 +353,9 @@ export default function AdminPage() {
                     <td className="p-3 text-center">
                       <div className="flex justify-center gap-2">
                         <button
-<<<<<<< HEAD
                           onClick={() => handleUpdateRole(u.id, getNextRole(u.role))}
                           disabled={actionLoading === u.id || u.id === user.id}
-                          className="touch-min px-3 py-1.5 border-2 border-neo-black bg-white text-neo-black rounded text-[11px] font-bold shadow-[2px_2px_0_#0a0a0a] hover:-translate-y-0.5 active:translate-y-0.5 transition-all disabled:opacity-50"
-=======
-                          onClick={() => handleBlockUser(u.id, u.status)}
-                          disabled={actionLoading === u.id}
-                          className={`touch-min px-3 py-1.5 border rounded text-xs font-semibold  hover:-translate-y-0.5  transition-all disabled:opacity-50 ${
-                            u.status === "active"
-                              ? "border-[#d97706] bg-[#fef3c7] text-[#92400e] hover:bg-[#fde68a]"
-                              : "border-[#16a34a] bg-[#dcfce7] text-[#15803d] hover:bg-[#bbf7d0]"
-                          }`}
->>>>>>> origin/diohaw
+                          className="touch-min flex-1 flex items-center justify-center gap-1.5 px-3 py-2 border border-ui-border bg-white text-neo-black rounded text-xs font-semibold disabled:opacity-50"
                         >
                           <Shield className="w-3 h-3 inline mr-1" />
                           Ganti Role
@@ -444,13 +386,8 @@ export default function AdminPage() {
       )}
 
       {/* Info Footer */}
-<<<<<<< HEAD
-      <div className="p-4 border-2 border-[#2563eb] bg-[#dbeafe] rounded-sm text-xs text-[#1e40af]">
-        <p className="font-bold mb-1">ℹ️ Informasi Administrator:</p>
-=======
       <div className="p-4 border border-[#2563eb] bg-[#dbeafe] rounded-lg text-xs text-[#1e40af]">
         <p className="font-semibold mb-1">ℹ️ Informasi Admin:</p>
->>>>>>> origin/diohaw
         <ul className="list-disc list-inside space-y-1 text-[#1e40af]/80">
           <li>Halaman ini untuk manajemen akun (Admin, Auditor, Analis).</li>
           <li>Tombol 'Ganti Role' akan merotasi role user (Admin &rarr; Auditor &rarr; Analis &rarr; Admin).</li>
