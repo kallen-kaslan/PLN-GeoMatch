@@ -35,7 +35,7 @@ def test_all_observations_source_and_coordinate_warning_survive_refresh(
         page.reload()
     page.get_by_role("link", name="Buka Peta Koreksi", exact=True).click()
     page.get_by_role("button", name="Pilih target baris 2", exact=True).click()
-    page.get_by_role("button", name="Tampilkan kandidat target", exact=True).click()
+
     candidates = page.get_by_role("region", name="Kandidat target peta", exact=True)
     expect(candidates.get_by_role("article")).to_have_count(1)
     expect(candidates).to_contain_text("Sumber koordinat terpilih: dil.csv")

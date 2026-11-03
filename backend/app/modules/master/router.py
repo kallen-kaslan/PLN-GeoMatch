@@ -13,6 +13,7 @@ from app.models.upload import BatchStatus, DatasetType, SourceRecord, UploadBatc
 from app.modules.master.summary import master_summary
 from app.modules.upload.normalization import extract_standard_fields
 from app.modules.upload.pagination import load_original_cells, source_page_ids
+from app.search_index import pending_search, prepare_search, search_candidates
 
 DbSession = Annotated[Session, Depends(get_db)]
 router = APIRouter(prefix="/master", tags=["Data Master"])
@@ -160,6 +161,10 @@ def list_master_records(
     """Paginate source observations without collapsing repeated IDPEL or periods."""
     query = catalogue_query(db, kind, batch_id)
     if q.strip():
+        state = prepare_search(db, ("source",))
+        if state and not state["ready"]:
+            return {**pending_search(state), "skip": skip, "limit": limit}
+        query = query.filter(search_candidates(db, (("source", SourceRecord.id),), q))
         escaped = (
             q.strip().replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
         )

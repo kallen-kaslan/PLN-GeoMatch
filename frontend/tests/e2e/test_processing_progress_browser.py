@@ -153,6 +153,7 @@ def test_committed_correction_rows_refresh_while_next_chunk_is_running(page: Pag
     expect(detail.get_by_role("heading", name="Kandidat tersimpan (0)", exact=True)).to_be_visible()
     active.continue_()
     expect(detail.get_by_role("heading", name="Kandidat tersimpan (2)", exact=True)).to_be_visible()
+    page.get_by_role("button", name="Tutup detail koreksi", exact=True).click()
     expect(page.get_by_role("button", name="Detail koreksi baris 202", exact=True)).to_be_visible()
     assert len(held) == 2
     held[-1].abort("failed")

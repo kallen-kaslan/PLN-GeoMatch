@@ -97,30 +97,30 @@ export default function ProcessPage() {
 
   return (
     <div className="space-y-5 sm:space-y-6">
-      <div className="border-b border-neo-border pb-3">
-        <h1 className="fluid-h1 font-black tracking-tight text-neo-black">
+      <div className="border-b border-ui-border pb-3">
+        <h1 className="fluid-h1 font-semibold tracking-tight text-neo-black">
           Input Manual & Konfigurasi Pencocokan
         </h1>
-        <p className="text-xs sm:text-sm text-neo-border mt-0.5">
+        <p className="text-xs sm:text-sm text-ui-muted mt-0.5">
           Tentukan parameter spasial, pilih batch koordinat kosong, atau input manual satu titik untuk dicari kandidat IDPEL-nya di Master Sisa.
         </p>
       </div>
 
       {error && (
-        <div className="p-3.5 sm:p-4 border-2 border-[#dc2626] bg-[#fee2e2] text-[#dc2626] rounded-sm text-xs sm:text-sm font-bold shadow-[2px_2px_0_#dc2626]">
+        <div className="p-3.5 sm:p-4 border border-[#dc2626] bg-[#fee2e2] text-[#dc2626] rounded-lg text-xs sm:text-sm font-semibold ">
           Error: {error}
         </div>
       )}
 
       {/* Tab Switcher: Batch vs Single Manual Coordinate */}
-      <div className="flex flex-col sm:flex-row gap-2 border-b-2 border-neo-border pb-2.5">
+      <div className="flex flex-col sm:flex-row gap-2 border-b border-ui-border pb-2.5">
         <button
           type="button"
           onClick={() => setActiveTab("batch")}
-          className={`flex items-center justify-center gap-2 px-4 py-2.5 touch-min border-2 rounded-sm text-xs sm:text-sm font-bold transition active:translate-y-0.5 ${
+          className={`flex items-center justify-center gap-2 px-4 py-2.5 touch-min border rounded-lg text-xs sm:text-sm font-semibold transition  ${
             activeTab === "batch"
-              ? "border-neo-black bg-neo-black text-white shadow-[2px_2px_0_#ff6b35]"
-              : "border-neo-border bg-white text-neo-black hover:bg-[#e5e4e7] shadow-[2px_2px_0_#0a0a0a]"
+              ? "border-neo-black bg-ui-primary text-white "
+              : "border-ui-border bg-white text-neo-black hover:bg-slate-100 "
           }`}
         >
           <FolderCheck size={16} />
@@ -129,10 +129,10 @@ export default function ProcessPage() {
         <button
           type="button"
           onClick={() => setActiveTab("manual")}
-          className={`flex items-center justify-center gap-2 px-4 py-2.5 touch-min border-2 rounded-sm text-xs sm:text-sm font-bold transition active:translate-y-0.5 ${
+          className={`flex items-center justify-center gap-2 px-4 py-2.5 touch-min border rounded-lg text-xs sm:text-sm font-semibold transition  ${
             activeTab === "manual"
-              ? "border-neo-black bg-neo-black text-white shadow-[2px_2px_0_#ff6b35]"
-              : "border-neo-border bg-white text-neo-black hover:bg-[#e5e4e7] shadow-[2px_2px_0_#0a0a0a]"
+              ? "border-neo-black bg-ui-primary text-white "
+              : "border-ui-border bg-white text-neo-black hover:bg-slate-100 "
           }`}
         >
           <MapPin size={16} />
@@ -141,10 +141,10 @@ export default function ProcessPage() {
       </div>
 
       {/* Main Form Container */}
-      <div className="p-4 sm:p-6 border-2 border-neo-border rounded-sm bg-white shadow-[4px_4px_0_#0a0a0a] max-w-2xl w-full">
+      <div className="p-4 sm:p-6 border border-ui-border rounded-lg bg-white  max-w-2xl w-full">
         <form onSubmit={handleStartMatching} className="space-y-4 sm:space-y-5">
           <div>
-            <label className="block text-xs sm:text-sm font-bold text-neo-black mb-1.5">
+            <label className="block text-xs sm:text-sm font-semibold text-neo-black mb-1.5">
               Nama Sesi Pencocokan <span className="text-[#dc2626]">*</span>
             </label>
             <input
@@ -152,18 +152,18 @@ export default function ProcessPage() {
               required
               value={processName}
               onChange={(e) => setProcessName(e.target.value)}
-              className="w-full border-2 border-neo-border p-2.5 rounded-sm mobile-input bg-white text-neo-black focus:outline-none focus:ring-2 focus:ring-neo-accent"
+              className="w-full border border-ui-border p-2.5 rounded-lg mobile-input bg-white text-neo-black focus:outline-none focus:ring-2 focus:ring-neo-accent"
               placeholder="Contoh: Pencocokan Koordinat PLN Gardu A"
             />
           </div>
 
           {activeTab === "batch" ? (
             <div>
-              <label className="block text-xs sm:text-sm font-bold text-neo-black mb-1.5">
+              <label className="block text-xs sm:text-sm font-semibold text-neo-black mb-1.5">
                 Pilih Batch Koordinat Kosong / Target <span className="text-[#dc2626]">*</span>
               </label>
               {batches.length === 0 ? (
-                <div className="p-3.5 border-2 border-dashed border-neo-border rounded-sm text-xs text-neo-border bg-neo-white">
+                <div className="p-3.5 border border-dashed border-ui-border rounded-lg text-xs text-ui-muted bg-neo-white">
                   Belum ada batch terupload. Silakan unggah data di menu <strong>Upload & Bentuk Master</strong> atau jalankan Quick Demo.
                 </div>
               ) : (
@@ -171,7 +171,7 @@ export default function ProcessPage() {
                   required
                   value={targetBatchId}
                   onChange={(e) => setTargetBatchId(e.target.value)}
-                  className="w-full border-2 border-neo-border p-2.5 rounded-sm mobile-input bg-white text-neo-black focus:outline-none focus:ring-2 focus:ring-neo-accent"
+                  className="w-full border border-ui-border p-2.5 rounded-lg mobile-input bg-white text-neo-black focus:outline-none focus:ring-2 focus:ring-neo-accent"
                 >
                   <option value="">-- Pilih Batch Target --</option>
                   {batches.map((b) => (
@@ -183,13 +183,13 @@ export default function ProcessPage() {
               )}
             </div>
           ) : (
-            <div className="p-3.5 sm:p-4 border-2 border-neo-border bg-[#fafafa] rounded-sm space-y-3.5">
-              <div className="flex items-center gap-1.5 text-xs font-black text-neo-black uppercase tracking-wide">
+            <div className="p-3.5 sm:p-4 border border-ui-border bg-[#fafafa] rounded-lg space-y-3.5">
+              <div className="flex items-center gap-1.5 text-xs font-semibold text-neo-black uppercase tracking-wide">
                 <Compass size={16} />
                 <span>Data Titik Lapangan Manual</span>
               </div>
               <div>
-                <label className="block text-xs font-bold text-neo-black mb-1">
+                <label className="block text-xs font-semibold text-neo-black mb-1">
                   Nama / ID Titik / No. Tiang <span className="text-[#dc2626]">*</span>
                 </label>
                 <input
@@ -197,12 +197,12 @@ export default function ProcessPage() {
                   required
                   value={manualRef}
                   onChange={(e) => setManualRef(e.target.value)}
-                  className="w-full border-2 border-neo-border p-2 rounded-sm mobile-input bg-white text-neo-black"
+                  className="w-full border border-ui-border p-2 rounded-lg mobile-input bg-white text-neo-black"
                 />
               </div>
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <div>
-                  <label className="block text-xs font-bold text-neo-black mb-1">
+                  <label className="block text-xs font-semibold text-neo-black mb-1">
                     Latitude (Y) <span className="text-[#dc2626]">*</span>
                   </label>
                   <input
@@ -210,11 +210,11 @@ export default function ProcessPage() {
                     required
                     value={manualLat}
                     onChange={(e) => setManualLat(e.target.value)}
-                    className="w-full border-2 border-neo-border p-2 rounded-sm mobile-input bg-white text-neo-black font-mono"
+                    className="w-full border border-ui-border p-2 rounded-lg mobile-input bg-white text-neo-black font-mono"
                   />
                 </div>
                 <div>
-                  <label className="block text-xs font-bold text-neo-black mb-1">
+                  <label className="block text-xs font-semibold text-neo-black mb-1">
                     Longitude (X) <span className="text-[#dc2626]">*</span>
                   </label>
                   <input
@@ -222,7 +222,7 @@ export default function ProcessPage() {
                     required
                     value={manualLon}
                     onChange={(e) => setManualLon(e.target.value)}
-                    className="w-full border-2 border-neo-border p-2 rounded-sm mobile-input bg-white text-neo-black font-mono"
+                    className="w-full border border-ui-border p-2 rounded-lg mobile-input bg-white text-neo-black font-mono"
                   />
                 </div>
               </div>
@@ -231,7 +231,7 @@ export default function ProcessPage() {
 
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-4">
             <div>
-              <label className="block text-xs sm:text-sm font-bold text-neo-black mb-1">
+              <label className="block text-xs sm:text-sm font-semibold text-neo-black mb-1">
                 Radius Maksimal (Meter)
               </label>
               <input
@@ -240,13 +240,13 @@ export default function ProcessPage() {
                 max="1000"
                 value={radiusMeters}
                 onChange={(e) => setRadiusMeters(Number(e.target.value))}
-                className="w-full border-2 border-neo-border p-2 rounded-sm mobile-input bg-white text-neo-black font-mono"
+                className="w-full border border-ui-border p-2 rounded-lg mobile-input bg-white text-neo-black font-mono"
               />
-              <span className="text-[11px] text-neo-border mt-0.5 block">Default rekomendasi: 150 meter</span>
+              <span className="text-xs text-ui-muted mt-0.5 block">Default rekomendasi: 150 meter</span>
             </div>
 
             <div>
-              <label className="block text-xs sm:text-sm font-bold text-neo-black mb-1">
+              <label className="block text-xs sm:text-sm font-semibold text-neo-black mb-1">
                 Max Kandidat / Titik
               </label>
               <input
@@ -255,20 +255,20 @@ export default function ProcessPage() {
                 max="10"
                 value={maxCandidates}
                 onChange={(e) => setMaxCandidates(Number(e.target.value))}
-                className="w-full border-2 border-neo-border p-2 rounded-sm mobile-input bg-white text-neo-black font-mono"
+                className="w-full border border-ui-border p-2 rounded-lg mobile-input bg-white text-neo-black font-mono"
               />
-              <span className="text-[11px] text-neo-border mt-0.5 block">Urutan ranking jarak terdekat</span>
+              <span className="text-xs text-ui-muted mt-0.5 block">Urutan ranking jarak terdekat</span>
             </div>
           </div>
 
           <button
             type="submit"
             disabled={loading}
-            className="w-full touch-min py-3 px-4 border-2 border-neo-black bg-neo-black text-white text-xs sm:text-sm font-bold rounded-sm shadow-[3px_3px_0_#ff6b35] hover:bg-[#1a1a1a] transition active:translate-y-0.5 disabled:opacity-50 flex items-center justify-center gap-2"
+            className="w-full touch-min py-3 px-4 border border-neo-black bg-ui-primary text-white text-xs sm:text-sm font-semibold rounded-lg  hover:bg-ui-primary-hover transition  disabled:opacity-50 flex items-center justify-center gap-2"
           >
             {loading ? (
               <>
-                <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
+                <div className="w-4 h-4 border border-white border-t-transparent rounded-full animate-spin"></div>
                 <span>Menjalankan Pencocokan Spasial...</span>
               </>
             ) : (
@@ -283,13 +283,13 @@ export default function ProcessPage() {
 
       {/* Matching Result Summary */}
       {result && (
-        <div className="p-4 sm:p-6 border-2 border-[#16a34a] bg-[#dcfce7] rounded-sm shadow-[4px_4px_0_#16a34a] max-w-2xl w-full space-y-3.5">
+        <div className="p-4 sm:p-6 border border-[#16a34a] bg-[#dcfce7] rounded-lg  max-w-2xl w-full space-y-3.5">
           <div className="flex items-center gap-2 text-[#16a34a]">
             <CheckCircle2 size={22} />
-            <h2 className="text-base sm:text-lg font-black">Pencocokan Spasial Selesai!</h2>
+            <h2 className="text-base sm:text-lg font-semibold">Pencocokan Spasial Selesai!</h2>
           </div>
 
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-xs text-neo-black bg-white/70 p-3 rounded-sm border border-[#16a34a]/30">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-xs text-neo-black bg-white/70 p-3 rounded-lg border border-[#16a34a]/30">
             <p>ID Sesi: <strong>#{result.process_id}</strong></p>
             <p>Total Titik: <strong>{result.total_targets}</strong></p>
             <p className="text-[#16a34a]">Menemukan Kandidat: <strong>{result.matched_targets}</strong></p>
@@ -299,7 +299,7 @@ export default function ProcessPage() {
 
           <button
             onClick={() => navigate(`/candidates?process_id=${result.process_id}`)}
-            className="w-full touch-min py-3 px-4 border-2 border-neo-border bg-neo-black text-white text-xs sm:text-sm font-bold rounded-sm shadow-[3px_3px_0_#0a0a0a] hover:bg-[#222] transition active:translate-y-0.5 flex items-center justify-center gap-2"
+            className="w-full touch-min py-3 px-4 border border-ui-border bg-ui-primary text-white text-xs sm:text-sm font-semibold rounded-lg  hover:bg-ui-primary-hover transition  flex items-center justify-center gap-2"
           >
             <span>Buka Peta & Review Spasial Koordinat</span>
             <ArrowRight size={16} />

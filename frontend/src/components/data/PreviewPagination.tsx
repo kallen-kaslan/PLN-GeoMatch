@@ -13,7 +13,7 @@ type PreviewPaginationProps = {
 };
 
 const count = (value: number) => value.toLocaleString("id-ID");
-const control = "min-w-0 rounded-sm border-2 border-neo-border bg-white px-3 py-2 text-sm disabled:opacity-50";
+const control = "min-w-0 rounded-lg border border-ui-border bg-white px-3 py-2 text-sm disabled:opacity-50";
 
 export function PreviewPagination({ context, page, pageSize, total, loading, onPageChange, onPageSizeChange }: PreviewPaginationProps) {
   const [input, setInput] = useState<string | null>(null);
@@ -35,13 +35,13 @@ export function PreviewPagination({ context, page, pageSize, total, loading, onP
   return <footer aria-label={`Navigasi halaman ${context}`} className="flex flex-wrap items-center justify-between gap-3 text-xs">
     <p aria-live="polite">{total === undefined ? "Memuat jumlah baris..." : `${count(total)} baris sesuai filter. Menampilkan ${count(first)}–${count(last)}. Halaman ${count(page)} dari ${count(pages)}`}</p>
     <div className="flex flex-wrap items-center gap-3">
-      <label className="flex items-center gap-2 font-bold">Baris per halaman
+      <label className="flex items-center gap-2 font-semibold">Baris per halaman
         <select aria-label={`Baris per halaman ${context}`} value={pageSize} onChange={(event) => { onPageSizeChange(Number(event.target.value)); navigate(1); }} className={control}>
           {[10, 25, 50, 100].map((size) => <option key={size} value={size}>{size} baris</option>)}
         </select>
       </label>
       <form noValidate onSubmit={submit} className="flex flex-wrap items-center gap-2">
-        <label htmlFor={`${context}-page-number`} className="font-bold">Ke halaman</label>
+        <label htmlFor={`${context}-page-number`} className="font-semibold">Ke halaman</label>
         <input id={`${context}-page-number`} aria-label={`Nomor halaman ${context}`} aria-invalid={!!error} aria-describedby={error ? `${context}-page-error` : undefined} type="number" inputMode="numeric" min={1} max={pages} step={1} value={input ?? page} onChange={(event) => { setInput(event.target.value); setError(""); }} disabled={disabled} className={`${control} w-24`} />
         <button type="submit" disabled={disabled} className={buttonClass.secondary}>Buka halaman</button>
       </form>
