@@ -100,7 +100,7 @@ export function EmptyRadiusWorkflow({ batchId, document }: { batchId: number; do
   const searchView = toView("search");
   const coverageReady = item?.state === "ready" && radius === debouncedRadius && coverage.isSuccess;
   const coverageData = coverageReady ? coverage.data?.analysis : undefined;
-  return <div className="mx-auto w-full max-w-5xl pb-6">
+  return <div className="w-full pb-6">
     <CorrectionFlowLayout stage={2} steps={["Unggah data", "Cari kandidat"]} onStep={(step) => { if (step === 1) back(); }}>
       {saved.isPending ? <p role="status" className="py-4 text-sm text-gray-500">Memuat progres tersimpan…</p> : saved.isError ? <p role="alert" className="py-4 text-sm text-red-700">Progres belum dapat dimuat. <button type="button" onClick={() => void saved.refetch()} className="font-semibold underline">Coba lagi</button></p> : <EmptyCandidatePanel
         document={document} analysis={analysisView} search={searchView}

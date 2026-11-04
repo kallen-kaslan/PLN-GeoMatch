@@ -45,7 +45,7 @@ function SavedEmptyCorrectionUpload() {
   };
 
   if (stage === 2 && batchId !== null) return <EmptyRadiusWorkflow key={batchId} batchId={batchId} document={{ filename: saved?.filename ?? batch.data?.filename, sheet: batch.data?.source_sheet, totalRows: saved?.result.rows ?? batch.data?.total_rows }} />;
-  return <div className="mx-auto w-full max-w-5xl pb-6"><CorrectionFlowLayout stage={1} steps={["Unggah data", "Cari kandidat"]} onStep={confirmed ? (step) => { if (step === 2 && batchId) { const next = new URLSearchParams(params); next.set("workflow_step", "2"); setParams(next); } } : undefined} document={{ filename: batch.data?.filename, sheet: batch.data?.source_sheet }}>
+  return <div className="w-full pb-6"><CorrectionFlowLayout stage={1} steps={["Unggah data", "Cari kandidat"]} onStep={confirmed ? (step) => { if (step === 2 && batchId) { const next = new URLSearchParams(params); next.set("workflow_step", "2"); setParams(next); } } : undefined} document={{ filename: batch.data?.filename, sheet: batch.data?.source_sheet }}>
     {recovering && batch.isPending ? <p role="status" className="text-sm">Memulihkan unggahan tersimpan...</p> : recovering && batch.isError ? <section className="space-y-3 rounded-sm border border-gray-200 bg-white p-5"><p role="alert" className="text-sm">Unggahan belum dapat dibuka. Data tidak dihapus.</p><button type="button" className={buttonClass.secondary} onClick={() => void batch.refetch()}>Coba lagi</button></section> : <EmptyCorrectionFileStep saved={recovering ? batch.data : undefined} onBatchCreated={rememberBatch} onSaved={onSaved} onCancel={() => navigate(root)} />}
   </CorrectionFlowLayout></div>;
 }

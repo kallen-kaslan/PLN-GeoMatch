@@ -4,7 +4,7 @@ from typing import Any, Literal
 
 from fastapi import APIRouter, Depends, Query
 from sqlalchemy import and_, case, func, or_
-from sqlalchemy.orm import Session, load_only
+from sqlalchemy.orm import Session, load_only, undefer
 
 from app.database import get_db
 from app.models.correction import CorrectionCheck, CorrectionTarget
@@ -126,7 +126,7 @@ def records(
         total = count_query.with_entities(func.count(SourceRecord.id)).scalar()
     items = []
     page = (
-        query.order_by(SourceRecord.batch_id.desc(), SourceRecord.id).offset(skip).limit(limit).all()
+        query.options(undefer(SourceRecord.data)).order_by(SourceRecord.batch_id.desc(), SourceRecord.id).offset(skip).limit(limit).all()
     )
     analyses = dict(db.query(RadiusAnalysis.batch_id, func.max(RadiusAnalysis.id)).filter(
         RadiusAnalysis.batch_id.in_({row[1].id for row in page})
@@ -138,6 +138,8 @@ def records(
         items.append({
             "id": source.id, "batch_id": source.batch_id,
             "row_number": source.row_number, "filename": batch.filename,
+            "object_id": next((value for key, value in (source.data or {}).items()
+                if "".join(char for char in key.lower() if char.isalnum()) in ("objectid", "objekid")), None),
             "source_sheet": batch.source_sheet, "fields": fields,
             "status": row_status, "search_status": outcome.search_status if outcome else "not_checked",
             "candidate_count": outcome.candidate_count if outcome else 0,

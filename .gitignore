@@ -34,3 +34,7 @@ backend/alembic/versions/*.pyc
 # Claude & Storage
 .claude/worktrees/
 backend/storage/
+
+# Local AI guidance
+/AGENTS.md
+/PROJECT_CONTEXT.md

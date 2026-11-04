@@ -681,6 +681,7 @@ def record_detail(
     skip: int = Query(0, ge=0),
     limit: int = Query(25, ge=1, le=100),
     radius_meters: float | None = Query(None, gt=0, le=100000, allow_inf_nan=False),
+    sort_order: Literal["nearest", "farthest"] = Query("nearest"),
 ) -> dict[str, Any]:
     """Read candidate snapshots only; inspecting a row must not reload the master."""
     record = db.get(SourceRecord, record_id)
@@ -726,7 +727,11 @@ def record_detail(
                 "observations": evidence.observations,
                 "is_accepted": candidate.is_accepted,
             }
-            for candidate, evidence in candidates.order_by(MatchCandidate.rank)
+            for candidate, evidence in candidates.order_by(
+                MatchCandidate.distance_meters.desc() if sort_order == "farthest"
+                else MatchCandidate.distance_meters.asc(),
+                MatchCandidate.rank, MatchCandidate.id,
+            )
             .offset(skip)
             .limit(limit)
             .all()

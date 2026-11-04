@@ -24,7 +24,8 @@ export default function Navbar() {
   const params = new URLSearchParams(location.search);
   // Only separate pages add a breadcrumb. Filters, dialogs and workflow steps do not.
   const child = pathname === "/koreksi/idpel-kosong"
-    ? params.get("flow") === "upload" ? "Unggah Data"
+    ? params.has("detail_record_id") ? "Detail Data"
+      : params.get("flow") === "upload" ? "Unggah Data"
       : params.has("workspace") || params.has("batch_id") || params.has("process_id") ? "Pemeriksaan" : null
     : null;
   const page = child ?? feature;

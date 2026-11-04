@@ -815,3 +815,21 @@ def test_correction_worker_failure_is_final_until_explicit_retry(
         f"/corrections/idpel_kosong/checks/{queued['process_id']}"
     ).json()
     assert stored["latest_run"]["failure_code"] == "processing_failed"
+
+
+def test_candidate_distance_order_applies_before_pagination(client: TestClient, reference: int) -> None:
+    kind = "idpel_kosong"
+    batch_id = upload(client, kind, "ID_TITIK,LAT,LON\nNEAR,-6.2,106.8\n")
+    result = check(client, kind, batch_id, reference, radius=100)
+    record = client.get(f"/corrections/{kind}/records", params={"process_id": result["process_id"]}).json()["items"][0]
+    path = f"/corrections/{kind}/records/{record['id']}"
+    params = {"process_id": result["process_id"], "limit": 1}
+    nearest = client.get(path, params={**params, "sort_order": "nearest"}).json()
+    farthest = client.get(path, params={**params, "sort_order": "farthest"}).json()
+    assert nearest["candidates_total"] == farthest["candidates_total"] == 8
+    assert nearest["candidates"][0]["fields"]["idpel"] == "002"
+    assert farthest["candidates"][0]["fields"]["idpel"] == "020"
+    assert farthest["candidates"][0]["distance_meters"] > nearest["candidates"][0]["distance_meters"]
+    last = client.get(path, params={**params, "sort_order": "nearest", "skip": 7}).json()
+    assert last["candidates"] == farthest["candidates"]
+    assert client.get(path, params={**params, "sort_order": "invalid"}).status_code == 422

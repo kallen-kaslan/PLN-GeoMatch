@@ -1,3 +1,4 @@
+import { emptySourceFields } from "@/lib/empty-correction-fields";
 import { InspectionDrawer } from "@/components/data/InspectionDrawer";
 import { CandidateCoordinateSource } from "./CandidateCoordinateSource";
 import { buttonClass } from "@/lib/button";
@@ -8,6 +9,8 @@ import { displayValue, masterFieldLabel, validationMessage, type CorrectionKind 
 import { PDPJ_FIELDS } from "@/lib/pdpj";
 import { conflictLabel, correctionApi, identityLabel, searchLabel, type CorrectionScope } from "@/lib/corrections";
 
+
+
 const button = buttonClass.secondary;
 const present = (value: unknown) => value !== null && value !== undefined && value !== "" && value !== "-";
 
@@ -15,6 +18,7 @@ export function CorrectionDetail({ kind, recordId, scope, onClose }: { kind: Cor
   const [offset, setOffset] = useState(0);
   const detail = useQuery({ queryKey: ["corrections", kind, "detail", recordId, scope.process_id, scope.generation, offset], queryFn: () => correctionApi.detail(kind, recordId, scope, offset) });
   const record = detail.data;
+  const originalFields = Object.fromEntries(Object.entries(record?.raw_data ?? {}).map(([key, value]) => [key.toLowerCase().replace(/[^a-z0-9]/g, ""), value]));
   return <InspectionDrawer label="Panel data koreksi" onClose={onClose}><section aria-label="Detail data koreksi" className="scroll-mt-20 space-y-5 rounded-lg border border-ui-border bg-white p-4  sm:p-6">
     <header className="flex items-start justify-between gap-3 border-b border-ui-border pb-3"><div><h2 className="text-base font-semibold">Detail koreksi · Baris {record?.row_number ?? "…"}</h2><p className="mt-1 text-xs text-ui-muted">Data sumber, hasil pemeriksaan, dan kandidat tersimpan.</p></div><button type="button" onClick={onClose} aria-label="Tutup detail koreksi" className={button}><X size={18} /></button></header>
     {detail.isPending && <p role="status" className="flex items-center gap-2 text-sm"><LoaderCircle size={16} className="animate-spin" />Memuat detail…</p>}
@@ -22,7 +26,10 @@ export function CorrectionDetail({ kind, recordId, scope, onClose }: { kind: Cor
     {record && <>
       <div className="flex flex-wrap gap-2 text-xs font-semibold"><span className="rounded-lg border border-ui-border px-3 py-2">{searchLabel[record.search_status]}</span><span className="rounded-lg border border-gray-300 px-3 py-2">{identityLabel[record.identity_status]}</span>{record.radius_meters !== null && <span className="rounded-lg border border-gray-300 px-3 py-2">Radius tersimpan {record.radius_meters.toLocaleString("id-ID")} m · Versi {record.generation}</span>}</div>
       <p className="break-words text-xs text-ui-muted">{record.filename} · Baris {record.row_number}{record.source_sheet ? ` · Sheet ${record.source_sheet}` : ""}</p>
-      <dl className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">{PDPJ_FIELDS.filter((field) => ["idpel", "lat", "lon"].includes(field.key) || present(record.fields[field.key])).map((field) => <div key={field.key} className="border-b border-gray-200 pb-2"><dt className="text-xs font-semibold text-ui-muted">{field.label}</dt><dd className="mt-1 break-words text-sm">{displayValue(record.fields[field.key])}</dd></div>)}</dl>
+      {kind === "idpel_kosong" ? <section aria-label="Data asli berkas koreksi" className="space-y-3">
+        <h3 className="text-sm font-semibold">Data asli berkas koreksi</h3>
+        <dl className="grid grid-cols-1 gap-x-6 gap-y-4 sm:grid-cols-2">{emptySourceFields.map((field) => <div key={field.key} className="min-w-0 border-b border-gray-200 pb-3"><dt className="text-xs font-semibold text-ui-muted">{field.label}</dt><dd className="mt-1 whitespace-pre-wrap break-words text-sm [overflow-wrap:anywhere]">{displayValue(originalFields[field.key])}</dd></div>)}</dl>
+      </section> : (<dl className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">{PDPJ_FIELDS.filter((field) => ["idpel", "lat", "lon"].includes(field.key) || present(record.fields[field.key])).map((field) => <div key={field.key} className="border-b border-gray-200 pb-2"><dt className="text-xs font-semibold text-ui-muted">{field.label}</dt><dd className="mt-1 break-words text-sm">{displayValue(record.fields[field.key])}</dd></div>)}</dl>) }
       {!!record.errors.length && <ul className="list-disc space-y-1 rounded-lg border border-red-600 bg-red-50 py-3 pr-3 pl-7 text-xs text-red-700">{record.errors.map((error, index) => <li key={index}>{masterFieldLabel(error.field)}: {validationMessage(error.code)}</li>)}</ul>}
       {!!record.conflicts.length && <section className="space-y-3 rounded-lg border border-red-700 bg-red-50 p-4"><h3 className="text-sm font-semibold text-red-800">Benturan dengan PDPJ</h3><p className="text-xs text-red-800">Baris ini dikeluarkan dari pencarian kandidat. Data asli tetap disimpan.</p>{record.conflicts.map((conflict, index) => <div key={index} className="rounded-lg border border-red-300 bg-white p-3 text-xs"><p className="font-semibold">{conflictLabel[conflict.code] ?? conflict.code}: {conflict.value}</p><p className="mt-1">PDPJ baris {conflict.row_number}{conflict.pending_validation ? " (menunggu validasi PDPJ)" : ""} · IDPEL {displayValue(conflict.fields.idpel)} · {displayValue(conflict.fields.nama)}</p><details className="mt-2"><summary className="cursor-pointer font-semibold">Lihat data PDPJ terkait</summary><dl className="mt-2 grid gap-2 sm:grid-cols-2">{PDPJ_FIELDS.filter((field) => present(conflict.fields[field.key])).map((field) => <div key={field.key}><dt className="font-semibold text-ui-muted">{field.label}</dt><dd className="break-words">{displayValue(conflict.fields[field.key])}</dd></div>)}</dl></details></div>)}</section>}
       {!!record.warnings.length && <p className="rounded-lg border border-amber-700 bg-amber-50 p-3 text-xs text-amber-900">Koordinat sama dengan PDPJ baris {record.warnings.flatMap((warning) => warning.pdpj_rows).join(", ")}. Kesamaan koordinat hanya menjadi indikasi; pencarian tetap berjalan jika tidak ada benturan identitas.</p>}
@@ -33,7 +40,7 @@ export function CorrectionDetail({ kind, recordId, scope, onClose }: { kind: Cor
         </article>) : <p className="rounded-lg border border-gray-300 bg-gray-50 p-4 text-xs">{record.search_status === "not_checked" ? "Jalankan pemeriksaan untuk menyiapkan kandidat." : record.search_status === "pdpj_conflict" ? "Pencarian tidak dijalankan karena benturan dengan PDPJ." : record.search_status === "incomplete_coordinates" ? "Kandidat belum dapat dicari karena koordinat belum lengkap." : record.search_status === "invalid_data" ? "Perbaiki data sumber sebelum pencarian kandidat." : "Tidak ada kandidat dalam radius pemeriksaan ini."}</p>}
         {record.candidates_total > 10 && <footer className="flex flex-wrap items-center justify-between gap-3 text-xs"><p>Kandidat {offset + 1}–{Math.min(offset + 10, record.candidates_total)} dari {record.candidates_total}</p><div className="flex gap-2"><button type="button" onClick={() => setOffset((value) => value - 10)} disabled={offset === 0} className={button}>Kandidat sebelumnya</button><button type="button" onClick={() => setOffset((value) => value + 10)} disabled={offset + 10 >= record.candidates_total} className={button}>Kandidat berikutnya</button></div></footer>}
       </section>
-      <details className="rounded-lg border border-ui-border p-4"><summary className="cursor-pointer text-sm font-semibold">Data asli berkas koreksi</summary><dl className="mt-3 divide-y divide-gray-200">{Object.entries(record.raw_data).map(([key, value]) => <div key={key} className="grid grid-cols-2 gap-3 py-2 text-xs"><dt className="break-words font-semibold">{key}</dt><dd className="break-words font-mono">{displayValue(value)}</dd></div>)}</dl></details>
+      {kind !== "idpel_kosong" && <details className="rounded-lg border border-ui-border p-4"><summary className="cursor-pointer text-sm font-semibold">Data asli berkas koreksi</summary><dl className="mt-3 divide-y divide-gray-200">{Object.entries(record.raw_data).map(([key, value]) => <div key={key} className="grid grid-cols-2 gap-3 py-2 text-xs"><dt className="break-words font-semibold">{key}</dt><dd className="break-words font-mono">{displayValue(value)}</dd></div>)}</dl></details>}
     </>}
   </section></InspectionDrawer>;
 }

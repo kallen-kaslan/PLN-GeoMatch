@@ -42,6 +42,7 @@ def test_upload_resume_analysis_recommendation_search_and_stored_candidates(
         "mimeType": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
         "buffer": data.getvalue(),
     })
+    expect(page.get_by_role("heading", name="Unggah Data", exact=True)).to_be_visible()
     expect(page.get_by_label("Pilih sheet atau tabel", exact=True)).to_be_visible()
     expect(page.get_by_role("table", name="Tabel asli", exact=True)).to_have_count(0)
     page.get_by_label("Pilih sheet atau tabel", exact=True).select_option("Kosong")
@@ -96,14 +97,36 @@ def test_upload_resume_analysis_recommendation_search_and_stored_candidates(
     results.click()
     expect(pending).to_have_count(0)
     table = page.get_by_role("table")
-    expect(table.get_by_role("columnheader")).to_have_text(["No", "Nomor agenda", "Nama pelanggan", "Koordinat X", "Koordinat Y", "Status", "Kandidat", "Aksi"])
+    expect(table.get_by_role("columnheader")).to_have_text(["No", "Objek ID", "Nomor agenda", "Nama pelanggan", "Koordinat X", "Koordinat Y", "Status", "Kandidat", "Aksi"])
     row = table.get_by_role("row").filter(has_text="Pelanggan A")
     expect(row).to_contain_text("Kandidat ditemukan")
-    row.get_by_role("button", name="Detail", exact=True).click()
-    detail = page.get_by_role("region", name="Detail data koreksi", exact=True)
-    expect(detail.get_by_role("heading", name="Kandidat tersimpan (1)", exact=True)).to_be_visible()
-    expect(detail.get_by_role("article").get_by_text("#1 \u00b7 002", exact=True)).to_be_visible()
-    expect(detail.get_by_role("article").get_by_text("001", exact=True)).to_have_count(0)
+    row.get_by_role("link", name="Detail", exact=True).click()
+    expect(page.locator(".geo-topbar").get_by_label("Halaman aktif", exact=True)).to_have_text("Detail Data")
+    expect(page.get_by_role("region", name="Data pelanggan", exact=True)).to_contain_text("Pelanggan A")
+    detail = page.get_by_role("region", name="Daftar kandidat", exact=True)
+    expect(detail.get_by_role("columnheader")).to_have_text(["No", "IDPEL", "Nama Pelanggan", "Nomor Agenda", "Koordinat X", "Koordinat Y", "Jarak", "Aksi"])
+    expect(detail.get_by_role("cell", name="002", exact=True)).to_be_visible()
+    expect(detail.get_by_role("cell", name="001", exact=True)).to_have_count(0)
+    detail.get_by_role("button", name="Detail sumber kandidat 002", exact=True).click()
+    popup = page.get_by_role("dialog", name="Detail Sumber Kandidat", exact=True)
+    expect(popup).to_be_visible()
+    expect(popup.get_by_role("heading", name="dil.csv", exact=True)).to_be_visible()
+    expect(popup).to_contain_text("Sheet")
+    popup.get_by_role("heading", name="Detail Sumber Kandidat", exact=True).click()
+    expect(popup).to_be_visible()
+    page.mouse.click(4, 4)
+    expect(popup).to_have_count(0)
+    detail.get_by_role("button", name="Detail sumber kandidat 002", exact=True).click()
+    expect(popup).to_be_visible()
+    page.keyboard.press("Escape")
+    expect(popup).to_have_count(0)
+    expect(detail.get_by_text("Versi", exact=False)).to_have_count(0)
+    expect(detail.get_by_role("row").nth(1).get_by_role("cell").first).to_have_text("1")
+    page.reload()
+    expect(detail.get_by_role("cell", name="002", exact=True)).to_be_visible()
+    page.locator(".geo-topbar").get_by_role("link", name="IDPEL Kosong", exact=True).click()
+    expect(page.get_by_role("region", name="Ringkasan IDPEL Kosong", exact=True)).to_be_visible()
+
 
 
 
@@ -119,3 +142,75 @@ def test_overview_loads_without_batch_list_and_syncs_new_upload(page: Page, serv
     expect(total).to_contain_text("1", timeout=12000)
     expect(summary.get_by_text("Belum diproses", exact=True).locator("..")).to_contain_text("1", timeout=12000)
     expect(page.get_by_role("cell", name="NEW-LIVE", exact=True)).to_be_visible(timeout=12000)
+
+
+def test_candidate_pagination_sizes_navigation_and_card_spacing(page: Page) -> None:
+    """Synthetic API data verifies page controls without changing user data."""
+    from urllib.parse import parse_qs, urlparse
+
+    candidates = [{"id": index, "rank": index, "distance_meters": index * 1.5,
+                   "fields": {"idpel": f"{index:012}", "nama": f"Kandidat {index}",
+                              "agenda_ref": f"A{index}", "lat": -6.2, "lon": 106.8},
+                   "observations": [], "is_accepted": 0} for index in range(1, 13)]
+
+    def respond(route):
+        params = parse_qs(urlparse(route.request.url).query)
+        skip = int(params.get("skip", [0])[0])
+        limit = int(params.get("limit", [10])[0])
+        ordered = list(reversed(candidates)) if params.get("sort_order") == ["farthest"] else candidates
+        route.fulfill(json={"id": 1, "batch_id": 1, "row_number": 1,
+                            "filename": "contoh.csv", "source_sheet": "Data",
+                            "raw_data": {"objectid": "132", "namapelanggan": "Contoh"},
+                            "fields": {}, "search_status": "matched", "generation": 1,
+                            "radius_meters": 235, "candidates_total": len(candidates),
+                            "candidates": ordered[skip:skip + limit]})
+
+    page.route("**/corrections/idpel_kosong/records/1?*", respond)
+    page.goto("/koreksi/idpel-kosong?detail_record_id=1&batch_id=1&process_id=1&generation=1")
+    section = page.get_by_role("region", name="Daftar kandidat", exact=True)
+    table = section.get_by_role("table")
+    expect(table.get_by_role("row")).to_have_count(11)
+    size = section.get_by_label("Kandidat per halaman", exact=True)
+    size.select_option("5")
+    expect(table.get_by_role("row")).to_have_count(6)
+    section.get_by_role("button", name="Halaman kandidat berikutnya", exact=True).click()
+    expect(table.get_by_role("row").nth(1).get_by_role("cell").first).to_have_text("6")
+    section.get_by_role("button", name="Halaman kandidat sebelumnya", exact=True).click()
+    expect(table.get_by_role("row").nth(1).get_by_role("cell").first).to_have_text("1")
+    expect(section.get_by_role("link", name="Buka peta", exact=True)).to_have_count(0)
+    jump = section.get_by_role("spinbutton", name="Nomor halaman kandidat", exact=True)
+    jump.fill("4")
+    section.get_by_role("button", name="Buka", exact=True).click()
+    assert not jump.evaluate("element => element.validity.valid")
+    expect(table.get_by_role("row").nth(1).get_by_role("cell").first).to_have_text("1")
+    jump.fill("3")
+    jump.press("Enter")
+    expect(table.get_by_role("row").nth(1).get_by_role("cell").first).to_have_text("11")
+    expect(section.get_by_role("button", name="Halaman kandidat berikutnya", exact=True)).to_be_disabled()
+    size.select_option("25")
+    expect(table.get_by_role("row")).to_have_count(13)
+    expect(table.get_by_role("row").nth(1).get_by_role("cell").first).to_have_text("1")
+    order = section.get_by_label("Urutan jarak kandidat", exact=True)
+    size.select_option("5")
+    section.get_by_role("button", name="Halaman kandidat berikutnya", exact=True).click()
+    expect(table.get_by_role("row").nth(1).get_by_role("cell").first).to_have_text("6")
+    order.click()
+    expect(order).to_have_attribute("aria-pressed", "true")
+    expect(table.get_by_role("row").nth(1).get_by_role("cell").nth(1)).to_have_text("000000000012")
+    expect(table.get_by_role("row").nth(1).get_by_role("cell").first).to_have_text("1")
+    section.get_by_role("button", name="Halaman kandidat berikutnya", exact=True).click()
+    expect(table.get_by_role("row").nth(1).get_by_role("cell").nth(1)).to_have_text("000000000007")
+    order.click()
+    expect(order).to_have_attribute("aria-pressed", "false")
+    expect(table.get_by_role("row").nth(1).get_by_role("cell").nth(1)).to_have_text("000000000001")
+    assert order.locator("xpath=../..").evaluate("element => element.tagName") == "HEADER"
+    assert order.get_attribute("title") is None
+    order.hover()
+    expect(section.get_by_role("tooltip")).to_be_visible()
+    expect(section.get_by_role("combobox", name="Urutan jarak kandidat", exact=True)).to_have_count(0)
+    outer = section.bounding_box()
+    inner = table.bounding_box()
+    assert outer and inner and inner["x"] - outer["x"] >= 16
+    page.set_viewport_size({"width": 390, "height": 844})
+    expect(size).to_be_visible()
+    assert page.evaluate("document.documentElement.scrollWidth <= innerWidth")

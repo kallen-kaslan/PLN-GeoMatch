@@ -60,6 +60,7 @@ export interface EmptyPendingProcess {
   processing_stage: string | null;
 }
 export interface EmptyOverviewRow {
+  object_id?: string | number | null;
   id: number; batch_id: number; row_number: number | null; filename: string; source_sheet: string | null;
   fields: Fields; status: EmptyStatus; search_status: SearchStatus; candidate_count: number;
   process_id: number | null; analysis_id?: number | null; generation: number | null; radius_meters: number | null;
@@ -108,7 +109,7 @@ export const correctionApi = {
   summary: async (kind: CorrectionKind, scope: CorrectionScope) => (await api.get<CorrectionSummary>(`/corrections/${kind}/summary`, { params: scope })).data,
   mapSummary: async (kind: CorrectionKind, process_id: number, generation: number, radius_meters: number, signal: AbortSignal) => (await api.get<MapRadiusSummary>(`/corrections/${kind}/map-summary`, { params: { process_id, generation, radius_meters }, signal })).data,
   rows: async (kind: CorrectionKind, params: CorrectionScope & { q: string; status: CorrectionFilter; skip: number; limit: number }, signal?: AbortSignal) => (await api.get<SearchPage<CorrectionRow>>(`/corrections/${kind}/records`, { params, signal })).data,
-  detail: async (kind: CorrectionKind, id: number, scope: CorrectionScope, skip: number, radius_meters?: number) => (await api.get<CorrectionDetail>(`/corrections/${kind}/records/${id}`, { params: { ...scope, skip, limit: 10, radius_meters } })).data,
+  detail: async (kind: CorrectionKind, id: number, scope: CorrectionScope, skip: number, radius_meters?: number, limit = 10, sort_order: "nearest" | "farthest" = "nearest") => (await api.get<CorrectionDetail>(`/corrections/${kind}/records/${id}`, { params: { ...scope, skip, limit, radius_meters, sort_order } })).data,
   allRows: async (kind: CorrectionKind, scope: CorrectionScope, signal: AbortSignal) => {
     const items: CorrectionRow[] = [];
     let total = 0;
