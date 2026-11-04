@@ -30,3 +30,6 @@ Thumbs.db
 # Build
 frontend/dist/
 backend/alembic/versions/*.pyc
+
+# Readme
+*.md
