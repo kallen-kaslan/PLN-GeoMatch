@@ -1,5 +1,7 @@
+import json
 import logging
-from typing import Annotated, List
+import urllib.request
+from typing import Annotated, Any, Dict, List
 
 from fastapi import Depends, HTTPException, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
@@ -12,27 +14,63 @@ logger = logging.getLogger(__name__)
 
 security = HTTPBearer()
 
+_jwks_cache: Dict[str, Any] | None = None
+
+
+def get_supabase_jwks() -> Dict[str, Any]:
+    global _jwks_cache
+    if _jwks_cache is not None:
+        return _jwks_cache
+    url = f"{settings.SUPABASE_URL.rstrip('/')}/auth/v1/.well-known/jwks.json"
+    req = urllib.request.Request(url, headers={"User-Agent": "PLN-GeoMatch-Backend"})
+    with urllib.request.urlopen(req, timeout=5) as response:
+        _jwks_cache = json.loads(response.read().decode("utf-8"))
+    return _jwks_cache
+
+
 class AuthUser(BaseModel):
     id: str
     email: str
     role: str
 
+
 async def get_current_user(credentials: Annotated[HTTPAuthorizationCredentials, Depends(security)]) -> AuthUser:
     token = credentials.credentials
     try:
-        # PENTING: SUPABASE_JWT_SECRET harus di-set di backend/.env
-        # Secret ini didapat dari Supabase Dashboard -> Settings -> API -> JWT Secret
+        unverified_header = jwt.get_unverified_header(token)
+        alg = unverified_header.get("alg", "HS256")
+        kid = unverified_header.get("kid")
+
+        # Asymmetric (RS256, ES256, dll) verifikasi lewat JWKS Supabase
+        if alg != "HS256":
+            jwks = get_supabase_jwks()
+            key_dict = None
+            for key in jwks.get("keys", []):
+                if kid and key.get("kid") == kid:
+                    key_dict = key
+                    break
+                if not kid and key.get("alg") == alg:
+                    key_dict = key
+                    break
+            if not key_dict and jwks.get("keys"):
+                key_dict = jwks["keys"][0]
+            if not key_dict:
+                raise JWTError(f"JWKS key matching alg={alg} kid={kid} not found")
+            signing_key = key_dict
+        else:
+            # Symmetric HS256 verifikasi via SUPABASE_JWT_SECRET
+            signing_key = settings.SUPABASE_JWT_SECRET
+
         payload = jwt.decode(
             token,
-            settings.SUPABASE_JWT_SECRET,
-            algorithms=[settings.ALGORITHM],
+            signing_key,
+            algorithms=[alg],
             audience=settings.SUPABASE_JWT_AUDIENCE,
-            issuer=f"{settings.SUPABASE_URL}/auth/v1"
+            issuer=f"{settings.SUPABASE_URL.rstrip('/')}/auth/v1",
         )
 
         user_id: str = payload.get("sub")
         email: str = payload.get("email", "")
-        # Role diambil dari app_metadata (diset di Supabase)
         app_metadata = payload.get("app_metadata", {})
         role: str = str(app_metadata.get("role", "analis")).lower()
 
@@ -51,6 +89,13 @@ async def get_current_user(credentials: Annotated[HTTPAuthorizationCredentials, 
             detail="Token tidak valid atau kadaluarsa",
             headers={"WWW-Authenticate": "Bearer"},
         )
+    except Exception as e:
+        logger.error(f"Auth Unexpected Error: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Gagal memverifikasi token autentikasi",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
 
 def require_roles(allowed_roles: List[str]):
     normalized = [r.lower() for r in allowed_roles]
@@ -62,3 +107,8 @@ def require_roles(allowed_roles: List[str]):
             )
         return user
     return role_checker
+
+require_admin = Depends(require_roles(["admin"]))
+require_operator = Depends(require_roles(["admin", "analis"]))
+require_viewer = Depends(require_roles(["admin", "analis", "auditor"]))
+

@@ -4,6 +4,7 @@
     "supermemory@supermemory-plugins": true,
     "gsap-skills@gsap-skills": true,
     "supabase@claude-plugins-official": true,
-    "supabase-expert@anthropic-plugin-directory": true
+    "supabase-expert@anthropic-plugin-directory": true,
+    "testerarmy@testerarmy-agent-skills": true
   }
 }

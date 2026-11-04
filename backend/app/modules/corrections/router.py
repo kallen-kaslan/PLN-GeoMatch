@@ -9,6 +9,7 @@ from sqlalchemy import and_, func, or_
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session, load_only, object_session
 
+from app.auth import require_operator, require_viewer
 from app.config import settings
 from app.database import get_db
 from app.models.correction import (
@@ -290,7 +291,7 @@ def record_info(
     }
 
 
-@router.get("/ready-pdpj")
+@router.get("/ready-pdpj", dependencies=[require_viewer])
 def ready_pdpj(db: DbSession) -> list[dict[str, Any]]:
     """Offer approved versions of each file's latest working review."""
     latest: dict[int, PdpjReview] = {}
@@ -330,7 +331,7 @@ def ready_pdpj(db: DbSession) -> list[dict[str, Any]]:
     ]
 
 
-@router.get("/{kind}/batches")
+@router.get("/{kind}/batches", dependencies=[require_viewer])
 def list_batches(kind: CorrectionKind, db: DbSession) -> list[dict[str, Any]]:
     """Do not guess the category of legacy target uploads."""
     return [
@@ -342,7 +343,7 @@ def list_batches(kind: CorrectionKind, db: DbSession) -> list[dict[str, Any]]:
     ]
 
 
-@router.get("/{kind}/batches/{batch_id}")
+@router.get("/{kind}/batches/{batch_id}", dependencies=[require_viewer])
 def batch_preview(kind: CorrectionKind, batch_id: int, db: DbSession) -> dict[str, Any]:
     """Resume column mapping without creating a duplicate upload."""
     batch = source_batch(db, kind, batch_id)
@@ -362,7 +363,7 @@ def batch_preview(kind: CorrectionKind, batch_id: int, db: DbSession) -> dict[st
     }
 
 
-@router.get("/{kind}/checks")
+@router.get("/{kind}/checks", dependencies=[require_viewer])
 def list_checks(
     kind: CorrectionKind,
     db: DbSession,
@@ -386,7 +387,7 @@ def list_checks(
     ]
 
 
-@router.post("/{kind}/checks")
+@router.post("/{kind}/checks", dependencies=[require_operator])
 def start_check(kind: CorrectionKind, req: StartCheck, db: DbSession) -> dict[str, Any]:
     """Check category ownership and completed PDPJ before submitting real work."""
     process, run, fresh = create_check(
@@ -408,7 +409,7 @@ def start_check(kind: CorrectionKind, req: StartCheck, db: DbSession) -> dict[st
     }
 
 
-@router.get("/{kind}/checks/{process_id}")
+@router.get("/{kind}/checks/{process_id}", dependencies=[require_viewer])
 def get_check(
     kind: CorrectionKind,
     process_id: int,
@@ -419,7 +420,7 @@ def get_check(
     return check_info(db, kind, process_id, include_update_conflicts)
 
 
-@router.get("/{kind}/checks/{process_id}/pdpj-update")
+@router.get("/{kind}/checks/{process_id}/pdpj-update", dependencies=[require_viewer])
 def get_pdpj_update(
     kind: CorrectionKind, process_id: int, db: DbSession
 ) -> dict[str, Any] | None:
@@ -428,7 +429,7 @@ def get_pdpj_update(
     return pdpj_update_info(db, process_id, check.pdpj_review_id)
 
 
-@router.post("/{kind}/checks/{process_id}/retry")
+@router.post("/{kind}/checks/{process_id}/retry", dependencies=[require_operator])
 def rerun_check(
     kind: CorrectionKind, process_id: int, req: RetryCheck, db: DbSession
 ) -> dict[str, Any]:
@@ -452,7 +453,7 @@ def rerun_check(
     }
 
 
-@router.get("/{kind}/checks/{process_id}/progress")
+@router.get("/{kind}/checks/{process_id}/progress", dependencies=[require_viewer])
 def processing_status(
     kind: CorrectionKind, process_id: int, db: DbSession
 ) -> dict[str, Any]:
@@ -468,7 +469,7 @@ def processing_status(
     return run_info(run)
 
 
-@router.post("/{kind}/checks/{process_id}/advance")
+@router.post("/{kind}/checks/{process_id}/advance", dependencies=[require_operator])
 @monitor_request("correction", "req.run_id", "matching")
 def advance_check(
     kind: CorrectionKind, process_id: int, req: ProgressStep, db: DbSession
@@ -483,7 +484,7 @@ def advance_check(
         raise database_write_error(db, exc, "pemrosesan koreksi") from exc
 
 
-@router.post("/{kind}/checks/{process_id}/pause")
+@router.post("/{kind}/checks/{process_id}/pause", dependencies=[require_operator])
 @monitor_request("correction", "req.run_id", "pausing")
 def pause_check(
     kind: CorrectionKind, process_id: int, req: ProgressControl, db: DbSession
@@ -494,7 +495,7 @@ def pause_check(
         raise database_write_error(db, exc, "jeda koreksi") from exc
 
 
-@router.post("/{kind}/checks/{process_id}/resume")
+@router.post("/{kind}/checks/{process_id}/resume", dependencies=[require_operator])
 @monitor_request("correction", "req.run_id", "resuming")
 def resume_check(
     kind: CorrectionKind, process_id: int, req: ProgressControl, db: DbSession
@@ -505,7 +506,7 @@ def resume_check(
         raise database_write_error(db, exc, "kelanjutan koreksi") from exc
 
 
-@router.get("/{kind}/map-summary")
+@router.get("/{kind}/map-summary", dependencies=[require_viewer])
 def map_summary(
     kind: CorrectionKind,
     db: DbSession,
@@ -517,7 +518,7 @@ def map_summary(
     return radius_summary(db, kind, process_id, generation, radius_meters)
 
 
-@router.get("/{kind}/summary")
+@router.get("/{kind}/summary", dependencies=[require_viewer])
 def summary(
     kind: CorrectionKind,
     db: DbSession,
@@ -560,7 +561,7 @@ def summary(
     }
 
 
-@router.get("/{kind}/records")
+@router.get("/{kind}/records", dependencies=[require_viewer])
 def list_records(
     kind: CorrectionKind,
     db: DbSession,
@@ -661,7 +662,7 @@ def list_records(
     }
 
 
-@router.get("/{kind}/records/{record_id}")
+@router.get("/{kind}/records/{record_id}", dependencies=[require_viewer])
 def record_detail(
     kind: CorrectionKind,
     record_id: int,

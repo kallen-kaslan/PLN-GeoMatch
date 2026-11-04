@@ -6,6 +6,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 from sqlalchemy.orm import Session
 
+from app.auth import require_operator, require_viewer
 from app.database import get_db
 from app.models.correction import CorrectionCandidateEvidence, CorrectionTarget
 from app.models.correction_decision import CorrectionDecision
@@ -88,7 +89,7 @@ def target_scope(
     return process
 
 
-@router.get("/{kind}/checks/{process_id}/records/{record_id}/choice")
+@router.get("/{kind}/checks/{process_id}/records/{record_id}/choice", dependencies=[require_viewer])
 def get_choice(
     kind: CorrectionKind,
     process_id: int,
@@ -102,7 +103,7 @@ def get_choice(
     return choice_history(db, process_id, record_id, generation)
 
 
-@router.post("/{kind}/checks/{process_id}/records/{record_id}/choice")
+@router.post("/{kind}/checks/{process_id}/records/{record_id}/choice", dependencies=[require_operator])
 def choose_candidate(
     kind: CorrectionKind,
     process_id: int,

@@ -10,6 +10,7 @@ from sqlalchemy.orm import Session
 
 from app.performance import timed
 
+from ...auth import require_admin, require_operator, require_viewer
 from ...config import settings
 from ...database import get_db
 from ...models.coordinate_repair import CoordinateRepair
@@ -59,7 +60,7 @@ DbSession = Annotated[Session, Depends(get_db)]
 router = APIRouter(prefix="/upload", tags=["Upload"])
 
 
-@router.get("/batches")
+@router.get("/batches", dependencies=[require_viewer])
 def list_batches(db: DbSession):
     batches = db.query(UploadBatch).order_by(UploadBatch.id.desc()).all()
     return [
@@ -75,7 +76,7 @@ def list_batches(db: DbSession):
     ]
 
 
-@router.post("/seed-dummy")
+@router.post("/seed-dummy", dependencies=[require_admin])
 def seed_dummy_data(db: DbSession):
     """
     Memasukkan data dummy sesuai alur riil PLN:
@@ -223,7 +224,7 @@ def seed_dummy_data(db: DbSession):
         raise HTTPException(status_code=500, detail=f"Gagal memuat data dummy: {e!s}")
 
 
-@router.post("/batch-process")
+@router.post("/batch-process", dependencies=[require_operator])
 def batch_process_endpoint(req: BatchProcessRequest, db: DbSession) -> dict:
     """Pin source datasets before dispatching the shared reconciliation pipeline."""
     try:
@@ -274,7 +275,7 @@ def batch_process_endpoint(req: BatchProcessRequest, db: DbSession) -> dict:
         raise HTTPException(status_code=500, detail="Gagal memproses batch") from exc
 
 
-@router.post("/auto-pipeline")
+@router.post("/auto-pipeline", dependencies=[require_operator])
 def auto_pipeline_endpoint(batch_id: int, db: DbSession) -> dict:
     """Create a separate process and snapshot; existing processes stay unchanged."""
     batch = db.get(UploadBatch, batch_id)
@@ -315,7 +316,7 @@ def auto_pipeline_endpoint(batch_id: int, db: DbSession) -> dict:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
 
 
-@router.post("/reset")
+@router.post("/reset", dependencies=[require_admin])
 def reset_database(db: DbSession) -> dict[str, str]:
     """Menghapus semua data upload, kandidat, dan riwayat untuk pengujian ulang."""
     try:
@@ -381,7 +382,7 @@ def reset_database(db: DbSession) -> dict[str, str]:
         raise error from exc
 
 
-@router.post("/preview")
+@router.post("/preview", dependencies=[require_operator])
 def preview_file(
     file: Annotated[UploadFile, File()],
     sheet_name: Annotated[str | None, Form(max_length=128)] = None,
@@ -412,7 +413,7 @@ def preview_file(
         file.file.close()
 
 
-@router.post("/", response_model=UploadBatchResponse)
+@router.post("/", response_model=UploadBatchResponse, dependencies=[require_operator])
 def upload_file(
     dataset_type: Annotated[DatasetType, Form()],
     file: Annotated[UploadFile, File()],
@@ -446,7 +447,7 @@ def upload_file(
         file.file.close()
 
 
-@router.post("/confirm-mapping")
+@router.post("/confirm-mapping", dependencies=[require_operator])
 def confirm_mapping(req: MappingRequest, db: DbSession) -> dict:
     """Validate mapping and rows, preserving the original cells for traceability."""
     try:

@@ -68,9 +68,11 @@ CREATE TRIGGER on_auth_user_created
 CREATE OR REPLACE FUNCTION public.sync_profile_role_to_auth()
 RETURNS TRIGGER AS $$
 BEGIN
+  -- Hanya update auth.users jika nilainya benar-benar berbeda (cegah infinite loop)
   UPDATE auth.users
   SET raw_app_meta_data = COALESCE(raw_app_meta_data, '{}'::jsonb) || jsonb_build_object('role', NEW.role)
-  WHERE id = NEW.id;
+  WHERE id = NEW.id
+    AND (raw_app_meta_data->>'role' IS DISTINCT FROM NEW.role);
   RETURN NEW;
 END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
@@ -79,16 +81,22 @@ DROP TRIGGER IF EXISTS on_profile_role_updated ON public.profiles;
 CREATE TRIGGER on_profile_role_updated
   AFTER UPDATE OF role ON public.profiles
   FOR EACH ROW
+  WHEN (OLD.role IS DISTINCT FROM NEW.role)
   EXECUTE FUNCTION public.sync_profile_role_to_auth();
 
 -- 7. Trigger Sinkronisasi: Jika role diubah langsung dari Supabase Dashboard auth.users -> sync ke public.profiles
 CREATE OR REPLACE FUNCTION public.sync_auth_role_to_profile()
 RETURNS TRIGGER AS $$
+DECLARE
+  v_role TEXT;
 BEGIN
+  v_role := COALESCE(NEW.raw_app_meta_data->>'role', 'analis');
+  -- Hanya update public.profiles jika nilainya benar-benar berbeda (cegah infinite loop)
   UPDATE public.profiles
-  SET role = COALESCE(NEW.raw_app_meta_data->>'role', 'analis'),
+  SET role = v_role,
       updated_at = NOW()
-  WHERE id = NEW.id;
+  WHERE id = NEW.id
+    AND role IS DISTINCT FROM v_role;
   RETURN NEW;
 END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
@@ -97,7 +105,46 @@ DROP TRIGGER IF EXISTS on_auth_user_updated ON auth.users;
 CREATE TRIGGER on_auth_user_updated
   AFTER UPDATE OF raw_app_meta_data ON auth.users
   FOR EACH ROW
+  WHEN (OLD.raw_app_meta_data->>'role' IS DISTINCT FROM NEW.raw_app_meta_data->>'role')
   EXECUTE FUNCTION public.sync_auth_role_to_profile();
+
+-- 8. View untuk Admin melihat users (bypass auth.users RLS)
+CREATE OR REPLACE VIEW public.user_accounts AS
+SELECT
+    u.id,
+    u.email,
+    p.username,
+    p.role,
+    p.status,
+    p.created_at,
+    p.updated_at
+FROM auth.users u
+JOIN public.profiles p ON p.id = u.id;
+
+-- Berikan izin view kepada authenticated
+GRANT SELECT ON public.user_accounts TO authenticated;
+
+-- 9. Kunci Seluruh Tabel Operasional PLN dari Akses Langsung API Supabase (RLS Lockdown)
+-- FastAPI backend terhubung via direct PostgreSQL (user postgres) yang otomatis bypass RLS.
+-- Perintah ini memastikan siapapun yang memegang anon key di browser TIDAK BISA membaca data operasional via PostgREST.
+DO $$
+DECLARE
+    tbl text;
+BEGIN
+    FOR tbl IN
+        SELECT tablename
+        FROM pg_tables
+        WHERE schemaname = 'public'
+          AND tablename != 'profiles'
+    LOOP
+        EXECUTE format('ALTER TABLE public.%I ENABLE ROW LEVEL SECURITY;', tbl);
+        EXECUTE format('REVOKE ALL ON TABLE public.%I FROM anon, authenticated;', tbl);
+    END LOOP;
+END $$;
+
+-- Berikan izin akses profiles HANYA untuk authenticated user (terikat policy RLS)
+GRANT SELECT, UPDATE, DELETE ON public.profiles TO authenticated;
+REVOKE ALL ON public.profiles FROM anon;
 
 -- ==============================================================================
 -- CARA MEMBUAT AKUN ADMIN PERTAMA KALI:

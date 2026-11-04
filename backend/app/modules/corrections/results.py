@@ -9,6 +9,7 @@ from sqlalchemy.orm import Query as OrmQuery
 from sqlalchemy.orm import Session, load_only, undefer
 from sqlalchemy.sql.selectable import Subquery
 
+from app.auth import require_viewer
 from app.database import get_db
 from app.models.correction import CorrectionCheck, CorrectionTarget
 from app.models.correction_decision import CorrectionDecision
@@ -255,7 +256,7 @@ def result_info(
     }
 
 
-@router.get("/{kind}/checks/{process_id}/results")
+@router.get("/{kind}/checks/{process_id}/results", dependencies=[require_viewer])
 def saved_results(
     kind: CorrectionKind,
     process_id: int,
@@ -282,7 +283,7 @@ def saved_results(
     }
 
 
-@router.get("/{kind}/checks/{process_id}/results/history")
+@router.get("/{kind}/checks/{process_id}/results/history", dependencies=[require_viewer])
 def result_history(
     kind: CorrectionKind,
     process_id: int,
@@ -540,7 +541,7 @@ def export_results(
     return book.response(radius_filename("hasil", kind, process_id, run))
 
 
-@router.get("/{kind}/checks/{process_id}/results/history/export")
+@router.get("/{kind}/checks/{process_id}/results/history/export", dependencies=[require_viewer])
 def download_history(
     kind: CorrectionKind,
     process_id: int,
@@ -622,7 +623,7 @@ def download_history(
     return book.response(radius_filename("riwayat", kind, process_id, run))
 
 
-@router.get("/{kind}/checks/{process_id}/results/export")
+@router.get("/{kind}/checks/{process_id}/results/export", dependencies=[require_viewer])
 def download_results(
     kind: CorrectionKind,
     process_id: int,

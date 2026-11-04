@@ -12,7 +12,7 @@ interface ProcessItem {
   matched_targets: number; created_at: string; processing_state?: string;
   category?: string; batch_id?: number; generation?: number; saved_rows?: number;
 }
-const count = (value: number) => value.toLocaleString("id-ID");
+const count = (value: number) => (value ?? 0).toLocaleString("id-ID");
 function processLink(process: ProcessItem) {
   const descriptor = CORRECTION_TYPES.find((item) => item.key === process.category);
   if (!descriptor) return `/candidates?process_id=${process.id}`;

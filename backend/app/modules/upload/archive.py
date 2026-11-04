@@ -15,6 +15,7 @@ from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 from sqlalchemy.orm import Session
 
+from app.auth import require_operator, require_viewer
 from app.config import settings
 from app.database import get_db
 from app.models.upload import DatasetType, UploadBatch
@@ -74,7 +75,7 @@ def archive_info(db: Session, archive: UploadFileArchive) -> dict[str, Any]:
     }
 
 
-@router.get("/files")
+@router.get("/files", dependencies=[require_viewer])
 def list_files(db: DbSession) -> list[dict[str, Any]]:
     return [
         archive_info(db, item)
@@ -84,7 +85,7 @@ def list_files(db: DbSession) -> list[dict[str, Any]]:
     ]
 
 
-@router.post("/files")
+@router.post("/files", dependencies=[require_operator])
 def store_file(file: Annotated[UploadFile, File()], db: DbSession) -> dict[str, Any]:
     key = uuid4().hex
     path = archive_path(key)
@@ -174,7 +175,7 @@ def selected_sheet(archive: UploadFileArchive, name: str | None) -> str | None:
     return name
 
 
-@router.get("/files/{file_id}/preview")
+@router.get("/files/{file_id}/preview", dependencies=[require_viewer])
 def preview_sheet(
     file_id: int, db: DbSession, sheet_name: str | None = Query(None, max_length=128)
 ) -> dict[str, Any]:
@@ -204,7 +205,7 @@ def preview_sheet(
         raise HTTPException(400, f"Pratinjau tidak dapat dibaca: {exc!s}") from exc
 
 
-@router.post("/files/{file_id}/import-sheet")
+@router.post("/files/{file_id}/import-sheet", dependencies=[require_operator])
 def import_sheet(file_id: int, req: SheetRequest, db: DbSession) -> dict[str, Any]:
     try:
         lock_review_session(db)

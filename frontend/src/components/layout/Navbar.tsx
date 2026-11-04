@@ -84,7 +84,20 @@ export default function Navbar() {
           <span className="flex size-7 items-center justify-center rounded-full bg-ui-accent-soft text-ui-accent-text">
             <User size={15} />
           </span>
-          <span className="hidden sm:inline">{user?.username ?? "Pengguna"}</span>
+          <span className="hidden sm:inline font-medium">{user?.username ?? "Pengguna"}</span>
+          {user?.role && (
+            <span
+              className={`hidden md:inline rounded px-1.5 py-0.5 text-[11px] font-semibold uppercase tracking-wider ${
+                user.role === "admin"
+                  ? "bg-purple-100 text-purple-800 border border-purple-300"
+                  : user.role === "analis"
+                  ? "bg-blue-100 text-blue-800 border border-blue-300"
+                  : "bg-emerald-100 text-emerald-800 border border-emerald-300"
+              }`}
+            >
+              {user.role}
+            </span>
+          )}
           <ChevronDown size={14} />
         </button>
         {open && (

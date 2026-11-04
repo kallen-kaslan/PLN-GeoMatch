@@ -8,6 +8,7 @@ from sqlalchemy import or_
 from sqlalchemy.orm import Query as ORMQuery
 from sqlalchemy.orm import Session, load_only
 
+from app.auth import require_viewer
 from app.database import get_db
 from app.models.upload import BatchStatus, DatasetType, SourceRecord, UploadBatch
 from app.modules.master.summary import master_summary
@@ -102,7 +103,7 @@ def record_info(record: SourceRecord, batch: UploadBatch) -> dict[str, Any]:
     }
 
 
-@router.get("/{kind}/batches")
+@router.get("/{kind}/batches", dependencies=[require_viewer])
 def list_master_batches(kind: MasterKind, db: DbSession) -> list[dict[str, Any]]:
     """List uploaded files, including those awaiting mapping so import can resume."""
     return [
@@ -114,7 +115,7 @@ def list_master_batches(kind: MasterKind, db: DbSession) -> list[dict[str, Any]]
     ]
 
 
-@router.get("/{kind}/batches/{batch_id}")
+@router.get("/{kind}/batches/{batch_id}", dependencies=[require_viewer])
 def get_master_batch(kind: MasterKind, batch_id: int, db: DbSession) -> dict[str, Any]:
     """Return saved headers and preview rows for a resumable column-mapping form."""
     batch = source_batch(db, kind, batch_id)
@@ -134,7 +135,7 @@ def get_master_batch(kind: MasterKind, batch_id: int, db: DbSession) -> dict[str
     }
 
 
-@router.get("/{kind}/summary")
+@router.get("/{kind}/summary", dependencies=[require_viewer])
 def get_master_summary(
     kind: MasterKind,
     db: DbSession,
@@ -147,7 +148,7 @@ def get_master_summary(
     return master_summary(db, DatasetType(kind.value), batch_id, details)
 
 
-@router.get("/{kind}/records")
+@router.get("/{kind}/records", dependencies=[require_viewer])
 def list_master_records(
     kind: MasterKind,
     db: DbSession,
@@ -235,7 +236,7 @@ def list_master_records(
     }
 
 
-@router.get("/{kind}/records/{record_id}")
+@router.get("/{kind}/records/{record_id}", dependencies=[require_viewer])
 def get_master_record(
     kind: MasterKind, record_id: int, db: DbSession
 ) -> dict[str, Any]:

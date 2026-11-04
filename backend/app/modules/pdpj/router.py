@@ -8,6 +8,7 @@ from sqlalchemy import and_, case, func, or_
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session, defer, object_session
 
+from app.auth import require_operator, require_viewer
 from app.database import get_db
 from app.models.pdpj import PdpjChange, PdpjRecommendation, PdpjReview, PdpjRow
 from app.models.upload import DatasetType, SourceRecord, UploadBatch
@@ -142,7 +143,7 @@ def selected_row(db: Session, review_id: int, row_id: int) -> PdpjRow:
     return row
 
 
-@router.get("/batches")
+@router.get("/batches", dependencies=[require_viewer])
 def list_batches(db: DbSession) -> list[dict[str, Any]]:
     """List PDPJ uploads separately from masters and correction data."""
     return [
@@ -154,7 +155,7 @@ def list_batches(db: DbSession) -> list[dict[str, Any]]:
     ]
 
 
-@router.get("/batches/{batch_id}")
+@router.get("/batches/{batch_id}", dependencies=[require_viewer])
 def batch_preview(batch_id: int, db: DbSession) -> dict[str, Any]:
     """Resume mapping of an already uploaded PDPJ file."""
     batch = pdpj_batch(db, batch_id)
@@ -174,7 +175,7 @@ def batch_preview(batch_id: int, db: DbSession) -> dict[str, Any]:
     }
 
 
-@router.get("/batches/{batch_id}/reviews")
+@router.get("/batches/{batch_id}/reviews", dependencies=[require_viewer])
 def list_reviews(batch_id: int, db: DbSession) -> list[dict[str, Any]]:
     """Retain completed checks when the operator starts a new validation version."""
     pdpj_batch(db, batch_id)
@@ -190,7 +191,7 @@ def list_reviews(batch_id: int, db: DbSession) -> list[dict[str, Any]]:
     ]
 
 
-@router.post("/reviews")
+@router.post("/reviews", dependencies=[require_operator])
 def start_review(req: StartReview, db: DbSession) -> dict[str, Any]:
     """Match every PDPJ identity against every observation in the selected sources."""
     if req.incremental:
@@ -200,7 +201,7 @@ def start_review(req: StartReview, db: DbSession) -> dict[str, Any]:
     return review_info(create_review(db, req.batch_id, req.master_batch_ids))
 
 
-@router.post("/reviews/{review_id}/advance")
+@router.post("/reviews/{review_id}/advance", dependencies=[require_operator])
 @monitor_request("pdpj", "review_id", "matching")
 def advance_processing(
     review_id: int, req: ProcessingStep, db: DbSession
@@ -212,7 +213,7 @@ def advance_processing(
         raise database_write_error(db, exc, "pemeriksaan PDPJ") from exc
 
 
-@router.post("/reviews/{review_id}/pause")
+@router.post("/reviews/{review_id}/pause", dependencies=[require_operator])
 @monitor_request("pdpj", "review_id", "pausing")
 def pause_processing(review_id: int, db: DbSession) -> dict[str, Any]:
     """Wait for the active chunk and preserve all committed results."""
@@ -222,7 +223,7 @@ def pause_processing(review_id: int, db: DbSession) -> dict[str, Any]:
         raise database_write_error(db, exc, "jeda pemeriksaan PDPJ") from exc
 
 
-@router.post("/reviews/{review_id}/resume")
+@router.post("/reviews/{review_id}/resume", dependencies=[require_operator])
 @monitor_request("pdpj", "review_id", "resuming")
 def resume_processing(review_id: int, db: DbSession) -> dict[str, Any]:
     """Continue with the saved sources and cursors, never create another review."""
@@ -232,13 +233,13 @@ def resume_processing(review_id: int, db: DbSession) -> dict[str, Any]:
         raise database_write_error(db, exc, "kelanjutan pemeriksaan PDPJ") from exc
 
 
-@router.get("/reviews/{review_id}/progress")
+@router.get("/reviews/{review_id}/progress", dependencies=[require_viewer])
 def processing_status(review_id: int, db: DbSession) -> dict[str, Any]:
     """Return a lightweight checkpoint and actual in-flight activity."""
     return review_info(get_review(db, review_id))
 
 
-@router.get("/reviews/{review_id}")
+@router.get("/reviews/{review_id}", dependencies=[require_viewer])
 def review_summary(review_id: int, db: DbSession) -> dict[str, Any]:
     """Aggregate the entire review, independent of row filters and pagination."""
     review = get_review(db, review_id)
@@ -293,7 +294,7 @@ def review_summary(review_id: int, db: DbSession) -> dict[str, Any]:
     }
 
 
-@router.get("/reviews/{review_id}/rows")
+@router.get("/reviews/{review_id}/rows", dependencies=[require_viewer])
 def list_rows(
     review_id: int,
     db: DbSession,
@@ -369,7 +370,7 @@ def list_rows(
     }
 
 
-@router.get("/reviews/{review_id}/rows/{row_id}")
+@router.get("/reviews/{review_id}/rows/{row_id}", dependencies=[require_viewer])
 def row_detail(
     review_id: int,
     row_id: int,
@@ -426,7 +427,7 @@ def row_detail(
     }
 
 
-@router.patch("/reviews/{review_id}/rows/{row_id}")
+@router.patch("/reviews/{review_id}/rows/{row_id}", dependencies=[require_operator])
 def edit_row(
     review_id: int, row_id: int, req: EditRow, db: DbSession
 ) -> dict[str, Any]:
@@ -437,7 +438,7 @@ def edit_row(
     return {"revision": review.revision, **row_info(row)}
 
 
-@router.post("/reviews/{review_id}/rows/{row_id}/apply")
+@router.post("/reviews/{review_id}/rows/{row_id}/apply", dependencies=[require_operator])
 def apply_recommendation(
     review_id: int, row_id: int, req: ApplyRecommendation, db: DbSession
 ) -> dict[str, Any]:
@@ -460,7 +461,7 @@ def apply_recommendation(
     return {"revision": review.revision, **row_info(row)}
 
 
-@router.post("/reviews/{review_id}/rows/{row_id}/decision")
+@router.post("/reviews/{review_id}/rows/{row_id}/decision", dependencies=[require_operator])
 def decide_row(
     review_id: int, row_id: int, req: DecideRow, db: DbSession
 ) -> dict[str, Any]:
@@ -482,7 +483,7 @@ def decide_row(
     return {"revision": review.revision, **row_info(row)}
 
 
-@router.post("/reviews/{review_id}/complete")
+@router.post("/reviews/{review_id}/complete", dependencies=[require_operator])
 @monitor_request("pdpj", "review_id", "publishing")
 def finish_review(review_id: int, req: ReviewAction, db: DbSession) -> dict[str, Any]:
     """Finalize clean rows together; exceptions must already carry explicit reasons."""
@@ -497,7 +498,7 @@ def finish_review(review_id: int, req: ReviewAction, db: DbSession) -> dict[str,
         raise database_write_error(db, exc, "penyelesaian PDPJ") from exc
 
 
-@router.post("/reviews/{review_id}/complete-with-exceptions")
+@router.post("/reviews/{review_id}/complete-with-exceptions", dependencies=[require_operator])
 @monitor_request("pdpj", "review_id", "publishing")
 def finish_with_exceptions(
     review_id: int, req: CompleteWithExceptions, db: DbSession

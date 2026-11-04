@@ -2,6 +2,7 @@ import { MetricCard } from "@/components/data/MetricCard";
 import { useState, useEffect, useRef, useCallback } from "react";
 import { useSearchParams, useNavigate } from "react-router-dom";
 import { api } from "@/lib/api";
+import { useAppStore } from "@/store/app";
 
 declare global {
   interface Window {
@@ -28,6 +29,9 @@ interface Candidate {
 }
 
 export default function CandidatesPage() {
+  const { user } = useAppStore();
+  const isAdmin = user?.role === "admin";
+  const canOperate = user?.role === "admin" || user?.role === "analis";
   const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
   const processId = searchParams.get("process_id") || "1";
@@ -372,24 +376,37 @@ export default function CandidatesPage() {
             🔄 Refresh
           </button>
 
-          <button
-            onClick={handleReset}
-            disabled={loading}
-            className="touch-min px-3 py-1.5 min-h-[38px] border border-[#dc2626] bg-[#fee2e2] hover:bg-[#fef2f2] text-[#dc2626] text-xs font-semibold rounded-lg  transition  disabled:opacity-50"
-            title="Hapus semua data dan mulai dari awal"
-          >
-            🗑️ Reset
-          </button>
+          {isAdmin && (
+            <button
+              onClick={handleReset}
+              disabled={loading}
+              className="touch-min px-3 py-1.5 min-h-[38px] border border-[#dc2626] bg-[#fee2e2] hover:bg-[#fef2f2] text-[#dc2626] text-xs font-semibold rounded-lg  transition  disabled:opacity-50"
+              title="Hapus semua data dan mulai dari awal"
+            >
+              🗑️ Reset
+            </button>
+          )}
 
-          <button
-            onClick={handleFinishReview}
-            disabled={loading}
-            className="touch-min px-4 py-2 min-h-[38px] border border-ui-border bg-neo-accent hover:bg-ui-primary-hover text-white text-xs font-semibold rounded-lg  flex items-center gap-1.5 transition  disabled:opacity-50"
-            title="Selesaikan verifikasi dan lihat rekapitulasi serta download CSV"
-          >
-            <span>✅ Selesai & Buka Hasil</span>
-            <span>→</span>
-          </button>
+          {isAdmin ? (
+            <button
+              onClick={handleFinishReview}
+              disabled={loading}
+              className="touch-min px-4 py-2 min-h-[38px] border border-ui-border bg-neo-accent hover:bg-ui-primary-hover text-white text-xs font-semibold rounded-lg  flex items-center gap-1.5 transition  disabled:opacity-50"
+              title="Selesaikan verifikasi dan lihat rekapitulasi serta download CSV"
+            >
+              <span>✅ Selesai & Buka Hasil</span>
+              <span>→</span>
+            </button>
+          ) : (
+            <button
+              onClick={() => navigate(`/result?process_id=${processId}`)}
+              className="touch-min px-4 py-2 min-h-[38px] border border-ui-border bg-white hover:bg-gray-100 text-xs font-semibold rounded-lg flex items-center gap-1.5 transition"
+              title="Lihat hasil rekonsiliasi yang sudah ada"
+            >
+              <span>📊 Lihat Hasil</span>
+              <span>→</span>
+            </button>
+          )}
         </div>
       </div>
 
@@ -605,7 +622,7 @@ export default function CandidatesPage() {
       </div>
 
       {/* BULK ACTION BUTTON */}
-      {candidates.length > 0 && (
+      {canOperate && candidates.length > 0 && (
         <div className="flex justify-end">
           <button
             type="button"
@@ -779,28 +796,32 @@ export default function CandidatesPage() {
                       )}
                     </td>
                     <td className="p-3 text-center" onClick={(e) => e.stopPropagation()}>
-                      <div className="flex justify-center items-center gap-1.5">
-                        <button
-                          onClick={(e) => handleDecision(c.id, 1, e)}
-                          className={`touch-min px-3 py-1.5 min-h-[36px] border border-ui-border rounded text-xs font-semibold  transition  ${
-                            c.is_accepted === 1
-                              ? "bg-[#16a34a] text-white"
-                              : "bg-white text-[#16a34a] hover:bg-[#dcfce7]"
-                          }`}
-                        >
-                          ✓ Valid
-                        </button>
-                        <button
-                          onClick={(e) => handleDecision(c.id, -1, e)}
-                          className={`touch-min px-3 py-1.5 min-h-[36px] border border-ui-border rounded text-xs font-semibold  transition  ${
-                            c.is_accepted === -1
-                              ? "bg-[#dc2626] text-white"
-                              : "bg-white text-[#dc2626] hover:bg-[#fee2e2]"
-                          }`}
-                        >
-                          ✕ Tolak
-                        </button>
-                      </div>
+                      {canOperate ? (
+                        <div className="flex justify-center items-center gap-1.5">
+                          <button
+                            onClick={(e) => handleDecision(c.id, 1, e)}
+                            className={`touch-min px-3 py-1.5 min-h-[36px] border border-ui-border rounded text-xs font-semibold  transition  ${
+                              c.is_accepted === 1
+                                ? "bg-[#16a34a] text-white"
+                                : "bg-white text-[#16a34a] hover:bg-[#dcfce7]"
+                            }`}
+                          >
+                            ✓ Valid
+                          </button>
+                          <button
+                            onClick={(e) => handleDecision(c.id, -1, e)}
+                            className={`touch-min px-3 py-1.5 min-h-[36px] border border-ui-border rounded text-xs font-semibold  transition  ${
+                              c.is_accepted === -1
+                                ? "bg-[#dc2626] text-white"
+                                : "bg-white text-[#dc2626] hover:bg-[#fee2e2]"
+                            }`}
+                          >
+                            ✕ Tolak
+                          </button>
+                        </div>
+                      ) : (
+                        <span className="text-xs text-ui-muted italic">Hanya lihat</span>
+                      )}
                     </td>
                   </tr>
                 );

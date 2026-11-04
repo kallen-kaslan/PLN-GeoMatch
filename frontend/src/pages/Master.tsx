@@ -6,9 +6,10 @@ import { AlertCircle, CheckCircle2, Database, FileSpreadsheet, LoaderCircle, Map
 import { PreviewPagination } from "@/components/data/PreviewPagination";
 import { MasterImport } from "@/components/master/MasterImport";
 import { MASTER_TYPES, displayValue, masterApi, masterFieldLabel, masterFields, validationMessage, type ImportResult, type MasterKind, type MasterRecord, type MasterStatus } from "@/lib/master";
+import { useAppStore } from "@/store/app";
 
 const controlClass = "rounded-lg border border-ui-border bg-white px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-neo-accent";
-const count = (value: number | null | undefined) => value == null ? "—" : value.toLocaleString("id-ID");
+const count = (value: number | null | undefined) => value == null ? "0" : value.toLocaleString("id-ID");
 
 function RecordBadge({ record }: { record: MasterRecord }) {
   const label = !record.is_valid ? "Perlu perbaikan" : record.coordinates_complete ? "Lengkap" : "Koordinat belum lengkap";
@@ -57,6 +58,8 @@ function ImportPanel({ kind, resumeId, onSaved, onCancel }: { kind: MasterKind; 
 }
 
 function MasterWorkspace({ kind }: { kind: MasterKind }) {
+  const { user } = useAppStore();
+  const canUpload = user?.role === "admin" || user?.role === "analis";
   const queryClient = useQueryClient();
   const descriptor = MASTER_TYPES.find((item) => item.key === kind)!;
   const [batchId, setBatchId] = useState<number | undefined>();
@@ -88,8 +91,12 @@ function MasterWorkspace({ kind }: { kind: MasterKind }) {
   return <div className="space-y-5 sm:space-y-6">
     <header className="geo-page-heading">
       <div><p className="text-xs font-semibold uppercase tracking-[0.18em] text-ui-muted">Referensi pelanggan</p><h1 className="fluid-h1 mt-1 flex items-center gap-2 font-semibold"><Database size={25} className="shrink-0" />Data Master {descriptor.label}</h1><p className="mt-1 text-xs text-ui-muted sm:text-sm">{descriptor.description}</p></div>
-      <div className="flex gap-2"><button type="button" aria-label="Muat ulang data master" onClick={() => void queryClient.invalidateQueries({ queryKey: ["masters", kind] })} className="touch-min rounded-lg border border-ui-border bg-white px-3  hover:bg-gray-100"><RefreshCw size={16} className={batches.isFetching || summary.isFetching || records.isFetching ? "animate-spin" : ""} /></button>
-        <button type="button" onClick={() => { setResumeId(null); setShowImport(true); }} disabled={showImport} className="touch-min gap-2 rounded-lg border border-ui-border bg-ui-primary px-4 text-xs font-semibold text-white  hover:bg-ui-primary-hover disabled:opacity-40"><Plus size={16} />Unggah berkas</button></div>
+      <div className="flex gap-2">
+        <button type="button" aria-label="Muat ulang data master" onClick={() => void queryClient.invalidateQueries({ queryKey: ["masters", kind] })} className="touch-min rounded-lg border border-ui-border bg-white px-3  hover:bg-gray-100"><RefreshCw size={16} className={batches.isFetching || summary.isFetching || records.isFetching ? "animate-spin" : ""} /></button>
+        {canUpload && (
+          <button type="button" onClick={() => { setResumeId(null); setShowImport(true); }} disabled={showImport} className="touch-min gap-2 rounded-lg border border-ui-border bg-ui-primary px-4 text-xs font-semibold text-white  hover:bg-ui-primary-hover disabled:opacity-40"><Plus size={16} />Unggah berkas</button>
+        )}
+      </div>
     </header>
     <nav aria-label="Jenis data master" className="flex gap-2 overflow-x-auto pb-1">
       {MASTER_TYPES.map((item) => <Link key={item.key} to={`/master/${item.key}`} aria-current={kind === item.key ? "page" : undefined} className={`touch-min whitespace-nowrap rounded-lg border border-ui-border px-5 text-xs font-semibold ${kind === item.key ? "bg-ui-primary text-white " : "bg-white hover:bg-gray-100"}`}>{item.label}</Link>)}

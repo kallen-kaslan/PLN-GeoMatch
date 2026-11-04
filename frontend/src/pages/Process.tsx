@@ -2,8 +2,11 @@ import { useState, useEffect } from "react";
 import { api } from "@/lib/api";
 import { useNavigate } from "react-router-dom";
 import { Compass, FolderCheck, MapPin, Play, ArrowRight, CheckCircle2 } from "lucide-react";
+import { useAppStore } from "@/store/app";
 
 export default function ProcessPage() {
+  const { user } = useAppStore();
+  const canOperate = user?.role === "admin" || user?.role === "analis";
   const navigate = useNavigate();
 
   // Lazy initializer to avoid impure Date call during render
@@ -261,23 +264,29 @@ export default function ProcessPage() {
             </div>
           </div>
 
-          <button
-            type="submit"
-            disabled={loading}
-            className="w-full touch-min py-3 px-4 border border-neo-black bg-ui-primary text-white text-xs sm:text-sm font-semibold rounded-lg  hover:bg-ui-primary-hover transition  disabled:opacity-50 flex items-center justify-center gap-2"
-          >
-            {loading ? (
-              <>
-                <div className="w-4 h-4 border border-white border-t-transparent rounded-full animate-spin"></div>
-                <span>Menjalankan Pencocokan Spasial...</span>
-              </>
-            ) : (
-              <>
-                <Play size={16} />
-                <span>Jalankan Pencocokan Koordinat</span>
-              </>
-            )}
-          </button>
+          {canOperate ? (
+            <button
+              type="submit"
+              disabled={loading}
+              className="w-full touch-min py-3 px-4 border border-neo-black bg-ui-primary text-white text-xs sm:text-sm font-semibold rounded-lg  hover:bg-ui-primary-hover transition  disabled:opacity-50 flex items-center justify-center gap-2"
+            >
+              {loading ? (
+                <>
+                  <div className="w-4 h-4 border border-white border-t-transparent rounded-full animate-spin"></div>
+                  <span>Menjalankan Pencocokan Spasial...</span>
+                </>
+              ) : (
+                <>
+                  <Play size={16} />
+                  <span>Jalankan Pencocokan Koordinat</span>
+                </>
+              )}
+            </button>
+          ) : (
+            <div className="p-3 text-center rounded-lg border border-ui-border bg-gray-50 text-xs text-ui-muted">
+              Akun auditor memiliki akses lihat data saja. Proses pencocokan hanya dapat dijalankan oleh admin dan analis.
+            </div>
+          )}
         </form>
       </div>
 

@@ -34,12 +34,53 @@ export default function AdminPage() {
 
   const loadUsers = useCallback(async () => {
     setLoading(true);
-    const { data, error } = await supabase.from("profiles").select("*");
-    if (error) {
-      console.error("Gagal memuat profil:", error);
-    } else if (data) {
-      setUsers(data as RealUser[]);
+    // Fetch users from the user_accounts view which includes email from auth.users
+    const { data: usersData, error: usersError } = await supabase
+      .from("user_accounts")
+      .select("*")
+      .order("created_at", { ascending: false });
+
+    if (usersError) {
+      console.error("Gagal memuat users:", usersError);
+      // Fallback: fetch from profiles only
+      const { data: profiles, error: profilesError } = await supabase
+        .from("profiles")
+        .select("*")
+        .order("created_at", { ascending: false });
+
+      if (profilesError) {
+        console.error("Fallback juga gagal:", profilesError);
+        setUsers([]);
+        setLoading(false);
+        return;
+      }
+
+      setUsers(
+        profiles.map((p) => ({
+          id: p.id,
+          username: p.username,
+          role: p.role as RealUser["role"],
+          status: p.status,
+          created_at: p.created_at,
+          updated_at: p.updated_at,
+          email: undefined,
+        }))
+      );
+      setLoading(false);
+      return;
     }
+
+    const mapped = usersData.map((u: any) => ({
+      id: u.id,
+      username: u.username,
+      role: u.role as RealUser["role"],
+      status: u.status,
+      created_at: u.created_at,
+      updated_at: u.updated_at,
+      email: u.email,
+    }));
+
+    setUsers(mapped);
     setLoading(false);
   }, []);
 
@@ -93,13 +134,24 @@ export default function AdminPage() {
   const handleAddAdmin = async (e: React.FormEvent) => {
     e.preventDefault();
     setFormError("");
-    if (!newAdminEmail || !newAdminPassword) return;
+
+    // Auto-append @pln.co.id if email doesn't contain @
+    let formattedEmail = newAdminEmail.trim();
+    if (!formattedEmail.includes("@")) {
+      formattedEmail = `${formattedEmail}@pln.co.id`;
+    }
+
+    if (!formattedEmail || !newAdminPassword) return;
 
     setActionLoading("new");
     const { data, error } = await supabase.auth.signUp({
-      email: newAdminEmail,
+      email: formattedEmail,
       password: newAdminPassword,
-      options: { data: { username: newAdminEmail.split("@")[0] } }
+      options: {
+        data: {
+          username: formattedEmail.split("@")[0]
+        }
+      }
     });
 
     if (error) {
@@ -169,13 +221,13 @@ export default function AdminPage() {
           className="flex items-center gap-2 px-4 py-2 border-2 border-neo-black bg-neo-black text-white rounded text-sm font-bold shadow-[3px_3px_0_#6B82CB] hover:translate-y-0.5 active:translate-y-1 transition-all"
         >
           <UserPlus size={18} />
-          {showAddForm ? "Batal" : "Tambah Admin Baru"}
+          {showAddForm ? "Batal" : "Tambah Akun Baru"}
         </button>
       </div>
 
       {showAddForm && (
         <form onSubmit={handleAddAdmin} className="p-4 border-2 border-neo-black bg-white rounded-sm shadow-[4px_4px_0_#0a0a0a] space-y-4">
-          <h3 className="font-black text-lg">Registrasi Admin Baru</h3>
+          <h3 className="font-black text-lg">Tambah Akun Baru</h3>
           {formError && <div className="text-red-600 text-xs font-bold bg-red-50 p-2 border border-red-200">{formError}</div>}
           <div className="grid sm:grid-cols-2 gap-4">
             <div>
@@ -206,7 +258,7 @@ export default function AdminPage() {
             disabled={actionLoading === "new"}
             className="px-6 py-2 bg-neo-black text-white font-bold text-sm border-2 border-neo-black hover:bg-neutral-800 disabled:opacity-50"
           >
-            {actionLoading === "new" ? "Memproses..." : "Simpan Admin"}
+            {actionLoading === "new" ? "Memproses..." : "Simpan Akun"}
           </button>
         </form>
       )}

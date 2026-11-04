@@ -88,6 +88,7 @@ def apply_candidate_filters(
 
 
 from app.config import settings
+from app.auth import require_admin, require_operator
 from app.database import get_db
 from app.models.master_sisa import MasterSnapshot
 from app.models.matching import (
@@ -145,7 +146,7 @@ class BulkDecisionRequest(BaseModel):
     is_accepted: int
 
 
-@router.post("/build-master")
+@router.post("/build-master", dependencies=[require_operator])
 def build_master_endpoint(req: BuildMasterRequest, db: DbSession):
     """
     Step 1: Membersihkan data bertumpuk multi-bulan dari ACMT (pascabayar) & LPB (prabayar),
@@ -163,7 +164,7 @@ def build_master_endpoint(req: BuildMasterRequest, db: DbSession):
         raise HTTPException(status_code=422, detail=str(e)) from e
 
 
-@router.post("/prepare-master-sisa")
+@router.post("/prepare-master-sisa", dependencies=[require_operator])
 def prepare_master_sisa(req: PrepareMasterSisaRequest, db: DbSession):
     """
     Step 2: Mengecualikan data yang sudah valid/verif dari Master menggunakan data PDPJ.
@@ -253,7 +254,7 @@ def list_master_snapshots(db: DbSession) -> list[dict]:
     ]
 
 
-@router.post("/run-matching")
+@router.post("/run-matching", dependencies=[require_operator])
 def run_matching(req: RunMatchingRequest, db: DbSession) -> dict:
     """Bind both sources before enqueueing so later uploads cannot change a job."""
     try:
@@ -281,7 +282,7 @@ class RerunRequest(BaseModel):
     max_candidates: int = Field(5, ge=1, le=1000)
 
 
-@router.post("/{process_id}/rerun")
+@router.post("/{process_id}/rerun", dependencies=[require_operator])
 def rerun_matching(process_id: int, req: RerunRequest, db: DbSession) -> dict:
     """Create a new search generation; keep all prior candidates and decisions."""
     reject_correction_legacy_write(db, process_id)
@@ -398,7 +399,7 @@ def ensure_current_candidate(db: Session, candidate: MatchCandidate) -> None:
         )
 
 
-@router.post("/candidates/bulk-decision")
+@router.post("/candidates/bulk-decision", dependencies=[require_operator])
 def submit_bulk_candidate_decision(req: BulkDecisionRequest, db: DbSession):
     if not req.candidate_ids:
         raise HTTPException(status_code=400, detail="candidate_ids tidak boleh kosong")
@@ -427,7 +428,7 @@ def submit_bulk_candidate_decision(req: BulkDecisionRequest, db: DbSession):
     }
 
 
-@router.post("/candidates/{candidate_id}/decision")
+@router.post("/candidates/{candidate_id}/decision", dependencies=[require_operator])
 def submit_candidate_decision(candidate_id: int, req: DecisionRequest, db: DbSession):
     cand = db.query(MatchCandidate).filter(MatchCandidate.id == candidate_id).first()
     if not cand:
@@ -445,7 +446,7 @@ def submit_candidate_decision(candidate_id: int, req: DecisionRequest, db: DbSes
     }
 
 
-@router.post("/{process_id}/finalize-review")
+@router.post("/{process_id}/finalize-review", dependencies=[require_admin])
 def finalize_review(process_id: int, db: DbSession):
     reject_correction_legacy_write(db, process_id)
     process = (
