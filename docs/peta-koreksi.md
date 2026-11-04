@@ -83,10 +83,10 @@ Perubahan keputusan dan perluasan baru tetap mengikuti batas versi terbaru.
 yang dipilih. Filter radius tampilan yang lebih kecil tidak mengubah radius
 pemeriksaan pada ekspor. Nama file memuat kategori, proses, radius, dan versi,
 misalnya `hasil_koreksi_idpel_kosong_4_radius_100m_v1.xlsx`. Lembar utama tetap
-polos dengan sepuluh kolom yang disepakati. **Informasi** mencantumkan radius,
-versi, dan status; **Pemeriksaan Radius** mencantumkan status serta jumlah
-kandidat setiap target pada versi tersebut. Tautan Hasil Koreksi dan Riwayat
-Proses membawa pilihan versi yang sama.
+polos dan menjadi satu-satunya sheet, **Hasil Koreksi**, dengan sembilan kolom
+yang disepakati. Koordinat kandidat terpilih berada pada `x_akhir` (bujur) dan
+`y_akhir` (lintang). Tautan Hasil Koreksi dan Riwayat Proses membawa pilihan versi
+yang sama.
 
 Untuk memperbesar radius melampaui cakupan, tombol menjelaskan bahwa pemeriksaan akan diperluas. Implementasi memakai pencarian ulang **seluruh berkas** yang sudah tersedia pada tahap 3, bukan pekerjaan tersembunyi per titik. Hasil disimpan sebagai versi baru dengan master dan PDPJ yang tetap terikat. Status aktual dipantau sampai selesai; versi sebelumnya tetap dapat dibaca saat pekerjaan berjalan atau gagal.
 
