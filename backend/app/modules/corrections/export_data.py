@@ -41,7 +41,6 @@ def target_columns(
     return [
         fields.get("agenda_ref") or raw.get("agenda_ref"),
         text(fields.get("idpel")),
-        text(fields.get("verif") if "verif" in fields else raw.get("verif")),
         fields.get("jenis_pel"),
         text(fields.get("lat")),
         text(fields.get("lon")),
@@ -59,11 +58,11 @@ def result_columns(
     values = target_columns(source, batch, target)
     fields = candidate.get("fields", {})
     values[1] = text(fields.get("idpel"))
-    values[3] = fields.get("jenis_pel") or target.get("jenis_pel")
+    values[2] = fields.get("jenis_pel") or target.get("jenis_pel")
     observations = coordinate_sources(candidate)
-    values[6] = "\n".join(
+    values[5] = "\n".join(
         source_label(item.get("filename"), item.get("source_sheet"))
         for item in observations
     )
-    values[7] = "\n".join(text(item.get("row_number")) for item in observations)
+    values[6] = "\n".join(text(item.get("row_number")) for item in observations)
     return [*values, text(fields.get("lon")), text(fields.get("lat"))]

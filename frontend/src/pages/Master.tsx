@@ -2,7 +2,8 @@ import { useDebouncedSearch } from "@/hooks/useDebouncedSearch";
 import { SearchFeedback } from "@/components/data/SearchFeedback";
 import { searchPreparing, searchRefreshInterval } from "@/lib/search";
 import { MetricCard, type MetricTone } from "@/components/data/MetricCard";
-import { useEffect, useRef, useState } from "react";
+import { useState } from "react";
+import { InspectionDrawer } from "@/components/data/InspectionDrawer";
 import { Link, Navigate, useParams } from "react-router-dom";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { AlertCircle, CheckCircle2, Database, FileSpreadsheet, LoaderCircle, MapPin, Plus, RefreshCw, Search, X } from "lucide-react";
@@ -19,15 +20,9 @@ function RecordBadge({ record }: { record: MasterRecord }) {
 }
 
 function RecordDetail({ kind, id, onClose }: { kind: MasterKind; id: number; onClose: () => void }) {
-  const dialog = useRef<HTMLDialogElement>(null);
   const detail = useQuery({ queryKey: ["masters", kind, "detail", id], queryFn: () => masterApi.detail(kind, id) });
-  useEffect(() => {
-    const element = dialog.current;
-    element?.showModal();
-    return () => element?.close();
-  }, []);
   const record = detail.data;
-  return <dialog ref={dialog} onCancel={onClose} aria-labelledby="master-detail-title" className="fixed inset-y-0 right-0 left-auto m-0 h-dvh max-h-none w-full max-w-2xl border-0 border-l border-ui-border bg-white p-0 text-neo-black shadow-xl backdrop:bg-black/50">
+  return <InspectionDrawer label="Detail sumber pelanggan" onClose={onClose}>
     <div className="sticky top-0 z-10 flex items-center justify-between gap-3 border-b border-ui-border bg-white px-5 py-4">
       <div><p className="text-xs font-semibold uppercase tracking-widest text-ui-muted">Data Master · {MASTER_TYPES.find((item) => item.key === kind)?.label}</p><h2 id="master-detail-title" className="mt-1 text-lg font-semibold">Detail sumber pelanggan</h2></div>
       <button type="button" onClick={onClose} aria-label="Tutup detail data" className="touch-min rounded-lg border border-ui-border hover:bg-neo-white"><X size={20} /></button>
@@ -49,7 +44,7 @@ function RecordDetail({ kind, id, onClose }: { kind: MasterKind; id: number; onC
         </dl></section>
       </>}
     </div>
-  </dialog>;
+  </InspectionDrawer>;
 }
 
 function ImportPanel({ kind, resumeId, onSaved, onCancel }: { kind: MasterKind; resumeId: number | null; onSaved: (result: ImportResult, filename: string) => void; onCancel: () => void }) {

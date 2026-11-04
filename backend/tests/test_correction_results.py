@@ -3,13 +3,13 @@
 import io
 
 import pytest
+from app.models.correction_decision import CorrectionDecision
+from app.models.upload import SourceRecord, UploadBatch
+from app.modules.corrections.spreadsheet import RESULT_HEADERS, XLSX_MEDIA_TYPE
 from fastapi.testclient import TestClient
 from openpyxl import Workbook, load_workbook
 from sqlalchemy.orm import Session
 
-from app.models.correction_decision import CorrectionDecision
-from app.models.upload import SourceRecord, UploadBatch
-from app.modules.corrections.spreadsheet import RESULT_HEADERS, XLSX_MEDIA_TYPE
 from tests.test_correction_map import body
 from tests.test_corrections import upload
 
@@ -172,32 +172,42 @@ def test_partial_choice_appears_in_results_history_and_xlsx_without_changing_sou
         assert response.headers["content-type"] == XLSX_MEDIA_TYPE
         assert response.headers["content-disposition"].endswith('.xlsx"')
         book = load_workbook(io.BytesIO(response.content))
+        assert book.sheetnames == ["Hasil Koreksi"]
         sheet = book["Hasil Koreksi"]
         assert list(next(sheet.values)) == RESULT_HEADERS
+        assert RESULT_HEADERS == [
+            "noagenda",
+            "idpelanggan",
+            "jenispelanggan",
+            "latitudey",
+            "longitudex",
+            "sumber file (sheet)",
+            "sel (baris ke berapa)",
+            "x_akhir",
+            "y_akhir",
+        ]
         exported = sheet_rows(book, "Hasil Koreksi")
         assert len(exported) == 1
         row = exported[0]
         assert row["idpelanggan"] == "002"
         assert row["noagenda"] == "000AGENDA0"
-        assert row["verif"] == "202606"
+        assert "verif" not in row
         assert row["jenispelanggan"] == "PRABAYAR"
         assert row["latitudey"] == "-6.2"
         assert row["longitudex"] == "106.8"
         assert row["sumber file (sheet)"] == "master-pelanggan.xlsx (Master Pelanggan)"
         assert row["sel (baris ke berapa)"] == "3"
-        assert row["x_acc"] == "106.8"
-        assert row["y_acc"] == "-6.200005"
-        assert sheet_rows(book, "Keputusan Aktif")[0]["petugas"] == "Petugas Uji"
-        assert sheet_rows(book, "Data Target")[0]["sel (baris ke berapa)"] == 2
-        assert sheet_rows(book, "Observasi Sumber")[0]["koordinat_dipakai"] == "Ya"
+        assert row["x_akhir"] == "106.8"
+        assert row["y_akhir"] == "-6.200005"
         assert sheet.freeze_panes is None
         assert sheet.auto_filter.ref is None
         assert not sheet["A1"].font.bold
         assert sheet["A1"].fill.patternType is None
         assert sheet["A2"].fill.patternType is None
-        assert sheet["I1"].value == "x_acc"
-        assert sheet["J1"].value == "y_acc"
-        assert sheet.column_dimensions["G"].width >= 50
+        assert sheet.max_column == 9
+        assert sheet["H1"].value == "x_akhir"
+        assert sheet["I1"].value == "y_akhir"
+        assert sheet.column_dimensions["F"].width >= 50
         assert sheet["B2"].data_type == "s" and sheet["B2"].number_format == "@"
         assert sheet["E2"].data_type == "s"
         book.close()
@@ -271,8 +281,8 @@ def test_replacement_cancellation_filters_and_history_are_not_counted_as_extra_c
     assert [event["revisi_pilihan"] for event in history] == [3, 2, 1]
     assert [event["idpelanggan"] for event in history] == [None, "003", "002"]
     assert history[0]["status"] == "Pilihan dibatalkan"
-    assert history[0]["x_acc"] is None
-    assert history[0]["y_acc"] is None
+    assert history[0]["x_akhir"] is None
+    assert history[0]["y_akhir"] is None
     assert history[0]["sumber file (sheet)"] is None
     book.close()
 
@@ -324,11 +334,7 @@ def test_resume_and_new_search_preserve_choices_and_allow_historical_result_expo
     book = load_workbook(io.BytesIO(export.content))
     assert sheet_rows(book, "Hasil Koreksi")[0]["idpelanggan"] == "002"
     assert "radius_10m_v1.xlsx" in export.headers["content-disposition"]
-    info = dict(list(book["Informasi"].values)[1:])
-    assert info["Radius pemeriksaan (meter)"] == 10
-    assert info["Versi pemeriksaan"] == 1
-    assert sheet_rows(book, "Pemeriksaan Radius")[0]["radius_meter"] == 10
-    assert sheet_rows(book, "Keputusan Aktif")[0]["radius_pilihan_meter"] == 10
+    assert book.sheetnames == ["Hasil Koreksi"]
     book.close()
     newer_file = client.get(
         partial["base"] + "/results/export", params={"generation": 2}
@@ -336,11 +342,7 @@ def test_resume_and_new_search_preserve_choices_and_allow_historical_result_expo
     assert "radius_100m_v2.xlsx" in newer_file.headers["content-disposition"]
     newer_book = load_workbook(io.BytesIO(newer_file.content))
     assert sheet_rows(newer_book, "Hasil Koreksi")[0]["idpelanggan"] == "003"
-    assert (
-        dict(list(newer_book["Informasi"].values)[1:])["Radius pemeriksaan (meter)"]
-        == 100
-    )
-    assert sheet_rows(newer_book, "Keputusan Aktif")[0]["radius_pilihan_meter"] == 100
+    assert newer_book.sheetnames == ["Hasil Koreksi"]
     newer_book.close()
     historical_choice = client.get(
         partial["base"] + f"/records/{partial['record']}/choice",
@@ -410,11 +412,18 @@ def test_xlsx_keeps_formula_like_text_literal_without_changing_saved_decision(
     assert client.post(url, json=request).status_code == 200
     response = client.get(partial["base"] + "/results/export")
     book = load_workbook(io.BytesIO(response.content))
-    row = sheet_rows(book, "Keputusan Aktif")[0]
-    assert row["petugas"] == "=SUM(1,1)"
-    assert book["Keputusan Aktif"]["E2"].data_type == "s"
+    assert book.sheetnames == ["Hasil Koreksi"]
     assert sheet_rows(book, "Hasil Koreksi")[0]["idpelanggan"] == "002"
     book.close()
+    history_file = client.get(partial["base"] + "/results/history/export")
+    history_book = load_workbook(io.BytesIO(history_file.content))
+    row = sheet_rows(history_book, "Riwayat Pilihan")[0]
+    assert row["petugas"] == "=SUM(1,1)"
+    actor_column = [cell.value for cell in history_book["Riwayat Pilihan"][1]].index(
+        "petugas"
+    ) + 1
+    assert history_book["Riwayat Pilihan"].cell(2, actor_column).data_type == "s"
+    history_book.close()
     assert client.get(url).json()["current"]["actor"] == "=SUM(1,1)"
 
 
@@ -433,7 +442,7 @@ def test_xlsx_obeys_filters_and_history_record_scope(
     rows = sheet_rows(book, "Hasil Koreksi")
     assert len(rows) == 3
     assert all(row["idpelanggan"] is None for row in rows)
-    assert all(row["x_acc"] is None and row["y_acc"] is None for row in rows)
+    assert all(row["x_akhir"] is None and row["y_akhir"] is None for row in rows)
     book.close()
     history = client.get(
         partial["base"] + "/results/history/export",
@@ -470,6 +479,10 @@ def test_xlsx_reads_saved_evidence_and_does_not_attribute_other_coordinates(
     row = sheet_rows(book, "Hasil Koreksi")[0]
     assert row["sumber file (sheet)"] == "master-pelanggan.xlsx (Master Pelanggan)"
     assert row["sel (baris ke berapa)"] == "3"
+    assert book.sheetnames == ["Hasil Koreksi"]
+    book.close()
+    history_file = client.get(partial["base"] + "/results/history/export")
+    book = load_workbook(io.BytesIO(history_file.content))
     observations = sheet_rows(book, "Observasi Sumber")
     assert len(observations) == 2
     assert observations[0]["koordinat_dipakai"] == "Ya"

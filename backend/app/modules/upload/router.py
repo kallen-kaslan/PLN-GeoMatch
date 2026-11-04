@@ -4,11 +4,10 @@ from itertools import islice
 from typing import Annotated, Any
 from zipfile import BadZipFile
 
+from app.performance import timed
 from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
-
-from app.performance import timed
 
 from ...config import settings
 from ...database import get_db
@@ -51,6 +50,8 @@ from .normalization import (
     validate_fields,
     validate_mapping,
 )
+from .progress import UploadProgress, report_progress, track_upload
+from .progress import router as progress_router
 from .reader import IMPORT_CHUNK_ROWS, check_file_size, read_upload
 from .storage import database_write_error
 
@@ -455,17 +456,33 @@ def upload_file(
 
 
 @router.post("/confirm-mapping")
-def confirm_mapping(req: MappingRequest, db: DbSession) -> dict:
+@report_progress
+def confirm_mapping(
+    req: MappingRequest,
+    db: DbSession,
+    progress: Annotated[UploadProgress, Depends(track_upload)],
+) -> dict:
     """Validate mapping and rows, preserving the original cells for traceability."""
     try:
-        return apply_mapping(req, db)
+        progress.stage("preparing")
+        progress.checkpoint()
+        return apply_mapping(req, db, progress)
     except SQLAlchemyError as exc:
         raise database_write_error(db, exc, "konfirmasi mapping") from exc
+    finally:
+        if progress.checkpoint_committed and progress.batch_id is not None:
+            db.rollback()
+            interrupted = db.get(UploadBatch, progress.batch_id)
+            if interrupted is not None and interrupted.status == BatchStatus.PROCESSING:
+                interrupted.status = BatchStatus.NEEDS_MAPPING
+                db.commit()
 
 
 @timed("upload.validate_and_map")
-def apply_mapping(req: MappingRequest, db: Session) -> dict:
-    """Keep derived fields and batch completion in the same transaction."""
+def apply_mapping(
+    req: MappingRequest, db: Session, progress: UploadProgress | None = None
+) -> dict:
+    """Publish a completed batch only after every row has been validated."""
     lock_review_session(db)
     batch = (
         db.query(UploadBatch)
@@ -476,6 +493,16 @@ def apply_mapping(req: MappingRequest, db: Session) -> dict:
     )
     if batch is None:
         raise HTTPException(status_code=404, detail="Batch tidak ditemukan")
+    if batch.status == BatchStatus.PROCESSING:
+        raise HTTPException(
+            409,
+            "Batch masih diproses atau dijeda. Lanjutkan proses yang sedang berjalan.",
+        )
+    if batch.status == BatchStatus.FAILED:
+        raise HTTPException(
+            409,
+            "Pembacaan sheet belum selesai. Pilih berkas dari riwayat untuk melanjutkan impor sebelum validasi.",
+        )
     in_use = (
         db.query(ReconciliationProcess)
         .filter(ReconciliationProcess.target_batch_id == batch.id)
@@ -537,6 +564,15 @@ def apply_mapping(req: MappingRequest, db: Session) -> dict:
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
     valid_rows = 0
+    checkpointable = bool(
+        progress and progress.token and batch.status != BatchStatus.COMPLETED
+    )
+    if progress:
+        progress.stage("validating", batch.total_rows)
+        # Partial validation remains hidden from all ready-master queries.
+        if progress.token and batch.status != BatchStatus.COMPLETED:
+            batch.status = BatchStatus.PROCESSING
+        progress.batch_id = batch.id
     errors: list[dict[str, Any]] = []
     last_id = 0
     total_rows = 0
@@ -585,6 +621,10 @@ def apply_mapping(req: MappingRequest, db: Session) -> dict:
         last_id = records[-1].id
         db.bulk_update_mappings(SourceRecord.__mapper__, updates)
         db.flush()
+        if progress:
+            progress.update(total_rows)
+            if checkpointable:
+                progress.checkpoint(db)
         # Release each chunk from the identity map before loading the next one.
         for record in records:
             db.expunge(record)
@@ -605,6 +645,9 @@ def apply_mapping(req: MappingRequest, db: Session) -> dict:
         db.add(
             CoordinateRepair(batch_id=batch.id, version=REPAIR_VERSION, rows_changed=0)
         )
+    if progress:
+        progress.stage("finalizing", total_rows)
+        progress.update(total_rows)
     db.commit()
     return {
         "message": "Mapping diterapkan dan validasi selesai",
@@ -616,4 +659,5 @@ def apply_mapping(req: MappingRequest, db: Session) -> dict:
     }
 
 
+router.include_router(progress_router)
 router.include_router(archive_router)

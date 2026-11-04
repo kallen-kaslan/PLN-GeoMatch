@@ -35,9 +35,10 @@ def test_pdpj_mapping_storage_error_can_retry_without_uploading_again(
     save = page.get_by_role("button", name="Simpan dan validasi PDPJ", exact=True)
     save.click()
     expect(page.get_by_role("alert")).to_have_text(message)
+    expect(page.get_by_role("region", name="Progres impor data", exact=True)).to_contain_text("Proses terhenti")
     assert len(httpx.get(f"{servers[1]}/pdpj/batches").json()) == 1
     save.click()
-    expect(page.get_by_role("status")).to_contain_text("retry.csv tersimpan")
+    expect(page.get_by_role("status").filter(has_text="retry.csv tersimpan")).to_be_visible()
     batches = httpx.get(f"{servers[1]}/pdpj/batches").json()
     assert len(batches) == 1 and batches[0]["status"] == "completed"
     assert calls == 2

@@ -14,16 +14,15 @@ XLSX_MEDIA_TYPE = "application/vnd.openxmlformats-officedocument.spreadsheetml.s
 RESULT_HEADERS = [
     "noagenda",
     "idpelanggan",
-    "verif",
     "jenispelanggan",
     "latitudey",
     "longitudex",
     "sumber file (sheet)",
     "sel (baris ke berapa)",
-    "x_acc",
-    "y_acc",
+    "x_akhir",
+    "y_akhir",
 ]
-RESULT_WIDTHS = [26, 22, 16, 22, 24, 24, 58, 26, 24, 24]
+RESULT_WIDTHS = [26, 22, 22, 24, 24, 58, 26, 24, 24]
 
 
 class Spreadsheet:

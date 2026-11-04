@@ -90,6 +90,11 @@ class EmptyWorkflowTests(unittest.TestCase):
         self.db.commit()
 
     def test_server_finishes_without_browser_advances_and_preserves_exclusions(self):
+        from itertools import count
+
+        # Windows clock granularity can round tiny in-memory chunks to zero.
+        # Use a deterministic clock to verify duration accumulation and storage.
+        clock = count(step=0.01)
         self.more_targets()
         analyzed = self.analyze()
         self.assertEqual(analyzed["analysis"]["recommended_radius_meters"], 35)
@@ -97,7 +102,7 @@ class EmptyWorkflowTests(unittest.TestCase):
         self.assertEqual(self.read(35)["analysis"]["coverage_rows"], 2)
         self.assertEqual(self.read(30)["analysis"]["coverage_rows"], 0)
         # Choosing a radius must never rebuild Master Sisa or observations.
-        with patch("app.modules.corrections.progress.advance_preparation", side_effect=AssertionError("prepared twice")), patch("app.modules.corrections.progress.advance_observations", side_effect=AssertionError("indexed twice")):
+        with patch("app.modules.corrections.progress.monotonic", side_effect=clock.__next__), patch("app.modules.corrections.progress.advance_preparation", side_effect=AssertionError("prepared twice")), patch("app.modules.corrections.progress.advance_observations", side_effect=AssertionError("indexed twice")):
             self.search()
             result = self.until(lambda value: value["search"] is not None and value["search"]["status"] == "completed")
         job = result["search"]
@@ -306,17 +311,18 @@ class EmptyWorkflowTests(unittest.TestCase):
         from app.config import settings
         from app.modules.upload.archive import store_file, preview_original_table, import_sheet, SheetRequest
         from app.modules.upload.router import apply_mapping, MappingRequest
+        from app.modules.upload.progress import UploadProgress
         with patch.object(settings, "UPLOAD_STORAGE_DIR", str(Path(self.tmp.name) / "uploads")):
             content = b"noagenda,latitudey,longitude,nokwhmeter,daya\n001,-6.2,106.8,000123,bukanangka\n"
-            archive = store_file(UploadFile(BytesIO(content), filename="empty.csv"), self.db)
-            duplicate = store_file(UploadFile(BytesIO(content), filename="empty.csv"), self.db)
+            archive = store_file(UploadFile(BytesIO(content), filename="empty.csv"), self.db, UploadProgress(None))
+            duplicate = store_file(UploadFile(BytesIO(content), filename="empty.csv"), self.db, UploadProgress(None))
             self.assertEqual(archive["id"], duplicate["id"])
             table = preview_original_table(archive["id"], self.db, None)
             self.assertEqual(table["headers"], ["noagenda", "latitudey", "longitude", "nokwhmeter", "daya"])
             self.assertEqual(table["rows"][0][0], "001")
             request = SheetRequest(dataset_type=DatasetType.IDPEL_KOSONG)
-            imported = import_sheet(archive["id"], request, self.db)
-            self.assertEqual(import_sheet(archive["id"], request, self.db)["id"], imported["id"])
+            imported = import_sheet(archive["id"], request, self.db, UploadProgress(None))
+            self.assertEqual(import_sheet(archive["id"], request, self.db, UploadProgress(None))["id"], imported["id"])
             mapped = apply_mapping(MappingRequest(batch_id=imported["id"], column_mapping={"lat": "latitudey", "lon": "longitude", "agenda_ref": "noagenda", "nomor_meter_kwh": "nokwhmeter"}), self.db)
             self.assertEqual(mapped["rows"], 1)
             self.assertEqual(self.db.get(UploadBatch, imported["id"]).status, BatchStatus.COMPLETED)

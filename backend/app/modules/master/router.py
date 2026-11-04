@@ -3,17 +3,22 @@
 import enum
 from typing import Annotated, Any
 
-from fastapi import APIRouter, Depends, HTTPException, Query
-from sqlalchemy import or_
-from sqlalchemy.orm import Query as ORMQuery
-from sqlalchemy.orm import Session, load_only
-
 from app.database import get_db
-from app.models.upload import BatchStatus, DatasetType, SourceRecord, UploadBatch
+from app.models.upload import (
+    BatchStatus,
+    DatasetType,
+    SourceRecord,
+    UploadBatch,
+    source_coordinates_missing,
+)
 from app.modules.master.summary import master_summary
 from app.modules.upload.normalization import extract_standard_fields
 from app.modules.upload.pagination import load_original_cells, source_page_ids
 from app.search_index import pending_search, prepare_search, search_candidates
+from fastapi import APIRouter, Depends, HTTPException, Query
+from sqlalchemy import or_
+from sqlalchemy.orm import Query as ORMQuery
+from sqlalchemy.orm import Session, load_only
 
 DbSession = Annotated[Session, Depends(get_db)]
 router = APIRouter(prefix="/master", tags=["Data Master"])
@@ -61,10 +66,7 @@ def catalogue_query(db: Session, kind: MasterKind, batch_id: int | None) -> ORMQ
 
 def incomplete_location() -> Any:
     """A single missing coordinate makes the location incomplete."""
-    return or_(
-        SourceRecord.normalized_data["lat"].as_float().is_(None),
-        SourceRecord.normalized_data["lon"].as_float().is_(None),
-    )
+    return source_coordinates_missing().is_(True)
 
 
 def batch_info(batch: UploadBatch) -> dict[str, Any]:
@@ -202,6 +204,21 @@ def list_master_records(
     if batch_id is not None:
         selected_batches = selected_batches.filter(UploadBatch.id == batch_id)
     batches = {batch.id: batch for batch in selected_batches.all()}
+    known_totals = {}
+    if not q.strip():
+        for batch in batches.values():
+            if status == RecordStatus.ALL:
+                known_totals[batch.id] = batch.total_rows
+            elif (
+                batch.total_rows
+                and batch.valid_rows is not None
+                and batch.error_rows is not None
+                and batch.valid_rows + batch.error_rows == batch.total_rows
+            ):
+                if status == RecordStatus.VALID:
+                    known_totals[batch.id] = batch.valid_rows
+                elif status == RecordStatus.INVALID:
+                    known_totals[batch.id] = batch.error_rows
     total, identities = source_page_ids(
         db,
         query,
@@ -209,7 +226,9 @@ def list_master_records(
         skip,
         limit,
         unfiltered=not q.strip() and status == RecordStatus.ALL,
-        known_totals={value: batch.total_rows for value, batch in batches.items()},
+        known_totals=known_totals,
+        use_filtered_totals=not q.strip()
+        and status in (RecordStatus.VALID, RecordStatus.INVALID),
     )
     records = (
         db.query(SourceRecord)

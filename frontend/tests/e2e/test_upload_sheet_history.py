@@ -71,7 +71,7 @@ def test_sheet_history_checks_survive_reload_and_other_sheet_uses_same_original(
     expect(selector.locator("option[value=Januari]")).to_have_text(
         "✓ Januari"
     )
-    expect(selector.locator("option[value=Januari]")).to_be_disabled()
+    expect(selector.locator("option[value=Januari]")).to_have_js_property("disabled", True)
     expect(selector).to_have_value("Februari")
     expect(save).to_be_enabled()
     expect(page.get_by_text("Pelanggan Februari", exact=True)).to_be_visible()
@@ -97,15 +97,15 @@ def test_sheet_history_checks_survive_reload_and_other_sheet_uses_same_original(
     expect(selector.locator("option[value=Februari]")).to_have_text(
         "✓ Februari"
     )
-    expect(selector.locator("option[value=Januari]")).to_be_disabled()
-    expect(selector.locator("option[value=Februari]")).to_be_disabled()
+    expect(selector.locator("option[value=Januari]")).to_have_js_property("disabled", True)
+    expect(selector.locator("option[value=Februari]")).to_have_js_property("disabled", True)
     expect(selector).to_have_value("")
     expect(page.get_by_role("status").filter(has_text="Semua sheet pada berkas ini")).to_be_visible()
     expect(save).to_be_disabled()
     # Re-uploading identical contents must also leave completed sheets disabled.
     choose_original(page, contents)
-    expect(selector.locator("option[value=Januari]")).to_be_disabled()
-    expect(selector.locator("option[value=Februari]")).to_be_disabled()
+    expect(selector.locator("option[value=Januari]")).to_have_js_property("disabled", True)
+    expect(selector.locator("option[value=Februari]")).to_have_js_property("disabled", True)
     expect(save).to_be_disabled()
     assert len(httpx.get(servers[1] + "/upload/batches").json()) == 2
 
@@ -133,7 +133,7 @@ def test_preview_empty_sheet_recovery_and_checkmarks_follow_period(
     expect(selector.locator("option[value=Januari]")).to_have_text(
         "✓ Januari"
     )
-    expect(selector.locator("option[value=Januari]")).to_be_disabled()
+    expect(selector.locator("option[value=Januari]")).to_have_js_property("disabled", True)
     expect(selector).to_have_value("Februari")
     expect(save).to_be_enabled()
     selector.select_option("Kosong")
@@ -177,6 +177,8 @@ def test_same_file_history_can_be_reused_in_pdpj_without_master_checkmarks(
 def test_multiple_master_sheets_import_with_one_click_and_completed_choices_are_disabled(
     page: Page, servers: tuple[str, str]
 ) -> None:
+    import_requests = []
+    page.on("request", lambda request: import_requests.append(request) if request.method == "POST" and (request.url.endswith("/import-sheet") or request.url.endswith("/confirm-mapping")) else None)
     page.goto("/master/dil")
     open_import(page)
     choose_original(page, workbook(include_empty=False))
@@ -187,6 +189,9 @@ def test_multiple_master_sheets_import_with_one_click_and_completed_choices_are_
     assert httpx.get(servers[1] + "/upload/batches").json() == []
     page.get_by_role("button", name="Simpan dan validasi 2 sheet", exact=True).click()
     expect(page.get_by_text("2 sheet berhasil diimpor.", exact=True)).to_be_visible(timeout=20000)
+    assert len(import_requests) == 4
+    progress_tokens = {request.header_value("x-upload-progress") for request in import_requests}
+    assert len(progress_tokens) == 1 and None not in progress_tokens
     batches = httpx.get(servers[1] + "/master/dil/batches").json()
     assert {batch["source_sheet"] for batch in batches} == {"Januari", "Februari"}
     rows = httpx.get(servers[1] + "/master/dil/records").json()
