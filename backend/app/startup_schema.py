@@ -36,6 +36,7 @@ def apply_once(
 
 
 def prepare_database(connection: Connection) -> None:
+    from app.auth_schema import upgrade_auth
     from app.coordinate_schema import repair_xy_coordinates
     from app.correction_map_schema import upgrade_correction_map
     from app.correction_observation_schema import upgrade_correction_observations
@@ -55,6 +56,7 @@ def prepare_database(connection: Connection) -> None:
     from app.upload_file_schema import upgrade_upload_files
 
     cast(Table, SchemaState.__table__).create(connection, checkfirst=True)
+    apply_once(connection, "authentication", "c14e85b62a09", upgrade_auth)
     apply_once(
         connection, "foundations", "e5fa92c30b71-indexed-fk-v1", upgrade_foundations
     )

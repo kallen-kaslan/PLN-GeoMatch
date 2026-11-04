@@ -1,5 +1,6 @@
 """Isolated browser, API, and database fixtures shared by feature acceptance tests."""
 
+import json
 import os
 import shutil
 import socket
@@ -7,6 +8,7 @@ import subprocess
 import sys
 import time
 from collections.abc import Iterator
+from functools import wraps
 from pathlib import Path
 
 import httpx
@@ -14,6 +16,8 @@ import pytest
 from playwright.sync_api import Browser, Page, sync_playwright
 
 ROOT = Path(__file__).resolve().parents[3]
+TEST_USERNAME = "test-admin"
+TEST_PASSWORD = "Browser admin password 2026!"
 
 
 def free_port() -> int:
@@ -52,10 +56,31 @@ def servers(tmp_path_factory: pytest.TempPathFactory) -> Iterator[tuple[str, str
         "VITE_API_BASE_URL": "/api",
         "ALLOW_SYNC_FALLBACK": "true",
         "REDIS_URL": "redis://127.0.0.1:1/0",
+        "APP_ENV": "development",
+        "AUTH_COOKIE_SECURE": "false",
+        "ALLOW_TEST_DATA_TOOLS": "true",
+        "CORS_ALLOWED_ORIGINS": json.dumps([ui_url]),
     }
     processes = []
     options = {"creationflags": subprocess.CREATE_NO_WINDOW} if os.name == "nt" else {}
     try:
+        subprocess.run(
+            [
+                sys.executable,
+                "-m",
+                "app.modules.auth.bootstrap",
+                "--username",
+                TEST_USERNAME,
+                "--password-stdin",
+            ],
+            input=TEST_PASSWORD + "\n",
+            text=True,
+            cwd=ROOT / "backend",
+            env=environment,
+            capture_output=True,
+            check=True,
+            **options,
+        )
         processes.append(
             subprocess.Popen(
                 [
@@ -119,11 +144,51 @@ def browser() -> Iterator[Browser]:
 
 
 @pytest.fixture
-def page(browser: Browser, servers: tuple[str, str]) -> Iterator[Page]:
+def authenticated_api(servers: tuple[str, str], monkeypatch) -> Iterator[httpx.Client]:
+    """Real login for business tests; never disable application security."""
+    with httpx.Client(
+        base_url=servers[1], headers={"X-Requested-With": "PLN-GeoMatch"}
+    ) as client:
+        result = client.post(
+            "/auth/login", json={"username": TEST_USERNAME, "password": TEST_PASSWORD}
+        )
+        result.raise_for_status()
+        client.headers["X-CSRF-Token"] = client.cookies["geomatch_csrf"]
+        for method in ("get", "post", "patch", "put", "delete", "request"):
+            original = getattr(httpx, method)
+
+            def wrap(function):
+                @wraps(function)
+                def authenticated(*args, **kwargs):
+                    url = args[1] if function.__name__ == "request" else args[0]
+                    if str(url).startswith(servers[1] + "/"):
+                        kwargs.setdefault("cookies", client.cookies)
+                        kwargs["headers"] = {
+                            **dict(client.headers),
+                            **kwargs.get("headers", {}),
+                        }
+                    return function(*args, **kwargs)
+
+                return authenticated
+
+            monkeypatch.setattr(httpx, method, wrap(original))
+        yield client
+
+
+@pytest.fixture
+def page(
+    browser: Browser, servers: tuple[str, str], authenticated_api: httpx.Client
+) -> Iterator[Page]:
     assert httpx.post(f"{servers[1]}/upload/reset").status_code == 200
     context = browser.new_context(
         viewport={"width": 1440, "height": 1000}, base_url=servers[0]
     )
+    signed_in = context.request.post(
+        servers[1] + "/auth/login",
+        data={"username": TEST_USERNAME, "password": TEST_PASSWORD},
+        headers={"X-Requested-With": "PLN-GeoMatch"},
+    )
+    assert signed_in.ok
     errors = []
     page = context.new_page()
     page.on("pageerror", lambda error: errors.append(str(error)))

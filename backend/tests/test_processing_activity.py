@@ -10,13 +10,9 @@ from time import monotonic, sleep
 from types import SimpleNamespace
 
 import pytest
-from fastapi import FastAPI
-from fastapi.testclient import TestClient
-from sqlalchemy import create_engine
-from sqlalchemy.orm import Session
-
 from app import processing_activity
 from app.database import Base, get_db
+from app.modules.auth.security import current_actor
 from app.modules.corrections.router import router as correction_router
 from app.modules.corrections.writer import SearchWriter
 from app.modules.pdpj import service as pdpj_service
@@ -24,6 +20,11 @@ from app.modules.pdpj.router import router as pdpj_router
 from app.modules.upload.router import router as upload_router
 from app.processing_activity import activity_lock, request_activity
 from app.sqlite_runtime import configure_sqlite_engine
+from fastapi import FastAPI, Request
+from fastapi.testclient import TestClient
+from sqlalchemy import create_engine
+from sqlalchemy.orm import Session
+
 from tests.test_corrections import upload
 
 
@@ -44,6 +45,9 @@ def concurrent_client(tmp_path: Path):
             yield db
 
     app.dependency_overrides[get_db] = independent_session
+    async def feature_actor(request: Request):
+        return (await request.json()).get("actor", "Petugas")
+    app.dependency_overrides[current_actor] = feature_actor
     with TestClient(app) as client:
         yield client
     engine.dispose()

@@ -18,7 +18,7 @@ def test_all_observations_source_and_coordinate_warning_survive_refresh(
     response.raise_for_status()
     batch = upload(api, "idpel_kosong", "NAMA,LAT,LON\nTarget,-6.2,106.8\n")
     page.goto(f"/koreksi/idpel-kosong?batch_id={batch}")
-    page.get_by_label("Petugas untuk riwayat", exact=True).fill("Uji Browser")
+    expect(page.get_by_label("Petugas untuk riwayat", exact=True)).to_have_value("test-admin")
     page.get_by_label("Radius pemeriksaan (meter)", exact=True).fill("50")
     page.get_by_role("button", name="Jalankan pemeriksaan", exact=True).click()
     dialog = page.get_by_role("dialog", name="Pemeriksaan koreksi selesai", exact=True)

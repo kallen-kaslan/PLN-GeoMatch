@@ -17,7 +17,7 @@ def test_radius_dropdown_historical_choices_and_versioned_xlsx(
 ) -> None:
     batch, process = setup_map(page, servers[1], kind=kind, count=2)
     page.get_by_role("button", name="Pilih target baris 2", exact=True).click()
-    page.get_by_label("Petugas peta", exact=True).fill("Petugas Radius")
+    expect(page.get_by_label("Petugas peta", exact=True)).to_have_value("test-admin")
 
     candidates = page.get_by_role("region", name="Kandidat target peta", exact=True)
     candidates.get_by_role("button", name="Pilih kandidat 1", exact=True).click()

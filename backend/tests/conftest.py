@@ -13,20 +13,24 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 # Never import the project's configured live database while running tests.
 os.environ["DATABASE_URL"] = "sqlite:///:memory:"
 
-from sqlalchemy import create_engine, event
-from sqlalchemy.orm import sessionmaker
-from sqlalchemy.pool import StaticPool
-
 from app.database import Base
+from app.models.coordinate_repair import CoordinateRepair  # noqa: F401
+from app.models.correction import (  # noqa: F401
+    CorrectionAttempt,
+    CorrectionCandidateEvidence,
+    CorrectionCheck,
+    CorrectionTarget,
+)
+from app.models.correction_decision import CorrectionDecision  # noqa: F401
 from app.models.master_sisa import MasterSnapshot
 from app.models.master_summary import MasterSummaryCache  # noqa: F401
 from app.models.matching import MatchCandidate, MatchingRun, ReconciliationProcess  # noqa: F401
+from app.models.pdpj import PdpjChange, PdpjRecommendation, PdpjReview, PdpjRow  # noqa: F401
 from app.models.upload import SourceRecord, UploadBatch  # noqa: F401
-from app.models.pdpj import PdpjReview, PdpjRow, PdpjRecommendation, PdpjChange  # noqa: F401
-from app.models.correction import CorrectionCheck, CorrectionAttempt, CorrectionTarget, CorrectionCandidateEvidence  # noqa: F401
-from app.models.correction_decision import CorrectionDecision  # noqa: F401
 from app.models.upload_file import UploadFileArchive, UploadSheetImport  # noqa: F401
-from app.models.coordinate_repair import CoordinateRepair  # noqa: F401
+from sqlalchemy import create_engine, event
+from sqlalchemy.orm import sessionmaker
+from sqlalchemy.pool import StaticPool
 
 
 @pytest.fixture(autouse=True)
@@ -59,16 +63,16 @@ def db_session():
 @pytest.fixture
 def client(db_session):
     """HTTP integration tests use only the fixture's in-memory database."""
-    from fastapi import FastAPI
-    from fastapi.testclient import TestClient
-
     from app.database import get_db
+    from app.modules.auth.security import current_actor
+    from app.modules.corrections.router import router as correction_router
     from app.modules.history.router import router as history_router
-    from app.modules.spatial.router import router as spatial_router
-    from app.modules.upload.router import router as upload_router
     from app.modules.master.router import router as master_router
     from app.modules.pdpj.router import router as pdpj_router
-    from app.modules.corrections.router import router as correction_router
+    from app.modules.spatial.router import router as spatial_router
+    from app.modules.upload.router import router as upload_router
+    from fastapi import FastAPI, Request
+    from fastapi.testclient import TestClient
 
     app = FastAPI()
     app.include_router(upload_router)
@@ -78,6 +82,11 @@ def client(db_session):
     app.include_router(pdpj_router)
     app.include_router(correction_router)
     app.dependency_overrides[get_db] = lambda: db_session
+    # Business-rule tests supply historical operator labels. Security tests use
+    # the real application factory and never override authentication.
+    async def feature_actor(request: Request):
+        return (await request.json()).get("actor", "Petugas Uji")
+    app.dependency_overrides[current_actor] = feature_actor
     with TestClient(app) as test_client:
         yield test_client
 

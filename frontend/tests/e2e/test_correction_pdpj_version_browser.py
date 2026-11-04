@@ -11,10 +11,10 @@ from test_processing_progress_browser import captured
 
 @pytest.mark.parametrize("kind", ["idpel_kosong", "idpel_tidak_ketemu"])
 def test_switch_to_final_pdpj_while_old_correction_remains_paused(
-    page: Page, servers: tuple[str, str], kind: str
+    page: Page, servers: tuple[str, str], kind: str, authenticated_api: httpx.Client
 ) -> None:
     api = servers[1]
-    with httpx.Client(base_url=api, timeout=20) as client:
+    with httpx.Client(base_url=api, timeout=20, cookies=authenticated_api.cookies, headers=authenticated_api.headers) as client:
 
         def post(path: str, body: dict | None = None) -> dict:
             response = client.post(path, json=body)
@@ -129,9 +129,7 @@ def test_switch_to_final_pdpj_while_old_correction_remains_paused(
         assert "include_update_conflicts=false" in core.request.url
         core.continue_()
         page.unroute(core_pattern)
-        page.get_by_label("Petugas untuk riwayat", exact=True).fill(
-            "Petugas Versi Baru"
-        )
+        expect(page.get_by_label("Petugas untuk riwayat", exact=True)).to_have_value("test-admin")
         expect(selector).to_have_value(str(published["id"]))
         expect(page).to_have_url(re.compile(rf"[?&]process_id={process}(?:&|$)"))
         expect(selector).to_be_disabled()
@@ -184,7 +182,7 @@ def test_switch_to_final_pdpj_while_old_correction_remains_paused(
         expect(selector).to_be_enabled()
         expect(selector).to_have_value(str(final["id"]))
         expect(page.get_by_label("Petugas untuk riwayat", exact=True)).to_have_value(
-            "Petugas Versi Baru"
+            "test-admin"
         )
         expect(
             page.get_by_label("Radius pemeriksaan (meter)", exact=True)

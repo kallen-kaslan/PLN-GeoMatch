@@ -3,12 +3,6 @@
 import logging
 from typing import Annotated, Any, Literal
 
-from fastapi import APIRouter, Depends, HTTPException, Query
-from pydantic import BaseModel, ConfigDict, Field, field_validator
-from sqlalchemy import and_, func, or_
-from sqlalchemy.exc import SQLAlchemyError
-from sqlalchemy.orm import Session, load_only, object_session
-
 from app.config import settings
 from app.database import get_db
 from app.models.correction import (
@@ -23,6 +17,7 @@ from app.models.matching import (
 )
 from app.models.pdpj import PdpjReview
 from app.models.upload import BatchStatus, DatasetType, SourceRecord, UploadBatch
+from app.modules.auth.security import CurrentActor
 from app.modules.corrections.decisions import router as decisions_router
 from app.modules.corrections.map_summary import radius_summary
 from app.modules.corrections.pdpj_updates import pdpj_update_info
@@ -51,6 +46,11 @@ from app.tasks.spatial_tasks import (
     execute_batch_reconciliation_pipeline,
     mark_process_failed,
 )
+from fastapi import APIRouter, Depends, HTTPException, Query
+from pydantic import BaseModel, ConfigDict, Field, field_validator
+from sqlalchemy import and_, func, or_
+from sqlalchemy.exc import SQLAlchemyError
+from sqlalchemy.orm import Session, load_only, object_session
 
 DbSession = Annotated[Session, Depends(get_db)]
 router = APIRouter(prefix="/corrections", tags=["Data Koreksi"])
@@ -388,7 +388,7 @@ def list_checks(
 
 
 @router.post("/{kind}/checks")
-def start_check(kind: CorrectionKind, req: StartCheck, db: DbSession) -> dict[str, Any]:
+def start_check(kind: CorrectionKind, req: StartCheck, db: DbSession, actor: CurrentActor) -> dict[str, Any]:
     """Check category ownership and completed PDPJ before submitting real work."""
     process, run, fresh = create_check(
         db,
@@ -397,7 +397,7 @@ def start_check(kind: CorrectionKind, req: StartCheck, db: DbSession) -> dict[st
         req.pdpj_review_id,
         req.radius_meters,
         req.request_key,
-        req.actor,
+        actor,
         req.incremental,
     )
     run_id, process_id = run.id, process.id
@@ -431,7 +431,7 @@ def get_pdpj_update(
 
 @router.post("/{kind}/checks/{process_id}/retry")
 def rerun_check(
-    kind: CorrectionKind, process_id: int, req: RetryCheck, db: DbSession
+    kind: CorrectionKind, process_id: int, req: RetryCheck, db: DbSession, actor: CurrentActor
 ) -> dict[str, Any]:
     """Retain earlier candidates and row outcomes when changing radius or retrying failure."""
     process, run, fresh = retry_check(
@@ -441,7 +441,7 @@ def rerun_check(
         req.latest_run_id,
         req.radius_meters,
         req.request_key,
-        req.actor,
+        actor,
         req.incremental,
     )
     run_id = run.id

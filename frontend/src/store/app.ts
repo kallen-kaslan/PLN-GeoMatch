@@ -1,22 +1,20 @@
 import { create } from "zustand";
-
-export type Role = "admin" | "analis" | "auditor";
-
-export type User = {
-  id: string;
-  username: string;
-  role: Role;
-};
+import { authApi, type User } from "@/lib/accounts";
+import { queryClient } from "@/lib/queryClient";
+import type { ApiError } from "@/lib/api";
+export type { Role, User } from "@/lib/accounts";
 
 export type AppState = {
   user: User | null;
-  token: string | null;
+  authStatus: "checking" | "authenticated" | "anonymous" | "error";
+  authError: string;
+  authNotice: string;
   theme: "light" | "dark";
   activeProcessId: string | null;
   isMobileMenuOpen: boolean;
   isSidebarCollapsed: boolean;
-  setUser: (u: User | null) => void;
-  setToken: (t: string | null) => void;
+  initialize: () => Promise<void>;
+  endSession: (message?: string) => void;
   setTheme: (t: "light" | "dark") => void;
   setActiveProcessId: (id: string | null) => void;
   setIsMobileMenuOpen: (open: boolean) => void;
@@ -24,7 +22,7 @@ export type AppState = {
   setIsSidebarCollapsed: (collapsed: boolean) => void;
   toggleSidebarCollapsed: () => void;
   login: (username: string, password: string) => Promise<void>;
-  logout: () => void;
+  logout: () => Promise<void>;
 };
 
 const getInitialSidebarCollapsed = (): boolean => {
@@ -35,15 +33,37 @@ const getInitialSidebarCollapsed = (): boolean => {
   }
 };
 
-export const useAppStore = create<AppState>((set) => ({
+let initialization: Promise<void> | null = null;
+
+function clearPrivateCache() {
+  void queryClient.cancelQueries();
+  queryClient.clear();
+}
+
+export const useAppStore = create<AppState>((set, get) => ({
   user: null,
-  token: null,
+  authStatus: "checking",
+  authError: "",
+  authNotice: "",
   theme: "light",
   activeProcessId: null,
   isMobileMenuOpen: false,
   isSidebarCollapsed: getInitialSidebarCollapsed(),
-  setUser: (u) => set({ user: u }),
-  setToken: (t) => set({ token: t }),
+  initialize: () => {
+    if (initialization) return initialization;
+    set({ authStatus: "checking", authError: "" });
+    initialization = authApi.me().then((user) => {
+      set({ user, authStatus: "authenticated", authNotice: "" });
+    }).catch((error: ApiError) => {
+      if (error.status === 401) get().endSession();
+      else set({ user: null, authStatus: "error", authError: error.message });
+    }).finally(() => { initialization = null; });
+    return initialization;
+  },
+  endSession: (message = "") => {
+    set({ user: null, authStatus: "anonymous", authError: "", authNotice: message || get().authNotice, activeProcessId: null, isMobileMenuOpen: false });
+    clearPrivateCache();
+  },
   setTheme: (t) => set({ theme: t }),
   setActiveProcessId: (id) => set({ activeProcessId: id }),
   setIsMobileMenuOpen: (open) => set({ isMobileMenuOpen: open }),
@@ -66,19 +86,14 @@ export const useAppStore = create<AppState>((set) => ({
       }
       return { isSidebarCollapsed: next };
     }),
-  login: async (username, _password) => {
-    // Phase 1 scaffold: mock login until backend auth is ready (Phase 1C+).
-    // Mock user roles based on username
-    let role: Role = "analis";
-    if (username.toLowerCase() === "admin") {
-      role = "admin";
-    } else if (username.toLowerCase().includes("audit")) {
-      role = "auditor";
-    }
-
-    const mockUser: User = { id: `u_${Date.now()}`, username, role };
-    const mockToken = `mock-token-${Date.now()}`;
-    set({ user: mockUser, token: mockToken });
+  login: async (username, password) => {
+    const user = await authApi.login(username, password);
+    clearPrivateCache();
+    set({ user, authStatus: "authenticated", authError: "", authNotice: "" });
   },
-  logout: () => set({ user: null, token: null, activeProcessId: null, isMobileMenuOpen: false }),
+  logout: async () => {
+    try { await authApi.logout(); }
+    catch (error) { if ((error as ApiError).status !== 401) throw error; }
+    get().endSession();
+  },
 }));

@@ -85,7 +85,7 @@ def test_duplicate_pdpj_identities_allow_normal_completion_with_different_coordi
     expect(
         page.get_by_text("IDPEL berulang · boleh dilanjutkan", exact=True)
     ).to_have_count(2)
-    page.get_by_label("Petugas untuk riwayat", exact=True).fill("Petugas Duplikasi")
+    expect(page.get_by_label("Petugas untuk riwayat", exact=True)).to_have_value("test-admin")
     finish = page.get_by_role("button", name="Selesaikan validasi PDPJ", exact=True)
     expect(finish).to_be_enabled()
     expect(
@@ -157,8 +157,8 @@ def test_bulk_exceptions_enable_correction_map_and_preserve_reserved_identities(
         "Referensi belum lengkap; lanjutkan koreksi dengan tindak lanjut tercatat"
     )
     dialog.get_by_role("checkbox").check()
-    expect(save).to_be_disabled()
-    dialog.get_by_label("Petugas penanggung jawab", exact=True).fill("Petugas Massal")
+    expect(save).to_be_enabled()
+    expect(dialog.get_by_label("Petugas penanggung jawab", exact=True)).to_have_value("test-admin")
     expect(save).to_be_enabled()
     save.click()
     completed = page.get_by_role("dialog", name="PDPJ selesai divalidasi", exact=True)
@@ -196,7 +196,7 @@ def test_bulk_exceptions_enable_correction_map_and_preserve_reserved_identities(
     expect(candidates).to_contain_text("1 kandidat tersimpan", timeout=20000)
     expect(candidates).to_contain_text("003")
     expect(candidates.get_by_role("article")).to_have_count(1)
-    page.get_by_label("Petugas peta", exact=True).fill("Petugas Massal")
+    expect(page.get_by_label("Petugas peta", exact=True)).to_have_value("test-admin")
     candidates.get_by_role("button", name="Pilih kandidat 1", exact=True).click()
     expect(
         page.get_by_role("region", name="Detail target terpilih", exact=True)
@@ -231,8 +231,8 @@ def test_pdpj_import_recommendations_manual_exception_completion_and_matching(
         }
     )
     page.get_by_role("button", name="Simpan dan validasi PDPJ", exact=True).click()
-    expect(page.get_by_role("status")).to_contain_text("pdpj.csv tersimpan")
-    page.get_by_label("Petugas untuk riwayat", exact=True).fill("Petugas Browser")
+    expect(page.get_by_role("status").filter(has_text="pdpj.csv tersimpan")).to_be_visible()
+    expect(page.get_by_label("Petugas untuk riwayat", exact=True)).to_have_value("test-admin")
     page.get_by_role("button", name="Periksa IDPEL ke master", exact=True).click()
     expect(
         page.get_by_role(
@@ -264,7 +264,7 @@ def test_pdpj_import_recommendations_manual_exception_completion_and_matching(
     detail.get_by_role("button", name="Simpan perubahan manual", exact=True).click()
     expect(detail.get_by_role("cell", name="Nama Manual", exact=True)).to_be_visible()
     expect(
-        detail.get_by_text("Pengisian manual · Petugas Browser", exact=True)
+        detail.get_by_text("Pengisian manual · test-admin", exact=True)
     ).to_be_visible()
     page.get_by_role("button", name="Tutup detail PDPJ", exact=True).click()
     page.get_by_role("button", name="Detail PDPJ baris 3", exact=True).click()
@@ -322,7 +322,7 @@ def test_replacing_filled_recommendation_requires_explicit_overwrite(
         api_url, "pdpj", "IDPEL,NAMA,LAT,LON\n001,Nama Asli,-6.2,106.8\n", "pdpj.csv"
     )
     page.goto(f"/pdpj?batch_id={batch_id}")
-    page.get_by_label("Petugas untuk riwayat", exact=True).fill("Petugas Browser")
+    expect(page.get_by_label("Petugas untuk riwayat", exact=True)).to_have_value("test-admin")
     page.get_by_role("button", name="Periksa IDPEL ke master", exact=True).click()
     page.get_by_role("button", name="Detail PDPJ baris 2", exact=True).click()
     detail = page.get_by_role("region", name="Detail pemeriksaan PDPJ", exact=True)
@@ -375,7 +375,7 @@ def test_mobile_pending_pdpj_mapping_and_manual_coordinates(
     page.get_by_role("button", name="Lanjutkan mapping PDPJ", exact=True).click()
     page.get_by_label("Kolom IDPEL", exact=True).select_option("CUSTOMER")
     page.get_by_role("button", name="Simpan dan validasi PDPJ", exact=True).click()
-    page.get_by_label("Petugas untuk riwayat", exact=True).fill("Petugas Mobile")
+    expect(page.get_by_label("Petugas untuk riwayat", exact=True)).to_have_value("test-admin")
     page.get_by_role("button", name="Periksa IDPEL ke master", exact=True).click()
     page.get_by_role("button", name="Detail PDPJ baris 2", exact=True).click()
     detail = page.get_by_role("region", name="Detail pemeriksaan PDPJ", exact=True)

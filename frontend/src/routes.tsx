@@ -2,7 +2,7 @@ import {
   createBrowserRouter,
   type RouteObject,
 } from "react-router-dom";
-import Shell from "@/components/layout/Shell";
+import RequireAuth from "@/components/layout/RequireAuth";
 import LoginPage from "@/pages/Login";
 import DashboardPage from "@/pages/Dashboard";
 import UploadPage from "@/pages/Upload";
@@ -20,7 +20,7 @@ export const routeTree: RouteObject[] = [
   { path: "/login", Component: LoginPage },
   {
     path: "/",
-    Component: Shell,
+    Component: RequireAuth,
     children: [
       { index: true, Component: DashboardPage },
       { path: "upload", Component: UploadPage },

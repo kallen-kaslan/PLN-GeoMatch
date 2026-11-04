@@ -15,7 +15,7 @@ def test_stop_reload_and_resume_from_saved_rows(page: Page, servers: tuple[str, 
     api = servers[1]
     batch = sources(api, 2401)
     page.goto(f"/pdpj?batch_id={batch}")
-    page.get_by_label("Petugas untuk riwayat", exact=True).fill("Petugas Progres")
+    expect(page.get_by_label("Petugas untuk riwayat", exact=True)).to_have_value("test-admin")
     with page.expect_response(lambda response: response.url.endswith("/advance") and response.status == 200):
         page.get_by_role("button", name="Periksa IDPEL ke master", exact=True).click()
     page.get_by_role("button", name="Hentikan sementara", exact=True).click()
@@ -30,7 +30,7 @@ def test_stop_reload_and_resume_from_saved_rows(page: Page, servers: tuple[str, 
     page.reload()
     expect(progress.get_by_role("button", name="Lanjutkan pemeriksaan", exact=True)).to_be_visible()
     assert httpx.get(path).json()["processing"] == saved["processing"]
-    page.get_by_label("Petugas untuk riwayat", exact=True).fill("Petugas Progres")
+    expect(page.get_by_label("Petugas untuk riwayat", exact=True)).to_have_value("test-admin")
     expect(page.get_by_role("button", name="Selesaikan validasi data tersimpan", exact=True)).to_be_enabled()
     page.get_by_role("button", name="Lanjutkan pemeriksaan", exact=True).click()
     expect(progress.get_by_role("progressbar")).to_have_attribute("value", "100", timeout=30000)

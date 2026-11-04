@@ -8,8 +8,8 @@ import { pdpjApi, type PdpjCompletion, type PdpjSummary } from "@/lib/pdpj";
 const control = "w-full rounded-lg border border-ui-border bg-white px-3 py-2 text-sm disabled:opacity-50";
 const button = buttonClass.secondary;
 
-export function CompleteWithExceptionsDialog({ review, actor, onActorChange, onClose, onCompleted, onPendingChange }: {
-  review: PdpjSummary; actor: string; onActorChange: (value: string) => void;
+export function CompleteWithExceptionsDialog({ review, actor, onClose, onCompleted, onPendingChange }: {
+  review: PdpjSummary; actor: string;
   onClose: () => void; onCompleted: (result: PdpjCompletion) => void;
   onPendingChange?: (pending: boolean) => void;
 }) {
@@ -39,7 +39,7 @@ export function CompleteWithExceptionsDialog({ review, actor, onActorChange, onC
       <h2 id="pdpj-bulk-title" className="text-lg font-semibold">Lanjutkan dengan pengecualian massal</h2>
       <p className="text-sm"><strong>{amount} baris bermasalah</strong> akan dicatat sebagai pengecualian dengan alasan yang sama. {partial ? "Versi data yang sudah tersimpan akan disetujui untuk koreksi. Pemrosesan PDPJ sisanya tetap bisa dilanjutkan." : "Pemeriksaan kemudian diselesaikan agar dapat digunakan pada Data Koreksi dan Peta Koreksi."}</p>
       <p className="rounded-lg border border-amber-600 bg-amber-50 p-3 text-xs text-amber-950">Masalah dan data asli tetap tersimpan. Pengecualian tetap ditandai untuk tindak lanjut. IDPEL PDPJ tetap dilindungi dari penggunaan ulang sebagai kandidat koreksi. {partial ? "Versi yang disetujui tetap tersimpan saat PDPJ dilanjutkan dari posisi terakhir." : "Pemeriksaan selesai dikunci; peninjauan berikutnya memakai Periksa ulang PDPJ."}</p>
-      <label className="block space-y-1.5 text-xs font-semibold">Petugas penanggung jawab<input required maxLength={80} value={actor} onChange={(event) => onActorChange(event.target.value)} disabled={mutation.isPending} className={control} /></label>
+      <label className="block space-y-1.5 text-xs font-semibold">Petugas penanggung jawab<input required maxLength={80} value={actor} readOnly disabled={mutation.isPending} className={control} /></label>
       <label className="block space-y-1.5 text-xs font-semibold">Alasan pengecualian massal<textarea required maxLength={1000} rows={3} value={reason} onChange={(event) => setReason(event.target.value)} disabled={mutation.isPending} className={control} /></label>
       <label className="flex items-start gap-2 text-xs"><input type="checkbox" checked={confirmed} onChange={(event) => setConfirmed(event.target.checked)} disabled={mutation.isPending} className="mt-0.5 size-4 shrink-0 accent-neo-accent" /><span>Saya menyetujui pengecualian untuk seluruh {amount} baris bermasalah pada pemeriksaan ini.</span></label>
       {(!actor.trim() || !reason.trim() || !confirmed) && <p className="text-xs text-amber-900">Isi nama petugas, alasan, dan centang persetujuan untuk mengaktifkan tombol simpan.</p>}

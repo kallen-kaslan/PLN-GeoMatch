@@ -21,11 +21,6 @@ const control = "min-w-0 rounded-lg border border-ui-border bg-white px-3 py-2 t
 const button = buttonClass.secondary;
 const count = (value: number | undefined) => value === undefined ? "—" : value.toLocaleString("id-ID");
 
-function savedActor(kind: CorrectionKind, fallback: string): string {
-  try { return sessionStorage.getItem(`pln_geomatch_correction_actor_${kind}`) ?? fallback; }
-  catch { return fallback; }
-}
-
 function CompletedDialog({ run, onClose }: { run: CorrectionRun; onClose: () => void }) {
   const dialog = useRef<HTMLDialogElement>(null);
   useEffect(() => { const element = dialog.current; element?.showModal(); return () => element?.close(); }, []);
@@ -42,18 +37,14 @@ function CorrectionWorkspace({ kind }: { kind: CorrectionKind }) {
   const user = useAppStore((state) => state.user);
   const queryClient = useQueryClient();
   const [params, setParams] = useSearchParams();
-  const [actor, setActor] = useState(() => savedActor(kind, user?.username ?? ""));
+  const actor = user?.username ?? "";
   const reviewChoice = Number(params.get("pdpj_review_id")) || null;
   const radiusChoice = params.get("radius_meters");
   const setDraft = (key: string, value: string) => {
-    const next = new URLSearchParams(params);
+    const next = new URLSearchParams(window.location.search);
     if (value) next.set(key, value); else next.delete(key);
     setParams(next, { replace: true });
   };
-  useEffect(() => {
-    try { sessionStorage.setItem(`pln_geomatch_correction_actor_${kind}`, actor); }
-    catch { /* Keep the editable label available when browser storage is disabled. */ }
-  }, [actor, kind]);
   const [showImport, setShowImport] = useState(false);
   const [resumeId, setResumeId] = useState<number | null>(null);
   const [search, setSearch] = useState("");
@@ -161,7 +152,7 @@ function CorrectionWorkspace({ kind }: { kind: CorrectionKind }) {
       <div className="grid gap-4 md:grid-cols-2"><label className="flex min-w-0 flex-col gap-1.5 text-xs font-semibold">Berkas koreksi<select aria-label="Berkas koreksi" value={batchId ?? ""} onChange={(event) => changeBatch(Number(event.target.value))} className={control}><option value="" disabled>Pilih berkas {descriptor.label}</option>{batches.data?.map((item) => <option key={item.id} value={item.id}>{item.filename} · {count(item.total_rows)} baris{item.status !== "completed" ? " · Menunggu mapping" : ""}</option>)}</select></label><label className="flex min-w-0 flex-col gap-1.5 text-xs font-semibold">PDPJ selesai divalidasi<select aria-label="PDPJ selesai divalidasi" value={reviewId ?? ""} onChange={(event) => setDraft("pdpj_review_id", event.target.value)} disabled={sourceLocked || processingActive || execute.isPending} className={control}><option value="">Pilih PDPJ sebagai acuan pengecualian master</option>{check.data && !readyPdpj.data?.some((item) => item.review_id === check.data.pdpj_review_id) && <option value={check.data.pdpj_review_id}>PDPJ tersimpan pada pemeriksaan ini · #{check.data.pdpj_review_id}</option>}{readyPdpj.data?.map((item) => <option key={item.review_id} value={item.review_id}>{item.filename} · Pemeriksaan #{item.review_id} · {item.completed_by}{item.publication ? ` (versi ${item.publication.version}, ${count(item.publication.row_count)}/${count(item.publication.total_rows)} baris)` : ""}</option>)}</select></label></div>
       {!readyPdpj.isPending && !readyPdpj.data?.length && !check.data && <p className="rounded-lg border border-amber-700 bg-amber-50 p-3 text-xs text-amber-900">Selesaikan pemeriksaan melalui <Link to="/pdpj" className="font-semibold underline">Data PDPJ</Link> sebelum menjalankan koreksi.</p>}
       {batch && batch.status !== "completed" && <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-amber-700 bg-amber-50 p-3 text-xs text-amber-900"><p>Berkas menunggu konfirmasi mapping.</p><button type="button" onClick={() => { setResumeId(batch.id); setShowImport(true); }} className={button}>Lanjutkan mapping koreksi</button></div>}
-      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3"><label className="flex flex-col gap-1.5 text-xs font-semibold">Petugas untuk riwayat<input aria-label="Petugas untuk riwayat" value={actor} onChange={(event) => setActor(event.target.value)} maxLength={80} className={control} placeholder="Isi nama petugas" /></label><label className="flex flex-col gap-1.5 text-xs font-semibold">Radius pemeriksaan (meter)<input aria-label="Radius pemeriksaan (meter)" type="number" min="0.01" max="100000" step="any" value={radius} onChange={(event) => setDraft("radius_meters", event.target.value)} disabled={sourceLocked || processingActive || execute.isPending} className={control} /></label><div className="flex flex-wrap items-end gap-2"><button type="button" onClick={() => execute.mutate({ requestKey: crypto.randomUUID(), fresh: !check.data || !!newSource })} disabled={blocked} className={buttonClass.primary}>{execute.isPending || (pending && processingActive && !newSource) ? <LoaderCircle size={16} className="animate-spin" /> : paused && !newSource ? <Pause size={16} /> : <CheckCircle2 size={16} />}{restoring ? "Memulihkan pemeriksaan..." : execute.isPending ? "Menyiapkan pemeriksaan..." : upgradePaused && !newSource ? "Periksa ulang dengan seluruh observasi": pending && !newSource ? paused ? "Pemeriksaan dijeda" : waitingToResume ? "Menunggu dilanjutkan" : "Pemeriksaan berjalan…" : check.data && !newSource ? "Periksa ulang" : "Jalankan pemeriksaan"}</button>{check.data && <button type="button" disabled={newCheckBlocked} onClick={() => execute.mutate({ requestKey: crypto.randomUUID(), fresh: true })} className={button}>Pemeriksaan baru</button>}</div></div>
+      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3"><label className="flex flex-col gap-1.5 text-xs font-semibold">Petugas untuk riwayat<input aria-label="Petugas untuk riwayat" value={actor} readOnly maxLength={80} className={control} placeholder="Isi nama petugas" /></label><label className="flex flex-col gap-1.5 text-xs font-semibold">Radius pemeriksaan (meter)<input aria-label="Radius pemeriksaan (meter)" type="number" min="0.01" max="100000" step="any" value={radius} onChange={(event) => setDraft("radius_meters", event.target.value)} disabled={sourceLocked || processingActive || execute.isPending} className={control} /></label><div className="flex flex-wrap items-end gap-2"><button type="button" onClick={() => execute.mutate({ requestKey: crypto.randomUUID(), fresh: !check.data || !!newSource })} disabled={blocked} className={buttonClass.primary}>{execute.isPending || (pending && processingActive && !newSource) ? <LoaderCircle size={16} className="animate-spin" /> : paused && !newSource ? <Pause size={16} /> : <CheckCircle2 size={16} />}{restoring ? "Memulihkan pemeriksaan..." : execute.isPending ? "Menyiapkan pemeriksaan..." : upgradePaused && !newSource ? "Periksa ulang dengan seluruh observasi": pending && !newSource ? paused ? "Pemeriksaan dijeda" : waitingToResume ? "Menunggu dilanjutkan" : "Pemeriksaan berjalan…" : check.data && !newSource ? "Periksa ulang" : "Jalankan pemeriksaan"}</button>{check.data && <button type="button" disabled={newCheckBlocked} onClick={() => execute.mutate({ requestKey: crypto.randomUUID(), fresh: true })} className={button}>Pemeriksaan baru</button>}</div></div>
       {savedPause && <p role="status" className="rounded-lg border border-blue-700 bg-blue-50 p-3 text-xs text-blue-950">Pemeriksaan lama sudah dijeda dan hasilnya tersimpan. Pilih versi PDPJ lain lalu jalankan pemeriksaan baru, atau gunakan tombol Pemeriksaan baru. Hasil dan pilihan kandidat lama tetap tersimpan. Untuk melanjutkan proses lama, gunakan panel progres.</p>}
       {check.data && <p className="text-xs text-ui-muted">Pemeriksaan tersimpan menggunakan PDPJ #{check.data.pdpj_review_id}. Periksa ulang mempertahankan sumber tersebut dan seluruh riwayat kandidat. Pilih PDPJ lain untuk membuat pemeriksaan baru.</p>}
       {execute.error && <p role="alert" className="text-sm text-red-700">{execute.error.message}</p>}

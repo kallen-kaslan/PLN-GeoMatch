@@ -27,6 +27,7 @@ config.set_main_option("sqlalchemy.url", settings.DATABASE_URL)
 
 # Import all model modules so Alembic autogenerate sees every table.
 from app.database import Base
+from app.models.auth import AuthAudit, AuthGuard, AuthSession, AuthThrottle
 from app.models.coordinate_repair import CoordinateRepair
 from app.models.correction import (
     CorrectionAttempt,

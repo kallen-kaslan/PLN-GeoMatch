@@ -29,6 +29,8 @@ try:
     else:
         engine = create_engine(DATABASE_URL)
 except (SQLAlchemyError, ImportError):
+    if settings.APP_ENV == "production":
+        raise RuntimeError("Database produksi tidak tersedia; fallback SQLite dinonaktifkan") from None
     # Fallback aman ke SQLite lokal untuk development/testing instan
     sqlite_path = os.path.join(
         os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "pln_geomatch.db"

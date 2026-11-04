@@ -42,10 +42,7 @@ function MapWorkspace({ kind, batchParam, processParam, generationParam, params,
 }) {
   const client = useQueryClient();
   const user = useAppStore((state) => state.user);
-  const [actor, setActor] = useState(() => {
-    try { return sessionStorage.getItem(`pln_geomatch_correction_actor_${kind}`) ?? user?.username ?? ""; }
-    catch { return user?.username ?? ""; }
-  });
+  const actor = user?.username ?? "";
   const [reason, setReason] = useState("");
   const selected = Number(params.get("record_id")) || null;
   const radiusChoice = params.get("radius_meters");
@@ -62,10 +59,6 @@ function MapWorkspace({ kind, batchParam, processParam, generationParam, params,
     }
     changeParams(next, { replace: true });
   }, [changeParams]);
-  useEffect(() => {
-    try { sessionStorage.setItem(`pln_geomatch_correction_actor_${kind}`, actor); }
-    catch { /* Keep editing available when browser storage is disabled. */ }
-  }, [kind, actor]);
   const [search, setSearch] = useState("");
   const searchQuery = useDebouncedSearch(search);
   const [page, setPage] = useState(1);
@@ -231,7 +224,7 @@ function MapWorkspace({ kind, batchParam, processParam, generationParam, params,
           const exceeds = !!run && Number.isFinite(value) && value > run.radius_meters;
           setFilterMessage(exceeds ? `Filter radius maksimal ${run!.radius_meters} m. Gunakan Radius perluasan untuk pemeriksaan yang lebih besar.` : "");
           setPage(1); setCandidatePage(1); updateView({ radius_meters: exceeds ? String(run!.radius_meters) : event.target.value });
-        }} disabled={radiusFilterLocked || expand.isPending || choose.isPending} className={control} /></label>          <label className="flex flex-col gap-1 text-xs font-semibold">Petugas<input aria-label="Petugas peta" disabled={choose.isPending} value={actor} maxLength={80} onChange={(event) => setActor(event.target.value)} className={control} /></label>
+        }} disabled={radiusFilterLocked || expand.isPending || choose.isPending} className={control} /></label>          <label className="flex flex-col gap-1 text-xs font-semibold">Petugas<input aria-label="Petugas peta" disabled={choose.isPending} value={actor} maxLength={80} readOnly className={control} /></label>
         <button type="button" disabled={choose.isPending || !validRadius || readSearchBlocked || expand.isPending || !run} onClick={() => void radiusSummary.refetch()} className={`${button} col-span-2 self-end xl:col-span-1`}>Perbarui ringkasan radius</button>
 
       </fieldset>

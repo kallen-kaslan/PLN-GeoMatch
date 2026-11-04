@@ -87,27 +87,26 @@ def test_map_and_saved_result_search_keep_the_selected_scope(
     detail = httpx.get(f"{servers[1]}/corrections/idpel_kosong/records/{record}", params={"process_id": process}).json()
     response = httpx.post(f"{servers[1]}/corrections/idpel_kosong/checks/{process}/records/{record}/choice", json={
         "generation": 1, "expected_revision": 0, "candidate_id": detail["candidates"][0]["id"],
-        "actor": "Petugas Pencarian", "reason": "Uji pencarian", "request_key": "search_browser_choice",
+        "actor": "test-admin", "reason": "Uji pencarian", "request_key": "search_browser_choice",
     })
     response.raise_for_status()
     page.goto(f"/result?category=idpel_kosong&process_id={process}")
     field = page.get_by_role("searchbox", name="Cari hasil koreksi", exact=True)
-    field.fill("Petugas Pencarian")
-    expect(page.get_by_role("cell", name=re.compile("Petugas Pencarian"))).to_be_visible()
+    field.fill("test-admin")
+    expect(page.get_by_role("cell", name=re.compile("test-admin"))).to_be_visible()
     field.fill("missing-search-value")
     expect(page.get_by_text("Tidak ada hasil sesuai filter.", exact=False)).to_be_visible()
     field.fill("")
-    expect(page.get_by_role("cell", name=re.compile("Petugas Pencarian"))).to_be_visible()
+    expect(page.get_by_role("cell", name=re.compile("test-admin"))).to_be_visible()
 
 
-def test_admin_local_search_matches_username_and_email(page: Page) -> None:
-    page.goto("/login")
-    page.get_by_label("Username", exact=True).fill("admin")
-    page.get_by_label("Password", exact=True).fill("test-password")
-    page.get_by_role("button", name="Masuk", exact=True).click()
-    page.get_by_role("link", name="Manajemen Pengguna", exact=True).click()
-    field = page.get_by_placeholder("Cari username atau email...")
-    field.fill("AUDIT@PLN")
+def test_admin_local_search_matches_real_usernames(page: Page, authenticated_api: httpx.Client) -> None:
+    from conftest import TEST_PASSWORD
+    for username, role in (("auditor1", "auditor"), ("petugas", "analis")):
+        authenticated_api.post("/admin/users", json={"username": username, "role": role, "password": "Password pencarian browser 763!", "admin_password": TEST_PASSWORD}).raise_for_status()
+    page.goto("/admin")
+    field = page.get_by_label("Cari pengguna", exact=True)
+    field.fill("AUDITOR")
     expect(page.get_by_role("cell", name="auditor1", exact=True)).to_be_visible()
     expect(page.get_by_role("cell", name="petugas", exact=True)).not_to_be_visible()
     field.fill("")

@@ -46,7 +46,7 @@ def prepare(api_url: str, candidates: int = 7) -> int:
 
 
 def launch(page: Page) -> None:
-    page.get_by_label("Petugas untuk riwayat", exact=True).fill("Petugas Browser")
+    expect(page.get_by_label("Petugas untuk riwayat", exact=True)).to_have_value("test-admin")
     page.get_by_label("Radius pemeriksaan (meter)", exact=True).fill("10")
     page.get_by_role("button", name="Jalankan pemeriksaan", exact=True).click()
     dialog = page.get_by_role("dialog", name="Pemeriksaan koreksi selesai", exact=True)
@@ -70,7 +70,7 @@ def test_not_found_import_conflicts_candidates_missing_coordinates_and_category_
     page.get_by_role(
         "button", name="Simpan dan validasi data koreksi", exact=True
     ).click()
-    expect(page.get_by_role("status")).to_contain_text("3 baris")
+    expect(page.get_by_role("status").filter(has_text="3 baris")).to_be_visible()
     launch(page)
     cards = page.get_by_role("region", name="Ringkasan IDPEL Tidak Ketemu", exact=True)
     expect(
@@ -140,7 +140,7 @@ def test_mobile_empty_idpel_import_pagination_summary_and_candidate_pages(
     page.get_by_role(
         "button", name="Simpan dan validasi data koreksi", exact=True
     ).click()
-    expect(page.get_by_role("status")).to_contain_text("31 baris")
+    expect(page.get_by_role("status").filter(has_text="31 baris")).to_be_visible()
     launch(page)
     cards = page.get_by_role("region", name="Ringkasan IDPEL Kosong", exact=True)
     expect(

@@ -1,315 +1,65 @@
-import { MetricCard } from "@/components/data/MetricCard";
-import { useState, useEffect, useCallback } from "react";
+import { useState, type FormEvent } from "react";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { LoaderCircle, Plus, Search, Shield, UserCog, X } from "lucide-react";
+import { authApi, type Role, type User } from "@/lib/accounts";
+import type { ApiError } from "@/lib/api";
+import { buttonClass } from "@/lib/button";
 import { useAppStore } from "@/store/app";
-import { UserCog, Shield, Ban, Trash2, CheckCircle, XCircle, Search, Mail, Calendar } from "lucide-react";
 
-interface MockUser {
-  id: string;
-  username: string;
-  email: string;
-  role: "admin" | "analis" | "auditor";
-  status: "active" | "blocked";
-  created_at: string;
+const control = "w-full rounded-lg border border-ui-border bg-white px-3 py-2 text-sm";
+const roleLabels: Record<Role, string> = { admin: "Administrator", analis: "Analis", auditor: "Auditor (baca saja)" };
+
+function AccountForm({ target, onClose, onSaved }: { target: User | null; onClose: () => void; onSaved: () => void }) {
+  const [username, setUsername] = useState(target?.username ?? "");
+  const [password, setPassword] = useState("");
+  const [confirmation, setConfirmation] = useState("");
+  const [adminPassword, setAdminPassword] = useState("");
+  const [role, setRole] = useState<Role>(target?.role ?? "analis");
+  const [active, setActive] = useState(target?.is_active ?? true);
+  const save = useMutation({
+    mutationFn: async () => {
+      if ((!target || password) && password !== confirmation) throw new Error("Konfirmasi password tidak sama.");
+      if (target) return authApi.updateUser(target.id, { role, is_active: active, admin_password: adminPassword, ...(password ? { password } : {}) });
+      return authApi.createUser({ username, password, role, admin_password: adminPassword });
+    },
+    onSuccess: () => { setPassword(""); setConfirmation(""); setAdminPassword(""); onSaved(); },
+    onError: () => setAdminPassword(""),
+  });
+  const submit = (event: FormEvent) => { event.preventDefault(); if (!save.isPending) save.mutate(); };
+  return <section className="geo-panel space-y-4 p-5" aria-label={target ? "Ubah pengguna" : "Tambah pengguna"}>
+    <div className="flex items-center justify-between gap-3"><h2 className="font-semibold">{target ? "Ubah pengguna " + target.username : "Tambah pengguna"}</h2><button type="button" disabled={save.isPending} onClick={onClose} aria-label="Tutup formulir pengguna"><X size={20} /></button></div>
+    <form onSubmit={submit} className="space-y-4">
+      <fieldset disabled={save.isPending} className="grid gap-4 md:grid-cols-2">
+        <label className="space-y-1 text-sm font-semibold">Username<input required readOnly={!!target} value={username} onChange={(event) => setUsername(event.target.value)} autoCapitalize="none" autoComplete="off" minLength={3} maxLength={64} pattern="[a-zA-Z0-9][a-zA-Z0-9._-]{2,63}" className={control} /></label>
+        <label className="space-y-1 text-sm font-semibold">Role<select value={role} onChange={(event) => setRole(event.target.value as Role)} className={control}>{Object.entries(roleLabels).map(([key, label]) => <option key={key} value={key}>{label}</option>)}</select></label>
+        <label className="space-y-1 text-sm font-semibold">{target ? "Password baru (opsional)" : "Password pengguna"}<input type="password" autoComplete="new-password" required={!target} minLength={15} maxLength={128} value={password} onChange={(event) => setPassword(event.target.value)} className={control} /></label>
+        <label className="space-y-1 text-sm font-semibold">Konfirmasi password pengguna<input type="password" autoComplete="new-password" required={!target || !!password} minLength={15} maxLength={128} value={confirmation} onChange={(event) => setConfirmation(event.target.value)} className={control} /></label>
+        {target && <label className="flex items-center gap-2 text-sm font-semibold"><input type="checkbox" checked={active} onChange={(event) => setActive(event.target.checked)} />Akun aktif</label>}
+        <label className="space-y-1 text-sm font-semibold md:col-span-2">Password admin Anda<input type="password" autoComplete="current-password" required maxLength={128} value={adminPassword} onChange={(event) => setAdminPassword(event.target.value)} className={control} /></label>
+        <div className="flex flex-wrap gap-2 md:col-span-2"><button type="submit" className={buttonClass.primary}>{save.isPending && <LoaderCircle size={16} className="animate-spin" />}{target ? "Simpan perubahan pengguna" : "Buat pengguna"}</button><button type="button" onClick={onClose} className={buttonClass.secondary}>Batal</button></div>
+      </fieldset>
+      <p className="text-xs text-ui-muted">Gunakan passphrase 15–128 karakter. Perubahan role, status, atau password mencabut seluruh sesi pengguna tersebut.</p>
+      {save.error && <p role="alert" className="text-sm text-red-700">{(save.error as ApiError).message}</p>}
+    </form>
+  </section>;
 }
 
 export default function AdminPage() {
-  const { user } = useAppStore();
-  const [users, setUsers] = useState<MockUser[]>([]);
-  const [searchQuery, setSearchQuery] = useState("");
-  const [loading, setLoading] = useState(true);
-  const [actionLoading, setActionLoading] = useState<string | null>(null);
-
-  const loadUsers = useCallback(() => {
-    // Mock data - replace with real API call
-    setTimeout(() => {
-      setUsers([
-        { id: "u_1", username: "admin", email: "admin@pln.co.id", role: "admin", status: "active", created_at: "2026-01-15" },
-        { id: "u_2", username: "petugas", email: "petugas@pln.co.id", role: "analis", status: "active", created_at: "2026-02-10" },
-        { id: "u_3", username: "auditor1", email: "audit@pln.co.id", role: "auditor", status: "active", created_at: "2026-03-05" },
-        { id: "u_4", username: "analis2", email: "analis2@pln.co.id", role: "analis", status: "blocked", created_at: "2026-01-20" },
-      ]);
-      setLoading(false);
-    }, 500);
-  }, []);
-
-  useEffect(() => {
-    loadUsers();
-  }, [loadUsers]);
-
-  const handleBlockUser = async (userId: string, currentStatus: string) => {
-    if (!window.confirm(`${currentStatus === "active" ? "Blokir" : "Aktifkan"} user ini?`)) return;
-
-    setActionLoading(userId);
-    // Mock action - replace with real API call
-    setTimeout(() => {
-      setUsers((prev) =>
-        prev.map((u) =>
-          u.id === userId ? { ...u, status: u.status === "active" ? "blocked" : "active" } : u
-        )
-      );
-      setActionLoading(null);
-    }, 300);
-  };
-
-  const handleDeleteUser = async (userId: string, username: string) => {
-    if (!window.confirm(`HAPUS PERMANEN user "${username}"? Tindakan ini tidak bisa dibatalkan!`)) return;
-
-    setActionLoading(userId);
-    // Mock action - replace with real API call
-    setTimeout(() => {
-      setUsers((prev) => prev.filter((u) => u.id !== userId));
-      setActionLoading(null);
-    }, 300);
-  };
-
-  const filteredUsers = users.filter((u) =>
-    u.username.toLowerCase().includes(searchQuery.toLowerCase()) ||
-    u.email.toLowerCase().includes(searchQuery.toLowerCase())
-  );
-
-  const stats = {
-    total: users.length,
-    active: users.filter((u) => u.status === "active").length,
-    blocked: users.filter((u) => u.status === "blocked").length,
-    admins: users.filter((u) => u.role === "admin").length,
-  };
-
-  // Check if current user is admin
-  if (user?.role !== "admin") {
-    return (
-      <div className="p-6 border border-ui-border rounded-lg bg-white ">
-        <div className="text-center py-10 sm:py-16">
-          <Shield className="w-16 h-16 text-[#dc2626] mx-auto mb-4" />
-          <h2 className="text-xl sm:text-2xl font-semibold text-[#dc2626] mb-2">Akses Ditolak</h2>
-          <p className="text-sm text-ui-muted">Halaman ini hanya untuk pengguna dengan hak akses Administrator.</p>
-        </div>
-      </div>
-    );
-  }
-
-  return (
-    <div className="space-y-6">
-      {/* Header */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-        <div>
-          <h1 className="text-xl sm:text-2xl font-semibold mb-1 flex items-center gap-2">
-            <UserCog className="w-6 h-6 sm:w-7 sm:h-7" strokeWidth={2.5} />
-            Manajemen Pengguna
-          </h1>
-          <p className="text-xs sm:text-sm text-ui-muted">
-            Kelola akun, role, dan hak akses pengguna sistem PLN GeoMatch
-          </p>
-        </div>
-      </div>
-
-      {/* Stats Cards */}
-      <div className="geo-metrics geo-metrics-4">
-        <MetricCard label="Total User" value={stats.total} tone="primary" />
-        <MetricCard label="Aktif" value={stats.active} tone="success" />
-        <MetricCard label="Diblokir" value={stats.blocked} tone="danger" />
-        <MetricCard label="Admin" value={stats.admins} tone="violet" icon={Shield} />
-      </div>
-
-      {/* Search Bar */}
-      <div className="p-3.5 sm:p-4 border border-ui-border rounded-lg bg-white ">
-        <div className="relative">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-[#666]" strokeWidth={2} />
-          <input
-            type="text"
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-            placeholder="Cari username atau email..."
-            className="mobile-input w-full border border-ui-border pl-11 pr-4 py-2.5 rounded-lg font-semibold text-sm focus:outline-none focus:ring-2 focus:ring-neo-accent"
-          />
-        </div>
-      </div>
-
-      {/* Users View */}
-      {loading ? (
-        <div className="p-8 text-center text-sm font-semibold text-ui-muted border border-dashed border-ui-border rounded-lg bg-white">
-          Memuat data pengguna...
-        </div>
-      ) : (
-        <>
-          {/* Mobile Card List (< md) */}
-          <div className="block md:hidden space-y-3">
-            {filteredUsers.map((u) => (
-              <div
-                key={u.id}
-                className="border border-neo-black rounded-lg bg-white p-4  space-y-3"
-              >
-                <div className="flex items-start justify-between gap-2 border-b border-ui-border pb-2.5">
-                  <div>
-                    <h3 className="text-sm font-semibold text-neo-black flex items-center gap-1.5">
-                      <UserCog className="w-4 h-4 text-gray-500" />
-                      {u.username}
-                    </h3>
-                    <p className="text-xs text-gray-600 flex items-center gap-1 mt-0.5">
-                      <Mail className="w-3 h-3 text-gray-400" />
-                      {u.email}
-                    </p>
-                  </div>
-                  <span
-                    className={`shrink-0 px-2 py-0.5 rounded text-xs font-semibold border ${
-                      u.role === "admin"
-                        ? "bg-[#2563eb] text-white border-[#1e40af]"
-                        : u.role === "analis"
-                        ? "bg-[#16a34a] text-white border-[#15803d]"
-                        : "bg-[#d97706] text-white border-[#b45309]"
-                    }`}
-                  >
-                    {u.role.toUpperCase()}
-                  </span>
-                </div>
-
-                <div className="flex items-center justify-between text-xs">
-                  <div className="flex items-center gap-1.5">
-                    {u.status === "active" ? (
-                      <span className="flex items-center gap-1 text-[#16a34a] font-semibold">
-                        <CheckCircle className="w-3.5 h-3.5" />
-                        Aktif
-                      </span>
-                    ) : (
-                      <span className="flex items-center gap-1 text-[#dc2626] font-semibold">
-                        <XCircle className="w-3.5 h-3.5" />
-                        Diblokir
-                      </span>
-                    )}
-                  </div>
-                  <span className="text-gray-500 text-xs flex items-center gap-1 font-mono">
-                    <Calendar className="w-3 h-3" />
-                    {new Date(u.created_at).toLocaleDateString("id-ID")}
-                  </span>
-                </div>
-
-                <div className="pt-2 border-t border-ui-border flex items-center gap-2">
-                  <button
-                    onClick={() => handleBlockUser(u.id, u.status)}
-                    disabled={actionLoading === u.id}
-                    className={`touch-min flex-1 flex items-center justify-center gap-1.5 px-3 py-2 border rounded text-xs font-semibold   disabled:opacity-50 ${
-                      u.status === "active"
-                        ? "border-[#d97706] bg-[#fef3c7] text-[#92400e]"
-                        : "border-[#16a34a] bg-[#dcfce7] text-[#15803d]"
-                    }`}
-                  >
-                    <Ban className="w-3.5 h-3.5" />
-                    {u.status === "active" ? "Blokir" : "Aktifkan"}
-                  </button>
-                  <button
-                    onClick={() => handleDeleteUser(u.id, u.username)}
-                    disabled={actionLoading === u.id || u.id === user.id}
-                    className="touch-min flex-1 flex items-center justify-center gap-1.5 px-3 py-2 border border-[#dc2626] bg-white text-[#dc2626] rounded text-xs font-semibold   disabled:opacity-50 disabled:cursor-not-allowed"
-                    title={u.id === user.id ? "Tidak bisa hapus akun sendiri" : "Hapus user"}
-                  >
-                    <Trash2 className="w-3.5 h-3.5" />
-                    Hapus
-                  </button>
-                </div>
-              </div>
-            ))}
-          </div>
-
-          {/* Desktop Table View (>= md) */}
-          <div className="hidden md:block border border-ui-border rounded-lg bg-white  overflow-x-auto neo-scrollbar">
-            <table className="w-full text-left text-[13px] border-collapse min-w-[700px]">
-              <thead className="bg-ui-table-head text-neo-black border-b border-ui-border">
-                <tr>
-                  <th className="p-3 border-r border-ui-border font-semibold">Username</th>
-                  <th className="p-3 border-r border-ui-border font-semibold">Email</th>
-                  <th className="p-3 border-r border-ui-border font-semibold">Role</th>
-                  <th className="p-3 border-r border-ui-border font-semibold">Status</th>
-                  <th className="p-3 border-r border-ui-border font-semibold">Terdaftar</th>
-                  <th className="p-3 text-center font-semibold">Aksi</th>
-                </tr>
-              </thead>
-              <tbody>
-                {filteredUsers.map((u) => (
-                  <tr key={u.id} className="border-b border-ui-border hover:bg-neo-white transition-colors">
-                    <td className="p-3 border-r border-ui-border font-semibold">
-                      <div className="flex items-center gap-2">
-                        <UserCog className="w-4 h-4 text-[#666]" />
-                        {u.username}
-                      </div>
-                    </td>
-                    <td className="p-3 border-r border-ui-border text-[#666]">{u.email}</td>
-                    <td className="p-3 border-r border-ui-border">
-                      <span
-                        className={`px-2 py-1 rounded text-xs font-semibold border ${
-                          u.role === "admin"
-                            ? "bg-[#2563eb] text-white border-[#1e40af]"
-                            : u.role === "analis"
-                            ? "bg-[#16a34a] text-white border-[#15803d]"
-                            : "bg-[#d97706] text-white border-[#b45309]"
-                        }`}
-                      >
-                        {u.role.toUpperCase()}
-                      </span>
-                    </td>
-                    <td className="p-3 border-r border-ui-border">
-                      {u.status === "active" ? (
-                        <span className="flex items-center gap-1 text-[#16a34a] font-semibold">
-                          <CheckCircle className="w-4 h-4" />
-                          Aktif
-                        </span>
-                      ) : (
-                        <span className="flex items-center gap-1 text-[#dc2626] font-semibold">
-                          <XCircle className="w-4 h-4" />
-                          Diblokir
-                        </span>
-                      )}
-                    </td>
-                    <td className="p-3 border-r border-ui-border text-[#666] font-mono text-xs">
-                      {new Date(u.created_at).toLocaleDateString("id-ID")}
-                    </td>
-                    <td className="p-3 text-center">
-                      <div className="flex justify-center gap-2">
-                        <button
-                          onClick={() => handleBlockUser(u.id, u.status)}
-                          disabled={actionLoading === u.id}
-                          className={`touch-min px-3 py-1.5 border rounded text-xs font-semibold  hover:-translate-y-0.5  transition-all disabled:opacity-50 ${
-                            u.status === "active"
-                              ? "border-[#d97706] bg-[#fef3c7] text-[#92400e] hover:bg-[#fde68a]"
-                              : "border-[#16a34a] bg-[#dcfce7] text-[#15803d] hover:bg-[#bbf7d0]"
-                          }`}
-                        >
-                          <Ban className="w-3 h-3 inline mr-1" />
-                          {u.status === "active" ? "Blokir" : "Aktifkan"}
-                        </button>
-                        <button
-                          onClick={() => handleDeleteUser(u.id, u.username)}
-                          disabled={actionLoading === u.id || u.id === user.id}
-                          className="touch-min px-3 py-1.5 border border-[#dc2626] bg-white text-[#dc2626] rounded text-xs font-semibold  hover:bg-[#fee2e2] hover:-translate-y-0.5  transition-all disabled:opacity-50 disabled:cursor-not-allowed"
-                          title={u.id === user.id ? "Tidak bisa hapus akun sendiri" : "Hapus user"}
-                        >
-                          <Trash2 className="w-3 h-3 inline mr-1" />
-                          Hapus
-                        </button>
-                      </div>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        </>
-      )}
-
-      {filteredUsers.length === 0 && !loading && (
-        <div className="p-8 border border-dashed border-ui-border rounded-lg text-center text-sm text-[#666] bg-white">
-          Tidak ada user yang sesuai dengan pencarian.
-        </div>
-      )}
-
-      {/* Info Footer */}
-      <div className="p-4 border border-[#2563eb] bg-[#dbeafe] rounded-lg text-xs text-[#1e40af]">
-        <p className="font-semibold mb-1">ℹ️ Informasi Admin:</p>
-        <ul className="list-disc list-inside space-y-1 text-[#1e40af]/80">
-          <li>User yang diblokir tidak dapat login ke sistem</li>
-          <li>Penghapusan user bersifat permanen dan tidak dapat dibatalkan</li>
-          <li>Admin tidak dapat menghapus akun sendiri</li>
-          <li>Phase 1: Mock data (Backend RBAC akan diimplementasikan pada Phase 1C+)</li>
-        </ul>
-      </div>
-    </div>
-  );
+  const user = useAppStore((state) => state.user);
+  const client = useQueryClient();
+  const [search, setSearch] = useState("");
+  const [editing, setEditing] = useState<User | null | undefined>(undefined);
+  const [notice, setNotice] = useState("");
+  const users = useQuery({ queryKey: ["admin", "users"], queryFn: authApi.users, enabled: user?.role === "admin", staleTime: 0 });
+  if (user?.role !== "admin") return <div role="alert" className="geo-panel space-y-3 p-6"><Shield size={32} /><h1 className="text-xl font-semibold">Akses Ditolak</h1><p>Manajemen pengguna hanya tersedia untuk administrator.</p></div>;
+  const filtered = users.data?.filter((item) => item.username.toLowerCase().includes(search.toLowerCase())) ?? [];
+  return <div className="space-y-5">
+    <header className="flex flex-wrap items-center justify-between gap-3"><div><h1 className="flex items-center gap-2 text-xl font-semibold"><UserCog size={24} />Manajemen Pengguna</h1><p className="mt-2 text-sm text-ui-muted">Akun dibuat oleh admin. Nonaktifkan akun untuk mencabut akses sambil mempertahankan riwayat.</p></div><button type="button" className={buttonClass.primary} onClick={() => { setEditing(null); setNotice(""); }}><Plus size={16} />Tambah pengguna</button></header>
+    {notice && <p role="status" className="rounded-lg bg-green-50 p-3 text-sm text-green-800">{notice}</p>}
+    {editing !== undefined && <AccountForm key={editing?.id ?? "new"} target={editing} onClose={() => setEditing(undefined)} onSaved={() => { setEditing(undefined); setNotice("Pengguna berhasil disimpan."); void client.invalidateQueries({ queryKey: ["admin", "users"] }); }} />}
+    <label className="flex max-w-md items-center gap-2"><Search size={18} /><input aria-label="Cari pengguna" value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Cari username" className={control} /></label>
+    {users.isPending && <p role="status" className="flex items-center gap-2"><LoaderCircle size={18} className="animate-spin" />Memuat pengguna...</p>}
+    {users.isError && <p role="alert" className="text-red-700">{(users.error as ApiError).message}</p>}
+    {users.data && <div className="geo-panel overflow-x-auto"><table className="w-full text-left text-sm"><thead className="border-b border-ui-border bg-ui-table-head"><tr><th className="p-3">Username</th><th className="p-3">Role</th><th className="p-3">Status</th><th className="p-3">Tindakan</th></tr></thead><tbody>{filtered.map((item) => <tr key={item.id} className="border-b border-ui-border"><td className="p-3">{item.username}{item.id === user.id && " (Anda)"}</td><td className="p-3">{roleLabels[item.role]}</td><td className="p-3">{item.is_active ? "Aktif" : "Nonaktif"}</td><td className="p-3"><button type="button" disabled={item.id === user.id} aria-label={"Ubah pengguna " + item.username} onClick={() => { setEditing(item); setNotice(""); }} className={buttonClass.secondary}>Ubah / reset password</button></td></tr>)}</tbody></table>{!filtered.length && <p className="p-4 text-sm">Tidak ada pengguna sesuai pencarian.</p>}</div>}
+  </div>;
 }

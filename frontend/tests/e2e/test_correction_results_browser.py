@@ -30,7 +30,7 @@ def test_partial_results_export_history_resume_replace_and_cancel(
     httpx.post(base + "/pause", json={"run_id": run["id"]}).raise_for_status()
     page.goto(f"/peta-koreksi?category={kind}&batch_id={batch}&process_id={process}")
     page.get_by_role("button", name="Pilih target baris 2", exact=True).click()
-    page.get_by_label("Petugas peta", exact=True).fill("Petugas Hasil")
+    expect(page.get_by_label("Petugas peta", exact=True)).to_have_value("test-admin")
 
     candidates = page.get_by_role("region", name="Kandidat target peta", exact=True)
     candidates.get_by_role("button", name="Pilih kandidat 1", exact=True).click()
@@ -40,7 +40,7 @@ def test_partial_results_export_history_resume_replace_and_cancel(
     expect(page.get_by_text("Hasil sebagian: 2 dari 5 baris", exact=False)).to_be_visible()
     results = page.get_by_role("region", name="Daftar hasil koreksi", exact=True)
     expect(results).to_contain_text("002")
-    expect(results).to_contain_text("Petugas Hasil")
+    expect(results).to_contain_text("test-admin")
     expect(results.get_by_role("row")).to_have_count(2)
     with page.expect_download() as download:
         page.get_by_role("button", name="Ekspor hasil XLSX", exact=True).click()
@@ -117,7 +117,7 @@ def test_partial_results_export_history_resume_replace_and_cancel(
     expect(results).to_contain_text("002")
     page.get_by_role("link", name="Buka Peta Koreksi", exact=True).click()
     page.get_by_role("button", name="Pilih target baris 2", exact=True).click()
-    page.get_by_label("Petugas peta", exact=True).fill("Petugas Hasil")
+    expect(page.get_by_label("Petugas peta", exact=True)).to_have_value("test-admin")
 
     page.get_by_label("Alasan perubahan pilihan", exact=True).fill("Meter kandidat kedua lebih sesuai")
     candidates.get_by_role("button", name="Pilih kandidat 2", exact=True).click()
@@ -130,7 +130,7 @@ def test_partial_results_export_history_resume_replace_and_cancel(
     expect(audit).to_contain_text("Kandidat dipilih: 003")
     page.get_by_role("link", name="Buka Peta Koreksi", exact=True).click()
     page.get_by_role("button", name="Pilih target baris 2", exact=True).click()
-    page.get_by_label("Petugas peta", exact=True).fill("Petugas Hasil")
+    expect(page.get_by_label("Petugas peta", exact=True)).to_have_value("test-admin")
     page.get_by_label("Alasan perubahan pilihan", exact=True).fill("Perlu verifikasi lapangan")
     page.get_by_role("button", name="Batalkan pilihan", exact=True).click()
     expect(page.get_by_text("Pilihan dibatalkan. Riwayat tetap tersimpan.", exact=True)).to_be_visible()

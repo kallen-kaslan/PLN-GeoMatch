@@ -54,12 +54,12 @@ def test_manual_point_check_map_choice_and_export(
     assert not legacy_requests
     page.get_by_role("link", name="Buka Peta Koreksi", exact=True).click()
     page.get_by_role("button", name="Pilih target baris 2", exact=True).click()
-    page.get_by_label("Petugas peta", exact=True).fill("Petugas Manual")
+    expect(page.get_by_label("Petugas peta", exact=True)).to_have_value("test-admin")
     candidates = page.get_by_role("region", name="Kandidat target peta", exact=True)
     candidates.get_by_role("button", name="Pilih kandidat 1", exact=True).click()
     expect(page.get_by_role("region", name="Detail target terpilih", exact=True)).to_contain_text("Pilihan aktif: 002")
     page.get_by_role("link", name="Lihat Hasil Koreksi", exact=True).click()
-    expect(page.get_by_role("region", name="Daftar hasil koreksi", exact=True)).to_contain_text("Petugas Manual")
+    expect(page.get_by_role("region", name="Daftar hasil koreksi", exact=True)).to_contain_text("test-admin")
     with page.expect_download() as download:
         page.get_by_role("button", name="Ekspor hasil XLSX", exact=True).click()
     path = tmp_path / "manual.xlsx"

@@ -12,6 +12,7 @@ from app.models.pdpj import (
     pdpj_issue_count,
 )
 from app.models.upload import DatasetType, SourceRecord, UploadBatch
+from app.modules.auth.security import CurrentActor
 from app.modules.master.router import batch_info
 from app.modules.pdpj.service import (
     advance_review,
@@ -410,18 +411,18 @@ def row_detail(
 
 @router.patch("/reviews/{review_id}/rows/{row_id}")
 def edit_row(
-    review_id: int, row_id: int, req: EditRow, db: DbSession
+    review_id: int, row_id: int, req: EditRow, db: DbSession, actor: CurrentActor
 ) -> dict[str, Any]:
     """Apply manual partial corrections and retain before/after history."""
     review = get_review(db, review_id, req.revision)
     row = selected_row(db, review_id, row_id)
-    update_fields(db, review, row, req.fields, req.actor, req.reason)
+    update_fields(db, review, row, req.fields, actor, req.reason)
     return {"revision": review.revision, **row_info(row)}
 
 
 @router.post("/reviews/{review_id}/rows/{row_id}/apply")
 def apply_recommendation(
-    review_id: int, row_id: int, req: ApplyRecommendation, db: DbSession
+    review_id: int, row_id: int, req: ApplyRecommendation, db: DbSession, actor: CurrentActor
 ) -> dict[str, Any]:
     """Fill selected fields from exactly one stored recommendation."""
     review = get_review(db, review_id, req.revision)
@@ -434,7 +435,7 @@ def apply_recommendation(
         review,
         row,
         {key: recommendation.fields.get(key) for key in req.fields},
-        req.actor,
+        actor,
         req.reason,
         recommendation,
         req.overwrite,
@@ -444,7 +445,7 @@ def apply_recommendation(
 
 @router.post("/reviews/{review_id}/rows/{row_id}/decision")
 def decide_row(
-    review_id: int, row_id: int, req: DecideRow, db: DbSession
+    review_id: int, row_id: int, req: DecideRow, db: DbSession, actor: CurrentActor
 ) -> dict[str, Any]:
     """Require a reason for unresolved exceptions and preserve reopening decisions."""
     review = get_review(db, review_id, req.revision)
@@ -458,7 +459,7 @@ def decide_row(
     row.reviewed = req.action != "reopen"
     row.exception = req.action == "exception"
     row.exception_reason = req.reason.strip() if row.exception else ""
-    record_change(db, row, req.action, req.actor, req.reason.strip(), before)
+    record_change(db, row, req.action, actor, req.reason.strip(), before)
     review.revision += 1
     db.commit()
     return {"revision": review.revision, **row_info(row)}
@@ -466,11 +467,11 @@ def decide_row(
 
 @router.post("/reviews/{review_id}/complete")
 @monitor_request("pdpj", "review_id", "publishing")
-def finish_review(review_id: int, req: ReviewAction, db: DbSession) -> dict[str, Any]:
+def finish_review(review_id: int, req: ReviewAction, db: DbSession, actor: CurrentActor) -> dict[str, Any]:
     """Finalize clean rows together; exceptions must already carry explicit reasons."""
     try:
         review = get_review(db, review_id, req.revision)
-        _, published = complete_validation(db, review, req.actor)
+        _, published = complete_validation(db, review, actor)
         return {**review_info(review), "published_review": review_info(published)}
     except HTTPException:
         db.rollback()
@@ -482,7 +483,7 @@ def finish_review(review_id: int, req: ReviewAction, db: DbSession) -> dict[str,
 @router.post("/reviews/{review_id}/complete-with-exceptions")
 @monitor_request("pdpj", "review_id", "publishing")
 def finish_with_exceptions(
-    review_id: int, req: CompleteWithExceptions, db: DbSession
+    review_id: int, req: CompleteWithExceptions, db: DbSession, actor: CurrentActor
 ) -> dict[str, Any]:
     """Finalize after an explicit, audited deferral of all remaining problem rows."""
     try:
@@ -490,7 +491,7 @@ def finish_with_exceptions(
         added, published = complete_validation(
             db,
             review,
-            req.actor,
+            actor,
             exception_reason=req.reason,
             expected_unresolved=req.expected_unresolved,
         )
