@@ -4,6 +4,7 @@ import enum
 from datetime import datetime
 from typing import Any, cast
 
+from app.database import Base
 from sqlalchemy import (
     JSON,
     Boolean,
@@ -14,10 +15,10 @@ from sqlalchemy import (
     Index,
     Integer,
     String,
+    bindparam,
+    or_,
 )
 from sqlalchemy.orm import Mapped, mapped_column, relationship
-
-from app.database import Base
 
 # Explicit nullable Columns avoid Union inference in SQLAlchemy 2.0.35 on Python 3.15.
 
@@ -103,3 +104,38 @@ class SourceRecord(Base):
     )
 
     batch: Mapped[UploadBatch] = relationship(back_populates="records")
+
+
+def source_coordinates_missing() -> Any:
+    # Inline only these fixed JSON paths so SQLite can match the expression index.
+    return or_(
+        *(
+            SourceRecord.normalized_data[
+                bindparam(
+                    None, field, type_=JSON.JSONStrIndexType(), literal_execute=True
+                )
+            ]
+            .as_float()
+            .is_(None)
+            for field in ("lat", "lon")
+        )
+    )
+
+
+MASTER_FILTER_INDEX_NAMES = (
+    "ix_source_records_batch_valid_id",
+    "ix_source_records_batch_valid_missing_id",
+)
+Index(
+    MASTER_FILTER_INDEX_NAMES[0],
+    SourceRecord.batch_id,
+    SourceRecord.is_valid,
+    SourceRecord.id,
+)
+Index(
+    MASTER_FILTER_INDEX_NAMES[1],
+    SourceRecord.batch_id,
+    SourceRecord.is_valid,
+    source_coordinates_missing(),
+    SourceRecord.id,
+)

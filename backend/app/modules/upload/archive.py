@@ -9,19 +9,19 @@ from typing import Annotated, Any
 from uuid import uuid4
 from zipfile import BadZipFile
 
+from app.config import settings
+from app.database import get_db
+from app.models.upload import BatchStatus, DatasetType, UploadBatch
+from app.models.upload_file import UploadFileArchive, UploadSheetImport
+from app.modules.pdpj.service import lock_review_session
 from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile
 from openpyxl import load_workbook
 from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 from sqlalchemy.orm import Session
 
-from app.config import settings
-from app.database import get_db
-from app.models.upload import DatasetType, UploadBatch
-from app.models.upload_file import UploadFileArchive, UploadSheetImport
-from app.modules.pdpj.service import lock_review_session
-
 from .ingestion import import_raw_sheet
+from .progress import UploadProgress, report_progress, track_upload
 from .reader import check_file_size, read_upload
 from .storage import database_write_error
 
@@ -85,7 +85,12 @@ def list_files(db: DbSession) -> list[dict[str, Any]]:
 
 
 @router.post("/files")
-def store_file(file: Annotated[UploadFile, File()], db: DbSession) -> dict[str, Any]:
+@report_progress
+def store_file(
+    file: Annotated[UploadFile, File()],
+    db: DbSession,
+    progress: Annotated[UploadProgress, Depends(track_upload)],
+) -> dict[str, Any]:
     key = uuid4().hex
     path = archive_path(key)
     committed = False
@@ -95,6 +100,10 @@ def store_file(file: Annotated[UploadFile, File()], db: DbSession) -> dict[str, 
         if not filename.lower().endswith((".xlsx", ".csv")):
             raise ValueError("Gunakan berkas CSV atau XLSX")
         check_file_size(file.file)
+        file.file.seek(0, 2)
+        progress.stage("inspecting", file.file.tell(), "bytes")
+        progress.checkpoint()
+        file.file.seek(0)
         names: list[str] = []
         if filename.lower().endswith(".xlsx"):
             book = load_workbook(file.file, read_only=True, data_only=True)
@@ -105,6 +114,7 @@ def store_file(file: Annotated[UploadFile, File()], db: DbSession) -> dict[str, 
             finally:
                 book.close()
         file.file.seek(0)
+        progress.stage("archiving", progress.snapshot.get("total"), "bytes")
         path.parent.mkdir(parents=True, exist_ok=True)
         digest = hashlib.sha256()
         size = 0
@@ -114,6 +124,10 @@ def store_file(file: Annotated[UploadFile, File()], db: DbSession) -> dict[str, 
                 digest.update(chunk)
                 size += len(chunk)
                 destination.write(chunk)
+                progress.update(size)
+                progress.checkpoint()
+        progress.stage("registering")
+        progress.checkpoint()
         existing = (
             db.query(UploadFileArchive).filter_by(sha256=digest.hexdigest()).first()
         )
@@ -205,8 +219,16 @@ def preview_sheet(
 
 
 @router.post("/files/{file_id}/import-sheet")
-def import_sheet(file_id: int, req: SheetRequest, db: DbSession) -> dict[str, Any]:
+@report_progress
+def import_sheet(
+    file_id: int,
+    req: SheetRequest,
+    db: DbSession,
+    progress: Annotated[UploadProgress, Depends(track_upload)],
+) -> dict[str, Any]:
     try:
+        progress.stage("preparing")
+        progress.checkpoint()
         lock_review_session(db)
         archive = (
             db.query(UploadFileArchive)
@@ -231,25 +253,50 @@ def import_sheet(file_id: int, req: SheetRequest, db: DbSession) -> dict[str, An
         if existing:
             batch = db.get(UploadBatch, existing.batch_id)
             assert batch is not None
-            return {"id": batch.id, "status": batch.status, "filename": batch.filename}
+            if batch.status == BatchStatus.PROCESSING:
+                raise HTTPException(
+                    409,
+                    "Sheet masih diproses atau dijeda. Lanjutkan proses yang sedang berjalan.",
+                )
+            if batch.status != BatchStatus.FAILED:
+                return {
+                    "id": batch.id,
+                    "status": batch.status,
+                    "filename": batch.filename,
+                }
         path = archive_path(archive.storage_key)
         if not path.is_file():
             raise HTTPException(
                 410, "Berkas asli tidak tersedia. Unggah kembali berkas yang sama."
             )
+
+        def attach_import(batch: UploadBatch) -> None:
+            # Persist the unique sheet link together with any pause checkpoint.
+            db.add(
+                UploadSheetImport(
+                    file_id=file_id,
+                    batch_id=batch.id,
+                    dataset_type=req.dataset_type.value,
+                    sheet_key=name or "",
+                    period_key=req.period or "",
+                )
+            )
+
         with path.open("rb") as source:
             batch = import_raw_sheet(
-                db, source, archive.filename, req.dataset_type, name, req.period
+                db,
+                source,
+                archive.filename,
+                req.dataset_type,
+                name,
+                req.period,
+                progress=progress,
+                on_batch=attach_import,
+                existing_batch=batch if existing else None,
             )
-        db.add(
-            UploadSheetImport(
-                file_id=file_id,
-                batch_id=batch.id,
-                dataset_type=req.dataset_type.value,
-                sheet_key=name or "",
-                period_key=req.period or "",
-            )
-        )
+        progress.stage("saving", batch.total_rows)
+        progress.update(batch.total_rows)
+        progress.checkpoint(db)
         db.commit()
         return {"id": batch.id, "status": batch.status, "filename": batch.filename}
     except SQLAlchemyError as exc:
@@ -257,3 +304,11 @@ def import_sheet(file_id: int, req: SheetRequest, db: DbSession) -> dict[str, An
     except (OSError, ValueError, ImportError, BadZipFile) as exc:
         db.rollback()
         raise HTTPException(400, f"Sheet tidak dapat disimpan: {exc!s}") from exc
+    finally:
+        # An interrupted transaction can be retried from its last committed chunk.
+        if progress.checkpoint_committed and progress.batch_id is not None:
+            db.rollback()
+            interrupted = db.get(UploadBatch, progress.batch_id)
+            if interrupted is not None and interrupted.status == BatchStatus.PROCESSING:
+                interrupted.status = BatchStatus.FAILED
+                db.commit()

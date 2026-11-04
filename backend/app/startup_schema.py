@@ -4,11 +4,10 @@ from collections.abc import Callable
 from datetime import UTC, datetime
 from typing import cast
 
-from sqlalchemy import Table, select
-from sqlalchemy.engine import Connection
-
 from app.models.schema_state import SchemaState
 from app.performance import logger, timed
+from sqlalchemy import Table, select
+from sqlalchemy.engine import Connection
 
 
 @timed("startup.schema_stage")
@@ -42,6 +41,7 @@ def prepare_database(connection: Connection) -> None:
     from app.correction_observation_schema import upgrade_correction_observations
     from app.correction_progress_schema import upgrade_correction_progress
     from app.correction_schema import upgrade_corrections
+    from app.master_filter_schema import upgrade_master_filters
     from app.master_preparation_schema import upgrade_master_preparation
     from app.master_schema import upgrade_master_catalog
     from app.master_summary_schema import upgrade_master_summary
@@ -83,3 +83,4 @@ def prepare_database(connection: Connection) -> None:
     )
     apply_once(connection, "upload_files", "c8d72fe610ab", upgrade_upload_files)
     repair_xy_coordinates(connection)
+    apply_once(connection, "master_filters", "a8d13f04c621", upgrade_master_filters)
