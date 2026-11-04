@@ -49,6 +49,7 @@ def prepare_database(connection: Connection) -> None:
     from app.pdpj_publication_schema import upgrade_pdpj_publications
     from app.pdpj_results_schema import upgrade_pdpj_results
     from app.pdpj_schema import upgrade_pdpj_validation
+    from app.pdpj_summary_schema import upgrade_pdpj_summary
     from app.performance_schema import upgrade_performance
     from app.schema_compatibility import upgrade_foundations
     from app.upload_file_schema import upgrade_upload_files
@@ -84,3 +85,4 @@ def prepare_database(connection: Connection) -> None:
     apply_once(connection, "upload_files", "c8d72fe610ab", upgrade_upload_files)
     repair_xy_coordinates(connection)
     apply_once(connection, "master_filters", "a8d13f04c621", upgrade_master_filters)
+    apply_once(connection, "pdpj_summary", "b9c63f2a710e", upgrade_pdpj_summary)

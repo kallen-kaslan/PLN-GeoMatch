@@ -64,10 +64,10 @@ export default function PdpjPage() {
     setPage(next); setPageInput(null); setPageError(""); setRowId(null);
   };
 
-  const batches = useQuery({ queryKey: ["pdpj", "batches"], queryFn: pdpjApi.batches });
+  const batches = useQuery({ queryKey: ["pdpj", "batches"], queryFn: pdpjApi.batches, staleTime: 30_000 });
   const batchId = requestedBatch ?? batches.data?.[0]?.id ?? null;
   const batch = batches.data?.find((item) => item.id === batchId);
-  const reviews = useQuery({ queryKey: ["pdpj", "reviews", batchId], queryFn: () => pdpjApi.reviews(batchId!), enabled: batchId !== null });
+  const reviews = useQuery({ queryKey: ["pdpj", "reviews", batchId], queryFn: () => pdpjApi.reviews(batchId!), enabled: batchId !== null, staleTime: 30_000 });
   const selectedReview = requestedReview ? reviews.data?.find((item) => item.id === requestedReview) : reviews.data?.[0];
   const reviewId = selectedReview?.id;
   const review = useQuery({ queryKey: ["pdpj", reviewId, "summary"], queryFn: async ({ signal }) => {
@@ -76,10 +76,10 @@ export default function PdpjPage() {
     return current && newestCheckpoint(current, fresh, (value) => value.revision) === current
       ? { ...fresh, revision: current.revision, processing: current.processing, activity: current.activity, status: current.status, completed_at: current.completed_at, completed_by: current.completed_by }
       : fresh;
-  }, enabled: reviewId !== undefined });
-  const records = useQuery({ queryKey: ["pdpj", reviewId, "rows", deferredSearch, status, page, pageSize], queryFn: ({ signal }) => pdpjApi.rows(reviewId!, { q: deferredSearch, status, skip: (page - 1) * pageSize, limit: pageSize }, signal), enabled: reviewId !== undefined && search === deferredSearch, refetchInterval: searchRefreshInterval });
+  }, enabled: reviewId !== undefined, staleTime: 30_000 });
+  const records = useQuery({ queryKey: ["pdpj", reviewId, "rows", deferredSearch, status, page, pageSize], queryFn: ({ signal }) => pdpjApi.rows(reviewId!, { q: deferredSearch, status, skip: (page - 1) * pageSize, limit: pageSize }, signal), enabled: reviewId !== undefined && search === deferredSearch, refetchInterval: searchRefreshInterval, staleTime: 30_000 });
   const searchBusy = search !== deferredSearch || searchPreparing(records.data);
-  const masters = useQuery({ queryKey: ["masters", "all-ready"], queryFn: async () => (await Promise.all(MASTER_TYPES.map((item) => masterApi.batches(item.key)))).flat().filter((item) => item.status === "completed") });
+  const masters = useQuery({ queryKey: ["masters", "all-ready"], queryFn: async () => (await Promise.all(MASTER_TYPES.map((item) => masterApi.batches(item.key)))).flat().filter((item) => item.status === "completed"), staleTime: 30_000 });
   const saved = useQuery({ queryKey: ["pdpj", "batch", resumeId], queryFn: () => pdpjApi.batch(resumeId!), enabled: resumeId !== null });
   const activeMasterIds = selectedMasters ?? masters.data?.map((item) => item.id) ?? [];
   const latestReview = reviews.data?.[0];
