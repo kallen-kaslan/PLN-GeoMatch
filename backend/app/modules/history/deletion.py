@@ -11,6 +11,7 @@ from app.models.correction import (
     CorrectionTarget,
 )
 from app.models.correction_decision import CorrectionDecision
+from app.models.radius_analysis import RadiusAnalysis, RadiusAnalysisRow
 from app.models.matching import (
     MatchCandidate,
     MatchingRun,
@@ -43,6 +44,20 @@ def delete_history(db: Session, process_id: int | None = None) -> None:
     process_ids = select(ReconciliationProcess.id).where(
         ReconciliationProcess.id.in_([process.id for process in processes])
     )
+    selected_ids = {process.id for process in processes}
+    analyses = db.query(RadiusAnalysis).order_by(RadiusAnalysis.id).populate_existing().all()
+    affected = [item for item in analyses if item.process_id in selected_ids
+                or item.progress.get("search_process_id") in selected_ids]
+    owned = {item.process_id: item for item in affected if item.process_id in selected_ids}
+    for item in affected:
+        if request_activity(db, "empty_workflow", item.id)["active"] or (
+            item.state == "running" and not item.progress.get("search_process_id")
+        ):
+            raise HTTPException(409, "Proses IDPEL Kosong masih berjalan. Jeda dan tunggu progres tersimpan sebelum menghapus riwayat.")
+        search_id = item.progress.get("search_process_id")
+        if item.process_id in selected_ids and search_id and search_id not in selected_ids:
+            if db.get(ReconciliationProcess, search_id) is not None:
+                raise HTTPException(409, "Analisis masih digunakan pencarian kandidat. Hapus riwayat pencariannya dahulu atau hapus seluruh riwayat setelah dijeda.")
     runs = (
         db.query(MatchingRun)
         .filter(MatchingRun.process_id.in_(process_ids))
@@ -66,11 +81,24 @@ def delete_history(db: Session, process_id: int | None = None) -> None:
         if process.id not in processes_with_runs and process.matching_status in {
             ProcessStatus.QUEUED,
             ProcessStatus.RUNNING,
-        }:
+        } and process.id not in owned:
             raise HTTPException(
                 409, f"Proses #{process.id} masih berjalan atau menunggu pemrosesan."
             )
 
+    # Deleting a search retains its completed analysis and prepared master.
+    # Clear only its search link so the saved import can start a new search.
+    for item in affected:
+        if item.process_id not in selected_ids:
+            progress = dict(item.progress)
+            progress.pop("search_process_id", None)
+            progress["job_kind"] = "analysis"
+            item.progress = progress
+            item.revision += 1
+    analysis_ids = [item.id for item in owned.values()]
+    if analysis_ids:
+        db.query(RadiusAnalysisRow).filter(RadiusAnalysisRow.analysis_id.in_(analysis_ids)).delete(synchronize_session=False)
+        db.query(RadiusAnalysis).filter(RadiusAnalysis.id.in_(analysis_ids)).delete(synchronize_session="fetch")
     candidate_ids = select(MatchCandidate.id).where(
         MatchCandidate.process_id.in_(process_ids)
     )

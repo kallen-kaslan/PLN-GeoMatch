@@ -186,35 +186,38 @@ def test_not_found_category_checks_every_row_and_counts_rows_not_candidates(
     ]
 
 
-def test_empty_category_compares_typed_references_and_only_warns_on_same_coordinates(
-    client: TestClient, reference: int
+@pytest.mark.parametrize("kind", ["idpel_kosong", "idpel_tidak_ketemu"])
+def test_category_specific_references_keep_empty_id_search_coordinate_only(
+    client: TestClient, reference: int, kind: str
 ) -> None:
-    kind = "idpel_kosong"
+    empty = kind == "idpel_kosong"
+    identity, wrong_kind = ("", "998") if empty else ("999", "")
     batch_id = upload(
-        client,
-        kind,
-        "IDPEL,NOMOR_METER,NOAGENDA,ID_TITIK,LAT,LON\n,M001,,,-6.2,106.8\n,,M001,,-6.2,106.8\n,,A001,,-6.2,106.8\n,,,S001,-6.2,106.8\n,,,OTHER,-6.2,106.8\n,,,NO-COORD,,\n998,,,WRONG-KIND,-6.2,106.8\n",
+        client, kind,
+        "IDPEL,NOMOR_METER,NOAGENDA,ID_TITIK,LAT,LON\n"
+        f"{identity},M001,,,-6.2,106.8\n"
+        f"{identity},,M001,,-6.2,106.8\n"
+        f"{identity},,A001,,-6.2,106.8\n"
+        f"{identity},,,S001,-6.2,106.8\n"
+        f"{identity},,,OTHER,-6.2,106.8\n"
+        f"{identity},,,NO-COORD,,\n"
+        f"{wrong_kind},,,WRONG-KIND,-6.2,106.8\n",
     )
     result = check(client, kind, batch_id, reference)
-    rows = client.get(
-        f"/corrections/{kind}/records?process_id={result['process_id']}"
-    ).json()["items"]
-    assert [row["search_status"] for row in rows] == [
-        "pdpj_conflict",
-        "matched",
-        "matched",
-        "pdpj_conflict",
-        "matched",
-        "incomplete_coordinates",
-        "invalid_data",
-    ]
-    assert rows[0]["conflicts"][0]["code"] == "meter_sama_pdpj"
+    rows = client.get(f"/corrections/{kind}/records?process_id={result['process_id']}").json()["items"]
+    conflict = "matched" if empty else "pdpj_conflict"
+    assert [row["search_status"] for row in rows] == [conflict, "matched", "matched", conflict, "matched", "incomplete_coordinates", "invalid_data"]
+    if empty:
+        assert all(not row["conflicts"] and not row["warnings"] for row in rows[:5])
+        assert all(row["candidate_count"] == 7 for row in rows[:5])
+    else:
+        assert rows[0]["conflicts"][0]["code"] == "meter_sama_pdpj"
+        assert rows[3]["conflicts"][0]["code"] == "survey_sama_pdpj"
+        assert rows[4]["warnings"][0]["code"] == "koordinat_sama_pdpj"
     assert not rows[2]["conflicts"] and rows[2]["candidate_count"] == 7
     assert rows[2]["fields"]["agenda_ref"] == "A001"
-    assert rows[3]["conflicts"][0]["code"] == "survey_sama_pdpj"
-    assert rows[4]["warnings"][0]["code"] == "koordinat_sama_pdpj"
     assert not rows[4]["conflicts"] and rows[4]["candidate_count"] == 7
-    assert rows[6]["errors"][0]["code"] == "kategori_idpel_harus_kosong"
+    assert any(error["field"] == "idpel" for error in rows[6]["errors"])
 
 
 @pytest.mark.parametrize("kind", ["idpel_tidak_ketemu", "idpel_kosong"])
@@ -301,8 +304,8 @@ def test_retry_applies_new_agenda_policy_without_rewriting_previous_result(
 ) -> None:
     from app.modules.corrections.service import REFERENCE_FIELDS
 
-    kind = "idpel_kosong"
-    batch_id = upload(client, kind, "NOAGENDA,LAT,LON\nA001,-6.2,106.8\n")
+    kind = "idpel_tidak_ketemu"
+    batch_id = upload(client, kind, "IDPEL,NOAGENDA,LAT,LON\n999,A001,-6.2,106.8\n")
     monkeypatch.setitem(REFERENCE_FIELDS, "agenda", ("agenda_ref",))
     previous = check(client, kind, batch_id, reference)
     process = previous["process_id"]
@@ -678,10 +681,12 @@ def test_partial_flush_of_many_conflicts_rolls_back_without_losing_published_res
     assert summary["pdpj_conflicts"] == 205 and summary["not_checked"] == 0
 
 
+@pytest.mark.parametrize("kind", ["idpel_kosong", "idpel_tidak_ketemu"])
 def test_reference_zero_placeholders_do_not_block_and_leading_zeroes_remain_distinct(
     client: TestClient,
     reference: int,
     db_session: Session,
+    kind: str,
 ) -> None:
     prior = db_session.query(PdpjRow).filter(PdpjRow.review_id == reference).first()
     assert prior is not None
@@ -706,19 +711,20 @@ def test_reference_zero_placeholders_do_not_block_and_leading_zeroes_remain_dist
         ).status_code
         == 200
     )
+    identity = "999" if kind == "idpel_tidak_ketemu" else ""
     batch_id = upload(
         client,
-        "idpel_kosong",
-        "NOMOR_METER,LAT,LON\n0,-6.2,106.8\n123,-6.2,106.8\n000123,-6.2,106.8\n",
+        kind,
+        f"IDPEL,NOMOR_METER,LAT,LON\n{identity},0,-6.2,106.8\n{identity},123,-6.2,106.8\n{identity},000123,-6.2,106.8\n",
     )
-    checked = check(client, "idpel_kosong", batch_id, review["id"])
+    checked = check(client, kind, batch_id, review["id"])
     records = client.get(
-        f"/corrections/idpel_kosong/records?process_id={checked['process_id']}"
+        f"/corrections/{kind}/records?process_id={checked['process_id']}"
     ).json()["items"]
     assert [row["search_status"] for row in records] == [
         "matched",
         "matched",
-        "pdpj_conflict",
+        "matched" if kind == "idpel_kosong" else "pdpj_conflict",
     ]
 
 

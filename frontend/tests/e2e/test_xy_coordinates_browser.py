@@ -28,13 +28,8 @@ def test_pln_xy_detection_and_history_sheet_with_standard_order(
             "buffer": stream.getvalue(),
         }
     )
-    expect(page.get_by_label("Kolom Latitude (lintang)", exact=True)).to_have_value(
-        "KOORDINAT_X", timeout=20000
-    )
-    expect(page.get_by_label("Kolom Longitude (bujur)", exact=True)).to_have_value(
-        "KOORDINAT_Y"
-    )
     save = page.get_by_role("button", name="Simpan dan validasi master", exact=True)
+    expect(save).to_be_enabled(timeout=20000)
     save.click()
     expect(page.get_by_text("xy.xlsx berhasil disimpan.", exact=True)).to_be_visible(
         timeout=20000
@@ -45,13 +40,8 @@ def test_pln_xy_detection_and_history_sheet_with_standard_order(
     assert rows[0]["is_valid"] and rows[0]["coordinates_complete"]
     page.get_by_role("button", name="Unggah berkas", exact=True).click()
     page.get_by_label("Riwayat berkas unggahan", exact=True).select_option(index=1)
-    page.get_by_label("Sheet yang diimpor", exact=True).select_option("Standar")
-    expect(page.get_by_label("Kolom Latitude (lintang)", exact=True)).to_have_value(
-        "KOORDINAT_Y"
-    )
-    expect(page.get_by_label("Kolom Longitude (bujur)", exact=True)).to_have_value(
-        "KOORDINAT_X"
-    )
+    page.get_by_label("Pratinjau sheet", exact=True).select_option("Standar")
+    expect(save).to_be_enabled(timeout=20000)
     save.click()
     expect(page.get_by_role("region", name="Impor master DIL", exact=True)).to_have_count(0, timeout=20000)
     expect(page.get_by_text("xy.xlsx berhasil disimpan.", exact=True)).to_be_visible(

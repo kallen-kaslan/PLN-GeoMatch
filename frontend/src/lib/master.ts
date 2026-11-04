@@ -66,6 +66,7 @@ export interface MasterRecordDetail extends MasterRecord {
 
 export interface ImportResult {
   batch_id: number;
+  batch_ids?: number[];
   rows: number;
   valid_rows: number;
   error_rows: number;
@@ -114,7 +115,14 @@ const REFERENCE_FIELDS: MappingField[] = [
 ];
 
 export const masterFields = (kind: SourceKind): MappingField[] => {
-  if (kind === "idpel_tidak_ketemu" || kind === "idpel_kosong") {
+  if (kind === "idpel_kosong") {
+    return [
+      ...MASTER_FIELDS.filter((field) => ["idpel", "nama", "lat", "lon", "alamat", "daya", "jenis_pel"].includes(field.key)).map((field) => ({ ...field, required: false, aliases: field.key === "alamat" ? [...field.aliases, "alamatlengkap"] : field.aliases })),
+      ...REFERENCE_FIELDS,
+      { key: "nomor_meter_kwh", label: "Nomor kWh meter", aliases: ["nomormeterkwh", "nokwhmeter"] },
+    ];
+  }
+  if (kind === "idpel_tidak_ketemu") {
     return [...MASTER_FIELDS.filter((field) => ["idpel", "nama", "lat", "lon", "alamat"].includes(field.key)).map((field) => ({ ...field, required: field.key === "idpel" && kind === "idpel_tidak_ketemu" })), ...REFERENCE_FIELDS];
   }
   return [...MASTER_FIELDS, ...REFERENCE_FIELDS, ...(kind === "dil" ? DIL_FIELDS : [])];

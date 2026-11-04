@@ -22,9 +22,11 @@ from app.models.matching import (
 from app.models.pdpj import PdpjRow
 from app.models.upload import BatchStatus, SourceRecord, UploadBatch
 from app.modules.corrections.observations import ALL_OBSERVATIONS_POLICY
+from app.modules.corrections.coordinate_query import observation_window
 from app.modules.corrections.pdpj_index import chunk_context
 from app.modules.corrections.service import CORRECTION_TYPES, reference_tokens
 from app.modules.corrections.writer import SearchWriter
+from app.modules.corrections.empty_rules import target_errors
 from app.modules.pdpj.service import completed_review, pending_pdpj_records
 from app.modules.spatial.engine import (
     calculate_haversine_distance,
@@ -159,7 +161,9 @@ def run_correction_matching(
     identities: Mapping[str, list[dict[str, Any]]]
     references: Mapping[tuple[str, str], list[dict[str, Any]]]
     coordinates: dict[tuple[float, float], list[int]]
-    if progress:
+    if batch.dataset_type.value == "idpel_kosong":
+        identities, references, coordinates = {}, {}, {}
+    elif progress:
         context = chunk_context(
             db, review, target_fields, [record.data or {} for record in records], batch
         )
@@ -230,7 +234,7 @@ def run_correction_matching(
                 {fields["idpel"] for fields in target_fields if fields["idpel"]}
             )
         )
-    master_ids = {value for (value,) in master_identity_query.distinct().yield_per(400)}
+    master_ids = set() if batch.dataset_type.value == "idpel_kosong" else {value for (value,) in master_identity_query.distinct().yield_per(400)}
     eligible_query = (
         db.query(MasterSisaRecord)
         .join(SourceRecord, SourceRecord.id == MasterSisaRecord.source_record_id)
@@ -280,7 +284,8 @@ def run_correction_matching(
                 MasterSisaRecord.id == CorrectionMasterObservation.master_record_id,
             )
             .filter(
-                CorrectionMasterObservation.snapshot_id == process.master_snapshot_id
+                CorrectionMasterObservation.snapshot_id == process.master_snapshot_id,
+                MasterSisaRecord.snapshot_id == process.master_snapshot_id,
             )
             .order_by(
                 CorrectionMasterObservation.latitude, CorrectionMasterObservation.id
@@ -290,10 +295,9 @@ def run_correction_matching(
             observations_query = observations_query.filter(
                 or_(
                     *(
-                        CorrectionMasterObservation.latitude.between(
-                            latitude - latitude_delta, latitude + latitude_delta
-                        )
-                        for latitude in target_latitudes
+                        observation_window(fields["lat"], fields["lon"], run.radius_meters)
+                        for fields in target_fields
+                        if fields["lat"] is not None and fields["lon"] is not None
                     )
                 )
                 if target_latitudes
@@ -319,7 +323,7 @@ def run_correction_matching(
         total_targets += 1
         last_source_id, last_row_number = record.id, record.row_number
         fields = extract_standard_fields(record.data or {}, batch.column_mapping)
-        errors = validate_fields(fields, batch.dataset_type)
+        errors = target_errors(validate_fields(fields, batch.dataset_type), batch.dataset_type)
         fields.pop("validation_errors", None)
         identity = (
             "empty"
@@ -374,6 +378,11 @@ def run_correction_matching(
             "conflicts": conflicts,
             "warnings": warnings,
         }
+        if progress is not None:
+            coordinate_issue = lat is None or lon is None or any(error["field"] in {"lat", "lon"} for error in errors)
+            key = "coordinate_rows" if coordinate_issue else "other_issue_rows" if status != "no_candidates" else None
+            if key:
+                progress[key] = progress.get(key, 0) + 1
         if status != "no_candidates":
             writer.outcome(outcome)
             continue
@@ -432,6 +441,8 @@ def run_correction_matching(
         if found:
             outcome["search_status"] = "matched"
             matched += 1
+        elif progress is not None:
+            progress["no_candidate_rows"] = progress.get("no_candidate_rows", 0) + 1
         writer.outcome(outcome)
     writer.flush()
     if progress is not None:
@@ -442,6 +453,7 @@ def run_correction_matching(
             )
         elif total_targets != progress["total_rows"]:
             raise ValueError("Jumlah baris koreksi tidak sesuai checkpoint")
+        previous_processed = progress["processed_rows"]
         progress.update(
             processed_rows=total_targets,
             matched_rows=matched,
@@ -449,7 +461,7 @@ def run_correction_matching(
             stage_elapsed_seconds=progress.get("stage_elapsed_seconds", 0.0) + spent,
             stage_timed_rows=progress.get("stage_timed_rows", 0)
             + total_targets
-            - progress["processed_rows"],
+            - previous_processed,
             updated_at=utc_now().isoformat(),
             revision=progress["revision"] + 1,
         )

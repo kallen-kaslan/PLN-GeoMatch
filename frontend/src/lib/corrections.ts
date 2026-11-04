@@ -46,6 +46,25 @@ export function mergeCheckProgress(previous: CorrectionCheck | undefined, next: 
     runs: next.runs.map((run) => run.id === latest.id ? latest : run) };
 }
 export interface CorrectionScope { batch_id?: number; process_id?: number; generation?: number }
+export const emptyStatusLabel = {
+  not_processed: "Belum diproses",
+  coordinate_issues: "Koordinat bermasalah",
+  no_candidates: "Tanpa kandidat",
+  candidates_found: "Kandidat ditemukan",
+} as const;
+export type EmptyStatus = keyof typeof emptyStatusLabel;
+export interface EmptyPendingProcess {
+  batch_id: number; filename: string; source_sheet: string | null;
+  stage: "upload" | "analysis" | "radius" | "search"; state: string;
+  process_id: number | null; analysis_id?: number | null; total_rows: number; processed_rows: number;
+  processing_stage: string | null;
+}
+export interface EmptyOverviewRow {
+  id: number; batch_id: number; row_number: number | null; filename: string; source_sheet: string | null;
+  fields: Fields; status: EmptyStatus; search_status: SearchStatus; candidate_count: number;
+  process_id: number | null; analysis_id?: number | null; generation: number | null; radius_meters: number | null;
+  choice: { idpel: string | null; process_id: number; generation: number } | null;
+}
 export interface CorrectionSummary { total_rows: number; not_checked: number; pdpj_conflicts: number; matched: number; no_candidates: number; invalid_data: number; incomplete_coordinates: number; identity_found: number; identity_not_found: number; eligible_searched: number; generation: number | null }
 export interface MapRadiusSummary {
   process_id: number; generation: number; revision: number; radius_meters: number; stored_radius_meters: number; partial: boolean;
@@ -71,6 +90,9 @@ export interface CorrectionChoice { revision: number; current: CorrectionDecisio
 export interface ChoiceRequest { generation: number; expected_revision: number; candidate_id: number | null; actor: string; reason: string; request_key: string }
 
 export const correctionApi = {
+  emptyPending: async (signal?: AbortSignal) => (await api.get<EmptyPendingProcess[]>("/corrections/idpel_kosong/workflow/pending", { signal })).data,
+  emptySummary: async (signal?: AbortSignal) => (await api.get<{ total_rows: number; counts: Partial<Record<EmptyStatus, number>> }>("/corrections/idpel_kosong/overview/summary", { signal })).data,
+  emptyRows: async (params: { q: string; status: EmptyStatus | "all"; skip: number; limit: number }, signal?: AbortSignal) => (await api.get<{ total: number; items: EmptyOverviewRow[] }>("/corrections/idpel_kosong/overview/records", { params, signal })).data,
   readyPdpj: async () => (await api.get<ReadyPdpj[]>("/corrections/ready-pdpj")).data,
   batches: async (kind: CorrectionKind) => (await api.get<MasterBatch[]>(`/corrections/${kind}/batches`)).data,
   batch: async (kind: CorrectionKind, id: number) => (await api.get<MasterBatchPreview>(`/corrections/${kind}/batches/${id}`)).data,

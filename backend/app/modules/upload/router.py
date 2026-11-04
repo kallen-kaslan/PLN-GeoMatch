@@ -320,7 +320,15 @@ def reset_database(db: DbSession) -> dict[str, str]:
     """Menghapus semua data upload, kandidat, dan riwayat untuk pengujian ulang."""
     try:
         lock_review_session(db)
+        from app.models.radius_analysis import RadiusAnalysis, RadiusAnalysisRow
+        from app.modules.corrections.empty_jobs import SCOPE
+        from app.processing_activity import request_activity
+
+        if any(request_activity(db, SCOPE, identity)["active"] for (identity,) in db.query(RadiusAnalysis.id)):
+            raise HTTPException(409, "Jeda proses IDPEL Kosong dan tunggu hasil aktif tersimpan sebelum reset")
         archive_keys = [key for (key,) in db.query(UploadFileArchive.storage_key).all()]
+        db.query(RadiusAnalysisRow).delete()
+        db.query(RadiusAnalysis).delete()
         db.query(CoordinateRepair).delete()
         db.query(MasterSummaryCache).delete()
         db.query(UploadSheetImport).delete()

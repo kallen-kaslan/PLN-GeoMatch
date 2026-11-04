@@ -1,0 +1,3 @@
+# Preserve Leaflet integrity hashes across Windows checkouts.
+/frontend/public/vendor/leaflet-1.9.4/*.js text eol=lf
+/frontend/public/vendor/leaflet-1.9.4/*.css -text

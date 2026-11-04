@@ -1,6 +1,7 @@
 """Retain original files; previewing an archived sheet never creates reference data."""
 
 import hashlib
+import csv
 import os
 import re
 from itertools import islice
@@ -23,6 +24,7 @@ from app.modules.pdpj.service import lock_review_session
 
 from .ingestion import import_raw_sheet
 from .reader import check_file_size, read_upload
+from .raw_preview import raw_preview
 from .storage import database_write_error
 
 router = APIRouter()
@@ -201,6 +203,22 @@ def preview_sheet(
                 "source_sheet": sheet,
             }
     except (OSError, ValueError, ImportError, BadZipFile) as exc:
+        raise HTTPException(400, f"Pratinjau tidak dapat dibaca: {exc!s}") from exc
+
+
+@router.get("/files/{file_id}/raw-preview")
+def preview_original_table(
+    file_id: int, db: DbSession, sheet_name: str | None = Query(None, max_length=128)
+) -> dict[str, Any]:
+    archive = get_archive(db, file_id)
+    name = selected_sheet(archive, sheet_name)
+    path = archive_path(archive.storage_key)
+    if not path.is_file():
+        raise HTTPException(410, "Berkas tersimpan tidak tersedia")
+    try:
+        with path.open("rb") as source:
+            return raw_preview(source, archive.filename, name)
+    except (OSError, ValueError, ImportError, BadZipFile, csv.Error) as exc:
         raise HTTPException(400, f"Pratinjau tidak dapat dibaca: {exc!s}") from exc
 
 

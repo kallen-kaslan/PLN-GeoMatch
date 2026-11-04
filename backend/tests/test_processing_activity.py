@@ -222,3 +222,19 @@ def test_postgres_activity_uses_shared_advisory_locks_and_releases_them(
         assert not request_activity(db_session, "pdpj", 8)["active"]
     assert not held
     assert not request_activity(db_session, "pdpj", 7)["active"]
+
+
+def test_status_probe_does_not_write_to_an_empty_file_locked_by_another_owner(db_session: Session) -> None:
+    path = processing_activity.lock_path(db_session, "correction", 8765)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.touch()
+    with path.open("r+b") as owner:
+        assert processing_activity.file_lock(owner)
+        try:
+            assert request_activity(db_session, "correction", 8765)["active"]
+            assert path.stat().st_size == 0
+        finally:
+            processing_activity.file_lock(owner, release=True)
+    with activity_lock(db_session, "correction", 8765, "matching"):
+        assert request_activity(db_session, "correction", 8765)["active"]
+    assert not request_activity(db_session, "correction", 8765)["active"]

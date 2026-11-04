@@ -84,7 +84,7 @@ function MasterWorkspace({ kind }: { kind: MasterKind }) {
 
   const imported = (result: ImportResult, filename: string) => {
     setNotice({ ...result, filename }); setShowImport(false); setResumeId(null);
-    setBatchId(result.batch_id); setSearch(""); setStatus("all"); setPage(1);
+    setBatchId((result.batch_ids?.length ?? 0) > 1 ? undefined : result.batch_id); setSearch(""); setStatus("all"); setPage(1);
     void queryClient.invalidateQueries({ queryKey: ["masters", kind] });
     void queryClient.invalidateQueries({ queryKey: ["upload", "batches"] });
   };
@@ -99,7 +99,7 @@ function MasterWorkspace({ kind }: { kind: MasterKind }) {
       {MASTER_TYPES.map((item) => <Link key={item.key} to={`/master/${item.key}`} aria-current={kind === item.key ? "page" : undefined} className={`touch-min whitespace-nowrap rounded-lg border border-ui-border px-5 text-xs font-semibold ${kind === item.key ? "bg-ui-primary text-white " : "bg-white hover:bg-gray-100"}`}>{item.label}</Link>)}
     </nav>
     {notice && <div role="status" className={`flex items-start justify-between gap-3 rounded-lg border p-4 text-xs ${notice.error_rows ? "border-amber-600 bg-amber-50 text-amber-900" : "border-green-600 bg-green-50 text-green-800"}`}>
-      <div><p className="font-semibold">{notice.filename} berhasil disimpan.</p><p className="mt-1">{count(notice.valid_rows)} baris lolos validasi · {count(notice.error_rows)} baris perlu diperbaiki. Data asli tetap tersimpan.</p>{notice.error_rows > 0 && <button type="button" onClick={() => { setStatus("invalid"); setPage(1); }} className="mt-2 font-semibold underline">Lihat baris bermasalah</button>}</div>
+      <div><p className="font-semibold">{notice.filename} berhasil disimpan.</p>{(notice.batch_ids?.length ?? 0) > 1 && <p className="mt-1 font-semibold">{notice.batch_ids?.length} sheet berhasil diimpor.</p>}<p className="mt-1">{count(notice.valid_rows)} baris lolos validasi · {count(notice.error_rows)} baris perlu diperbaiki. Data asli tetap tersimpan.</p>{notice.error_rows > 0 && <button type="button" onClick={() => { setStatus("invalid"); setPage(1); }} className="mt-2 font-semibold underline">Lihat baris bermasalah</button>}</div>
       <button type="button" onClick={() => setNotice(null)} aria-label="Tutup pemberitahuan" className="p-1"><X size={16} /></button>
     </div>}
     {showImport && <ImportPanel key={`${kind}-${resumeId ?? "new"}`} kind={kind} resumeId={resumeId} onSaved={imported} onCancel={() => { setShowImport(false); setResumeId(null); }} />}

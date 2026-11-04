@@ -7,7 +7,44 @@ Data Koreksi sekarang memiliki dua halaman terpisah:
 
 Sidebar memiliki submenu untuk kedua kategori. Tautan lama `/upload` diarahkan ke halaman IDPEL Tidak Ketemu. Kategori mengikuti jenis unggahan asal dan tetap dipertahankan meskipun hasil pemeriksaan berbeda dari perkiraan awal.
 
-## Penggunaan
+## IDPEL Kosong: halaman awal dan unggah bertahap
+
+Saat ini pengguna meminta mode pratinjau UI: `PREVIEW_UPLOAD_FLOW=true` pada
+`EmptyCorrectionUpload.tsx`. Tahap 1–4 bisa dikunjungi tanpa berkas; pilihan tahap
+tersimpan pada URL `preview_step`. Unggah baru dan Simpan dinonaktifkan, serta
+analisis/pencarian tidak dijalankan. Dokumen tersimpan tetap bisa dibaca. Alur
+penyimpanan di bawah tersedia di kode tetapi belum diaktifkan kembali.
+
+Halaman awal menggabungkan semua unggahan yang selesai disimpan, dengan pencarian
+dan filter status saja. Ringkasan tidak bisa diklik. Status kandidat menghitung
+baris yang memiliki kandidat, terlepas dari pilihan petugas; IDPEL tidak ditampilkan
+sebagai kolom tabel utama. No menggunakan ID unik baris sumber.
+
+**Unggah data** membuka halaman `?flow=upload` dengan empat penanda langkah.
+Form memiliki pilihan **Unggah berkas baru** dan **Gunakan berkas tersimpan**.
+Daftar berkas baru dimuat ketika sumber tersimpan dipilih. Baik unggahan baru
+maupun berkas tersimpan harus dipilih sheet-nya terlebih dahulu; CSV mempunyai
+pilihan Tabel CSV. Sheet pertama tidak otomatis dipilih. Pratinjau baru muncul
+setelah pemilihan, berisi lima baris data asli, tanpa kolom tambahan, penggantian
+header kosong/duplikat, pengurutan, atau normalisasi isi. API raw-preview terpisah
+dari pemetaan kolom untuk penyimpanan. Format visual Excel tidak direplikasi.
+Saat disimpan, kolom otomatis dikenali, termasuk `alamatlengkap`, `nokwhmeter`, `latitudey`,
+`longitude`, dan pasangan Koordinat X/Y. **Simpan dan lanjutkan** menyimpan serta
+memvalidasi data sebelum menampilkan langkah Analisis jarak. Analisis otomatis dan
+pengaturan radius baru belum tersedia pada fase 2 ini; tombol analisis nonaktif.
+
+Status batch di database menentukan langkah pemulihan setelah refresh. Unggahan
+yang sudah disimpan tidak perlu diunggah ulang. Card **Proses belum selesai** di
+bawah ringkasan membaca `/corrections/idpel_kosong/workflow/pending`; unggahan
+belum dikonfirmasi kembali ke langkah unggah, sedangkan unggahan selesai kembali
+ke Analisis jarak. Pemeriksaan lama yang belum selesai membuka workspace progres
+lama. Pembacaan card tidak menjalankan pekerjaan atau mengubah database.
+
+Sebelum tombol Simpan diklik, berkas asli yang sudah diarsipkan dapat dipilih lagi
+melalui Riwayat berkas unggahan. Pemulihan belum mencakup transfer berkas yang
+terputus sebelum server menyelesaikan penyimpanan. Tidak ada migrasi skema baru.
+
+## Penggunaan workspace pemeriksaan lama
 
 1. Selesaikan validasi PDPJ melalui menu Data PDPJ.
 2. Buka kategori koreksi yang sesuai, unggah CSV/XLSX, pilih sheet bila perlu, lalu konfirmasi mapping. Unggahan yang terhenti pada mapping dapat dilanjutkan tanpa duplikasi berkas.
@@ -165,6 +202,16 @@ Kesamaan nomor agenda tidak menghalangi pencarian maupun pemilihan kandidat pada
 Referensi generik yang jenisnya tidak dapat dipastikan tidak dipakai untuk menuduh benturan secara otomatis. Untuk kolom khusus pada berkas Anda, pilih mapping jenis referensi secara eksplisit. Pemeriksaan PDPJ lama tetap dapat memakai jenis referensi yang dikenali dari header asal; nilai yang sudah diganti melalui pelengkapan tidak dibangkitkan kembali dari sel lama.
 
 Detail benturan menyimpan jenis alasan, nilai yang sama, nomor baris PDPJ, dan snapshot data PDPJ terkait. Baris tidak dihapus dari sumber.
+
+## Alur baru IDPEL Kosong
+
+Fase 3 menyiapkan analisis radius dengan jarak terdekat tersimpan dan radius
+manual. Tampilan empat tahap masih mode pratinjau sesuai permintaan pengguna;
+operasi nyata belum diaktifkan. Rincian: [Analisis radius IDPEL Kosong](idpel-kosong-radius.md).
+Pada pencarian baru IDPEL Kosong, hanya koordinat dan kesesuaian kategori
+menghalangi pencarian; benturan meter/survei tidak digunakan. Pengecualian IDPEL
+master milik PDPJ tetap berlaku. Tabel benturan di atas berlaku untuk IDPEL Tidak
+Ketemu dan menjelaskan hasil historis sebelum perubahan aturan ini.
 
 ## Master dan kandidat
 

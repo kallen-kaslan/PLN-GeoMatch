@@ -10,6 +10,7 @@ export interface UploadFileHistory {
   created_at: string; imports: SheetImport[];
 }
 export interface FilePreview { headers: string[]; rows: Record<string, unknown>[]; headerRow?: number }
+export interface OriginalTablePreview { headers: unknown[]; rows: unknown[][]; header_row: number }
 export const uploadFilesApi = {
   list: async () => (await api.get<UploadFileHistory[]>("/upload/files")).data,
   store: async (file: File) => {
@@ -17,5 +18,6 @@ export const uploadFilesApi = {
     return (await api.post<UploadFileHistory>("/upload/files", body, { headers: { "Content-Type": "multipart/form-data" } })).data;
   },
   preview: async (id: number, sheet?: string) => (await api.get<FilePreview>(`/upload/files/${id}/preview`, { params: { sheet_name: sheet || undefined } })).data,
+  originalPreview: async (id: number, sheet: string, signal?: AbortSignal) => (await api.get<OriginalTablePreview>(`/upload/files/${id}/raw-preview`, { params: { sheet_name: sheet || undefined }, signal })).data,
   importSheet: async (id: number, kind: SourceKind, sheet: string, period: string) => (await api.post<{ id: number; status: string }>(`/upload/files/${id}/import-sheet`, { dataset_type: kind, sheet_name: sheet || null, period: period || null })).data,
 };

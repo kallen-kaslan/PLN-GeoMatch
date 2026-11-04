@@ -1,6 +1,7 @@
 {
   "devDependencies": {
     "@tailwindcss/postcss": "^4.3.3",
+    "concurrently": "^10.0.6",
     "postcss": "^8.5.31",
     "tailwindcss": "^4.3.3"
   },
@@ -14,6 +15,6 @@
     "motion": "^14.7.1"
   },
   "scripts": {
-    "dev": "npx concurrently \"cd backend && uvicorn app.main:app --reload --port 8000\" \"cd frontend && npm run dev\""
+    "dev": "concurrently --kill-others \"cd backend && venv\\Scripts\\python.exe -m uvicorn app.main:app --port 8000\" \"npm --prefix frontend run dev -- --host 127.0.0.1 --port 5173 --strictPort\""
   }
 }

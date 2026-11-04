@@ -24,6 +24,9 @@ from app.models.matching import (
 from app.models.pdpj import PdpjReview
 from app.models.upload import BatchStatus, DatasetType, SourceRecord, UploadBatch
 from app.modules.corrections.decisions import router as decisions_router
+from app.modules.corrections.overview import router as overview_router
+from app.modules.corrections.workflow import router as workflow_router
+from app.modules.corrections.radius_router import router as radius_router
 from app.modules.corrections.map_summary import radius_summary
 from app.modules.corrections.pdpj_updates import pdpj_update_info
 from app.modules.corrections.progress import advance_progress, control_progress
@@ -731,5 +734,8 @@ def record_detail(
     }
 
 
+router.include_router(overview_router)
+router.include_router(workflow_router)
+router.include_router(radius_router)
 router.include_router(decisions_router)
 router.include_router(results_router)

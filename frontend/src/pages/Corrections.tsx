@@ -11,6 +11,8 @@ import { PreviewPagination } from "@/components/data/PreviewPagination";
 import { MasterImport } from "@/components/master/MasterImport";
 import { CorrectionProgress } from "@/components/corrections/CorrectionProgress";
 import { CorrectionDetail } from "@/components/corrections/CorrectionDetail";
+import { EmptyCorrectionsOverview } from "@/components/corrections/EmptyCorrectionsOverview";
+import { EmptyCorrectionUpload } from "@/components/corrections/EmptyCorrectionUpload";
 import type { ApiError } from "@/lib/api";
 import { displayValue, type CorrectionKind, type ImportResult } from "@/lib/master";
 import { CORRECTION_TYPES, correctionApi, identityLabel, mergeCheckProgress, searchLabel, type CorrectionCheck, type CorrectionFilter, type CorrectionRun, type CorrectionScope } from "@/lib/corrections";
@@ -54,7 +56,7 @@ function CorrectionWorkspace({ kind }: { kind: CorrectionKind }) {
     try { sessionStorage.setItem(`pln_geomatch_correction_actor_${kind}`, actor); }
     catch { /* Keep the editable label available when browser storage is disabled. */ }
   }, [actor, kind]);
-  const [showImport, setShowImport] = useState(false);
+  const [showImport, setShowImport] = useState(() => kind === "idpel_kosong" && params.get("upload") === "1");
   const [resumeId, setResumeId] = useState<number | null>(null);
   const [search, setSearch] = useState("");
   const deferredSearch = useDebouncedSearch(search);
@@ -150,6 +152,7 @@ function CorrectionWorkspace({ kind }: { kind: CorrectionKind }) {
   const upgradePaused = savedPause && check.data?.latest_run.candidate_policy === 1;
   const blocked = newSource || !check.data ? newCheckBlocked : formBlocked || (pending && !upgradePaused) || processingActive;
   return <div className="space-y-5 sm:space-y-6">
+    {kind === "idpel_kosong" && <Link to="/koreksi/idpel-kosong" className="inline-block text-sm font-bold underline">← Kembali ke seluruh data IDPEL Kosong</Link>}
     <header className="geo-page-heading"><div><h1 className="fluid-h1 flex items-center gap-2 font-semibold"><FolderUp size={26} />Data Koreksi</h1><p className="mt-1 text-sm font-semibold">{descriptor.label}</p><p className="mt-1 text-xs text-ui-muted">Periksa benturan dengan PDPJ dan cari kandidat dari master yang tersisa.</p></div><div className="flex gap-2"><button type="button" aria-label="Muat ulang data koreksi" onClick={() => { void queryClient.invalidateQueries({ queryKey: ["corrections", kind] }); void readyPdpj.refetch(); }} className={button}><RefreshCw size={16} /></button><button type="button" disabled={showImport} onClick={() => { setShowImport(true); setResumeId(null); }} className={buttonClass.primary}><Plus size={16} />Unggah data koreksi</button></div></header>
     <nav aria-label="Kategori data koreksi" className="flex flex-wrap gap-2">{CORRECTION_TYPES.map((item) => <Link key={item.key} to={`/koreksi/${item.slug}`} aria-current={item.key === kind ? "page" : undefined} className={`${item.key === kind ? buttonClass.primary : button}`}>{item.label}</Link>)}</nav>
     {notice && <p role="status" className="rounded-lg border border-green-700 bg-green-50 p-4 text-sm text-green-800">{notice}</p>}
@@ -193,7 +196,10 @@ function CorrectionWorkspace({ kind }: { kind: CorrectionKind }) {
 
 export default function CorrectionsPage() {
   const { category } = useParams();
+  const [params] = useSearchParams();
   const descriptor = CORRECTION_TYPES.find((item) => item.slug === category);
   if (!descriptor) return <Navigate to="/koreksi/idpel-tidak-ketemu" replace />;
+  if (descriptor.key === "idpel_kosong" && params.get("flow") === "upload") return <EmptyCorrectionUpload />;
+  if (descriptor.key === "idpel_kosong" && !params.has("workspace") && !params.has("batch_id") && !params.has("process_id")) return <EmptyCorrectionsOverview />;
   return <CorrectionWorkspace key={descriptor.key} kind={descriptor.key} />;
 }
