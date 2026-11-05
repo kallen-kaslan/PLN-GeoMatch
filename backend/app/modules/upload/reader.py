@@ -13,7 +13,7 @@ from openpyxl import load_workbook
 from .normalization import clean_text, normalize_source_headers
 
 MAX_UPLOAD_BYTES = 500 * 1024 * 1024
-IMPORT_CHUNK_ROWS = 1000
+IMPORT_CHUNK_ROWS = 10000
 ENCODING_CHUNK_BYTES = 1024 * 1024
 
 

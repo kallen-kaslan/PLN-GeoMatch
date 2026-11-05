@@ -34,3 +34,4 @@ backend/alembic/versions/*.pyc
 # Claude & Storage
 .claude/worktrees/
 backend/storage/
+supabase_setup_safe.sql

@@ -1,4 +1,4 @@
-import { useRef, useState, type ChangeEvent } from "react";
+import { useEffect, useRef, useState, type ChangeEvent } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import Papa from "papaparse";
 import * as XLSX from "xlsx";
@@ -143,6 +143,9 @@ export function MasterImport({ kind, saved, onSaved, onCancel }: {
   const sheetImport = (name: string) => selectedArchive?.imports.find((item) => item.dataset_type === kind && (item.period ?? "") === period && (item.source_sheet ?? "") === name);
   const alreadySaved = sheetImport(sheet)?.status === "completed";
   const readVersion = useRef(0);
+  const [importPhase, setImportPhase] = useState<string | null>(null);
+  const [elapsedSeconds, setElapsedSeconds] = useState(0);
+  const [progress, setProgress] = useState<{ total_rows: number; processed_rows: number; valid_rows: number; status: string; percentage: number } | null>(null);
 
   const acceptPreview = (preview: ImportPreview) => {
     if (!preview.headers.length || preview.headers.some((header) => !header.trim()) || new Set(preview.headers).size !== preview.headers.length) {
@@ -160,6 +163,7 @@ export function MasterImport({ kind, saved, onSaved, onCancel }: {
       let batchId = uploadId;
       if (batchId === null) {
         if (!activeArchiveId) throw new Error(`Pilih berkas ${noun} dari riwayat atau unggah terlebih dahulu.`);
+        setImportPhase("Tahap 1/2: Menyimpan data mentah ke database cloud...");
         const uploaded = await uploadFilesApi.importSheet(activeArchiveId, kind, sheet, period);
         if (uploaded.status === "completed") {
           await queryClient.invalidateQueries({ queryKey: ["upload-files"] });
@@ -168,6 +172,7 @@ export function MasterImport({ kind, saved, onSaved, onCancel }: {
         batchId = uploaded.id;
         setUploadId(batchId);
       }
+      setImportPhase("Tahap 2/2: Memvalidasi pemetaan kolom & normalisasi baris...");
       return (await api.post<ImportResult>("/upload/confirm-mapping", { batch_id: batchId, column_mapping: mapping })).data;
     },
     onSuccess: async (result) => {
@@ -175,6 +180,48 @@ export function MasterImport({ kind, saved, onSaved, onCancel }: {
       onSaved(result, selectedArchive?.filename ?? file?.name ?? saved?.filename ?? "Berkas master");
     },
   });
+
+  // Poll progress during mutation
+  useEffect(() => {
+    let interval: ReturnType<typeof setInterval> | undefined;
+    let timer: ReturnType<typeof setInterval> | undefined;
+
+    if (mutation.isPending) {
+      setElapsedSeconds(0);
+      timer = setInterval(() => {
+        setElapsedSeconds((prev) => prev + 1);
+      }, 1000);
+
+      const pollProgress = async () => {
+        try {
+          if (uploadId !== null) {
+            const response = await api.get(`/upload/batches/${uploadId}/progress`);
+            if (response.data) {
+              setProgress(response.data);
+            }
+          } else if (activeArchiveId) {
+            const response = await api.get(`/upload/files/${activeArchiveId}/progress`);
+            if (response.data && response.data.status !== "idle") {
+              setProgress(response.data);
+            }
+          }
+        } catch {
+          // Ignore progress poll errors
+        }
+      };
+
+      pollProgress();
+      interval = setInterval(pollProgress, 500);
+    } else {
+      setImportPhase(null);
+      setProgress(null);
+      setElapsedSeconds(0);
+    }
+    return () => {
+      if (interval) clearInterval(interval);
+      if (timer) clearInterval(timer);
+    };
+  }, [mutation.isPending, uploadId, activeArchiveId]);
 
   const chooseFile = async (event: ChangeEvent<HTMLInputElement>) => {
     const chosen = event.target.files?.[0];
@@ -288,6 +335,52 @@ export function MasterImport({ kind, saved, onSaved, onCancel }: {
           </table></div>
         </div>
       </>}
+      {mutation.isPending && (
+        <div className="rounded-lg border border-blue-200 bg-blue-50/80 p-3.5 text-xs text-blue-900 space-y-2">
+          <div className="flex items-center justify-between font-medium">
+            <span className="flex items-center gap-2 text-blue-800">
+              <LoaderCircle size={15} className="animate-spin text-ui-primary" />
+              {importPhase ?? "Sedang memproses data..."}
+            </span>
+            <span className="font-mono bg-blue-100 text-blue-800 px-2 py-0.5 rounded text-[11px]">
+              {elapsedSeconds} detik
+            </span>
+          </div>
+          {progress && (
+            <div className="space-y-1.5">
+              <div className="flex items-center justify-between text-[10px] text-blue-700/80">
+                <span>
+                  {progress.total_rows > 0 ? (
+                    <>
+                      {progress.percentage}% ({progress.processed_rows.toLocaleString()} / {progress.total_rows.toLocaleString()} baris)
+                    </>
+                  ) : (
+                    <>
+                      {progress.processed_rows.toLocaleString()} baris tersimpan
+                    </>
+                  )}
+                </span>
+                <span className="font-mono">{progress.status}</span>
+              </div>
+              <div className="w-full bg-blue-200/70 rounded-full h-2 overflow-hidden">
+                <div
+                  className={`bg-ui-primary h-full rounded-full transition-all duration-300 ease-out ${progress.total_rows === 0 ? "animate-pulse" : ""}`}
+                  style={{
+                    width: `${
+                      progress.total_rows > 0
+                        ? progress.percentage
+                        : Math.min(Math.max((progress.processed_rows / 100000) * 100, 10), 95)
+                    }%`,
+                  }}
+                />
+              </div>
+            </div>
+          )}
+          <p className="text-[11px] text-blue-700/80">
+            Untuk berkas besar (100.000+ baris), proses penyimpanan & validasi ke cloud Supabase membutuhkan waktu sekitar 30–60 detik. Mohon jangan menutup halaman ini.
+          </p>
+        </div>
+      )}
       <div className="flex flex-col justify-between gap-3 border-t border-ui-border pt-4 sm:flex-row sm:items-center">
         <p className="max-w-xl text-xs text-ui-muted">Simpan IDPEL sebagai teks agar nol di depan tetap utuh. Data asli tetap tersedia pada detail setiap baris.</p>
         <button type="button" disabled={alreadySaved || !headers.length || fields.some((field) => field.required && !mapping[field.key]) || reading || mutation.isPending || !!parseError} onClick={() => mutation.mutate()} className="touch-min shrink-0 gap-2 rounded-lg border border-ui-border bg-ui-primary px-4 py-2.5 text-xs font-semibold text-white  hover:bg-ui-primary-hover disabled:cursor-not-allowed disabled:opacity-40">

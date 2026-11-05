@@ -8,8 +8,15 @@ CREATE TABLE IF NOT EXISTS public.profiles (
   id UUID PRIMARY KEY REFERENCES auth.users(id) ON DELETE CASCADE,
   username TEXT,
   role TEXT NOT NULL DEFAULT 'analis' CHECK (role IN ('admin', 'auditor', 'analis')),
+  status TEXT NOT NULL DEFAULT 'active',
+  created_at TIMESTAMPTZ DEFAULT NOW(),
   updated_at TIMESTAMPTZ DEFAULT NOW()
 );
+
+-- Tambahkan kolom jika tabel sudah sempat dibuat sebelumnya
+ALTER TABLE public.profiles ADD COLUMN IF NOT EXISTS status TEXT NOT NULL DEFAULT 'active';
+ALTER TABLE public.profiles ADD COLUMN IF NOT EXISTS created_at TIMESTAMPTZ DEFAULT NOW();
+ALTER TABLE public.profiles ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ DEFAULT NOW();
 
 -- 2. Aktifkan Row Level Security (RLS)
 ALTER TABLE public.profiles ENABLE ROW LEVEL SECURITY;
@@ -46,11 +53,14 @@ CREATE POLICY "Admins can delete profiles"
 CREATE OR REPLACE FUNCTION public.handle_new_user()
 RETURNS TRIGGER AS $$
 BEGIN
-  INSERT INTO public.profiles (id, username, role)
+  INSERT INTO public.profiles (id, username, role, status, created_at, updated_at)
   VALUES (
     NEW.id,
     COALESCE(NEW.raw_user_meta_data->>'username', split_part(NEW.email, '@', 1)),
-    COALESCE(NEW.raw_app_meta_data->>'role', 'analis')
+    COALESCE(NEW.raw_app_meta_data->>'role', 'analis'),
+    'active',
+    NOW(),
+    NOW()
   )
   ON CONFLICT (id) DO UPDATE
   SET role = EXCLUDED.role,
@@ -109,6 +119,7 @@ CREATE TRIGGER on_auth_user_updated
   EXECUTE FUNCTION public.sync_auth_role_to_profile();
 
 -- 8. View untuk Admin melihat users (bypass auth.users RLS)
+DROP VIEW IF EXISTS public.user_accounts CASCADE;
 CREATE OR REPLACE VIEW public.user_accounts AS
 SELECT
     u.id,

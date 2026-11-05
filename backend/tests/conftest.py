@@ -62,6 +62,7 @@ def client(db_session):
     from fastapi import FastAPI
     from fastapi.testclient import TestClient
 
+    from app.auth import AuthUser, get_current_user
     from app.database import get_db
     from app.modules.history.router import router as history_router
     from app.modules.spatial.router import router as spatial_router
@@ -78,6 +79,9 @@ def client(db_session):
     app.include_router(pdpj_router)
     app.include_router(correction_router)
     app.dependency_overrides[get_db] = lambda: db_session
+    app.dependency_overrides[get_current_user] = lambda: AuthUser(
+        id="test-operator", email="operator@pln.co.id", role="admin"
+    )
     with TestClient(app) as test_client:
         yield test_client
 

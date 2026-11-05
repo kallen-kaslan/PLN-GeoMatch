@@ -52,6 +52,7 @@ from .normalization import (
     validate_fields,
     validate_mapping,
 )
+from .progress_state import UPLOAD_PROGRESS
 from .reader import IMPORT_CHUNK_ROWS, check_file_size, read_upload
 from .storage import database_write_error
 
@@ -74,6 +75,42 @@ def list_batches(db: DbSession):
         }
         for b in batches
     ]
+
+
+@router.get("/batches/{batch_id}/progress", dependencies=[require_viewer])
+def get_progress(batch_id: int, db: DbSession):
+    """Get real-time progress for a batch processing."""
+    batch = db.query(UploadBatch).filter(UploadBatch.id == batch_id).first()
+    if not batch:
+        raise HTTPException(status_code=404, detail="Batch tidak ditemukan")
+
+    # Get progress from in-memory state or from database
+    progress = UPLOAD_PROGRESS.get(batch_id)
+    if progress:
+        total = progress.get("total_rows", 0)
+        processed = progress.get("processed_rows", 0)
+        percentage = round((processed / max(total, 1)) * 100, 1) if total > 0 else 0.0
+        return {
+            "batch_id": batch_id,
+            "total_rows": total,
+            "processed_rows": processed,
+            "valid_rows": progress.get("valid_rows", 0),
+            "error_rows": progress.get("errors", []),
+            "status": progress.get("status", "processing"),
+            "percentage": min(percentage, 100.0),
+        }
+
+    # Fallback to database values if not in progress state
+    is_completed = batch.status == BatchStatus.COMPLETED
+    return {
+        "batch_id": batch_id,
+        "total_rows": batch.total_rows or 0,
+        "processed_rows": batch.total_rows if is_completed else 0,
+        "valid_rows": batch.valid_rows or 0,
+        "error_rows": [],
+        "status": batch.status,
+        "percentage": 100.0 if is_completed else 0.0,
+    }
 
 
 @router.post("/seed-dummy", dependencies=[require_admin])
@@ -533,6 +570,23 @@ def apply_mapping(req: MappingRequest, db: Session) -> dict:
     errors: list[dict[str, Any]] = []
     last_id = 0
     total_rows = 0
+    expected_total = batch.total_rows or 0
+    if expected_total == 0:
+        expected_total = (
+            db.query(SourceRecord).filter(SourceRecord.batch_id == batch.id).count()
+        )
+
+    UPLOAD_PROGRESS[batch.id] = {
+        "batch_id": batch.id,
+        "total_rows": expected_total,
+        "processed_rows": 0,
+        "valid_rows": 0,
+        "errors": [],
+        "status": "validating",
+    }
+
+    # Collect all validated records in memory first
+    validated_records = []
     while True:
         records = (
             db.query(SourceRecord)
@@ -543,7 +597,6 @@ def apply_mapping(req: MappingRequest, db: Session) -> dict:
         )
         if not records:
             break
-        updates = []
         for record in records:
             total_rows += 1
             row_number = record.row_number or total_rows + 1
@@ -556,9 +609,10 @@ def apply_mapping(req: MappingRequest, db: Session) -> dict:
             }
             validation_errors = validate_fields(fields, batch.dataset_type)
             is_valid = not validation_errors
-            updates.append(
+            validated_records.append(
                 {
-                    "id": record.id,
+                    "batch_id": batch.id,
+                    "data": record.data,
                     "row_number": row_number,
                     "idpel": fields["idpel"],
                     "normalized_data": normalized_data,
@@ -576,11 +630,22 @@ def apply_mapping(req: MappingRequest, db: Session) -> dict:
                     }
                 )
         last_id = records[-1].id
-        db.bulk_update_mappings(SourceRecord.__mapper__, updates)
+        # Update progress state after each chunk
+        UPLOAD_PROGRESS[batch.id] = {
+            "batch_id": batch.id,
+            "total_rows": expected_total,
+            "processed_rows": total_rows,
+            "valid_rows": valid_rows,
+            "errors": errors,
+            "status": "validating",
+        }
+
+    # DELETE old records and INSERT validated ones in bulk chunks
+    db.query(SourceRecord).filter(SourceRecord.batch_id == batch.id).delete()
+    for i in range(0, len(validated_records), IMPORT_CHUNK_ROWS):
+        chunk = validated_records[i : i + IMPORT_CHUNK_ROWS]
+        db.bulk_insert_mappings(SourceRecord.__mapper__, chunk)
         db.flush()
-        # Release each chunk from the identity map before loading the next one.
-        for record in records:
-            db.expunge(record)
     batch.column_mapping = req.column_mapping
     batch.status = BatchStatus.COMPLETED
     batch.total_rows = total_rows
@@ -599,6 +664,15 @@ def apply_mapping(req: MappingRequest, db: Session) -> dict:
             CoordinateRepair(batch_id=batch.id, version=REPAIR_VERSION, rows_changed=0)
         )
     db.commit()
+    # Final progress update
+    UPLOAD_PROGRESS[batch.id] = {
+        "batch_id": batch.id,
+        "total_rows": total_rows,
+        "processed_rows": total_rows,
+        "valid_rows": valid_rows,
+        "errors": errors,
+        "status": "completed",
+    }
     return {
         "message": "Mapping diterapkan dan validasi selesai",
         "batch_id": batch.id,

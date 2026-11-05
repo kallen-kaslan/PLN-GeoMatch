@@ -23,6 +23,7 @@ from app.models.upload_file import UploadFileArchive, UploadSheetImport
 from app.modules.pdpj.service import lock_review_session
 
 from .ingestion import import_raw_sheet
+from .progress_state import UPLOAD_PROGRESS
 from .reader import check_file_size, read_upload
 from .storage import database_write_error
 
@@ -240,7 +241,13 @@ def import_sheet(file_id: int, req: SheetRequest, db: DbSession) -> dict[str, An
             )
         with path.open("rb") as source:
             batch = import_raw_sheet(
-                db, source, archive.filename, req.dataset_type, name, req.period
+                db,
+                source,
+                archive.filename,
+                req.dataset_type,
+                name,
+                req.period,
+                archive_id=archive.id,
             )
         db.add(
             UploadSheetImport(
@@ -258,3 +265,33 @@ def import_sheet(file_id: int, req: SheetRequest, db: DbSession) -> dict[str, An
     except (OSError, ValueError, ImportError, BadZipFile) as exc:
         db.rollback()
         raise HTTPException(400, f"Sheet tidak dapat disimpan: {exc!s}") from exc
+
+
+@router.get("/files/{file_id}/progress", dependencies=[require_viewer])
+def get_file_progress(file_id: int):
+    progress = UPLOAD_PROGRESS.get(f"archive_{file_id}")
+    if progress:
+        total = progress.get("total_rows", 0)
+        processed = progress.get("processed_rows", 0)
+        percentage = round((processed / max(total, 1)) * 100, 1) if total > 0 else 0.0
+        return {
+            "file_id": file_id,
+            "batch_id": progress.get("batch_id"),
+            "total_rows": total,
+            "processed_rows": processed,
+            "valid_rows": progress.get("valid_rows", 0),
+            "errors": progress.get("errors", []),
+            "status": progress.get("status", "uploading"),
+            "percentage": percentage,
+        }
+    return {
+        "file_id": file_id,
+        "batch_id": None,
+        "total_rows": 0,
+        "processed_rows": 0,
+        "valid_rows": 0,
+        "errors": [],
+        "status": "idle",
+        "percentage": 0.0,
+    }
+
