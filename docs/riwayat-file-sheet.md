@@ -8,9 +8,14 @@ Formulir impor bersama untuk Data Master, PDPJ, dan kedua kategori Data Koreksi 
 4. Tekan **Simpan dan validasi** untuk mengaktifkan sheet tersebut. Sheet lain tetap belum tersimpan sebagai acuan.
 5. Buka kembali formulir dan pilih file dari riwayat untuk menyimpan sheet berikutnya, tanpa mengirim file asli lagi.
 
+Pada **Data Master Prabayar/Pascabayar/DIL**, dropdown **Pilih sheet untuk diimpor** mendukung beberapa kotak centang dan **Pilih semua yang belum diimpor**. Sheet yang selesai tetap terlihat dalam keadaan tercentang dan nonaktif, tetapi tidak dihitung sebagai pilihan impor baru. Kontrol **Pratinjau sheet** hanya mengubah tampilan lima baris, bukan pilihan impor. Pastikan semua sheet yang dicentang sesuai kategori master yang sedang dibuka; file gabungan dapat berisi kategori berbeda.
+
+Tombol simpan memproses pilihan berurutan, dengan mapping otomatis tersendiri untuk setiap sheet dan endpoint impor/validasi yang sama. Progres ditampilkan per sheet. Jika satu sheet gagal, proses berhenti: sheet yang selesai tetap tersimpan dan nonaktif setelah riwayat diperbarui; sheet yang gagal dan yang belum diproses dapat dicoba kembali. Setelah beberapa sheet berhasil, pemberitahuan menjumlahkan baris hasil impor dan tabel kembali menampilkan semua berkas pada kategori tersebut. Impor CSV, kelanjutan batch lama, PDPJ, dan Data Koreksi tetap menggunakan alur satu batch.
+
 Status pada dropdown:
 
-- Nama sheet diawali `✓` jika batch sheet sudah selesai dipetakan dan divalidasi. Sheet yang dipilih juga diberi latar hijau dan tombol penyimpanan dinonaktifkan.
+- Nama sheet diawali `✓` jika batch sheet sudah selesai dipetakan dan divalidasi. Sheet tersebut dinonaktifkan untuk mencegah impor ulang pada cakupan yang sama.
+- Sheet yang sudah selesai tetap terlihat tetapi tidak dapat dipilih. Saat memilih file dari riwayat atau mengubah periode, formulir memilih sheet yang belum selesai; jika semuanya selesai, muncul pesan **Semua sheet sudah diimpor** tanpa memuat pratinjau. Pada unggahan Excel, pencarian awal hanya membaca sheet yang belum selesai. Pratinjau disimpan sementara dalam cache frontend per file/sheet agar pemilihan ulang tidak membaca file lagi selama cache masih tersedia.
 - Sheet lainnya hanya menampilkan nama, tanpa keterangan status. Jika terdapat batch sementara dari konfirmasi sebelumnya yang gagal, batch yang sama tetap dilanjutkan, bukan digandakan.
 
 Ceklis mengikuti **file, sheet, kategori, dan periode**. Sheet yang disimpan untuk DIL tidak ditandai sudah tersimpan untuk PDPJ. File berisi byte identik dikenali dengan SHA-256 sehingga unggah ulang tidak menciptakan salinan riwayat baru. Nama file sama dengan isi berbeda tetap merupakan riwayat berbeda.

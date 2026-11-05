@@ -1,5 +1,7 @@
 """Global radius changes update whole-file counts and targets without selecting a row."""
 
+from workspace_controls import open_radius_controls
+
 import httpx
 import pytest
 from playwright.sync_api import Page, expect
@@ -50,7 +52,7 @@ def test_global_expansion_without_target_and_radius_specific_status_filters(
     expect(table).to_contain_text("80 baris sesuai filter")
     expect(
         page.get_by_role("button", name="Tampilkan kandidat target", exact=True)
-    ).to_be_disabled()
+    ).to_have_count(0)
     radius_filter = page.get_by_label("Radius peta (meter)", exact=True)
     expect(radius_filter).to_have_attribute("max", "100")
     radius_filter.fill("150")
@@ -63,6 +65,7 @@ def test_global_expansion_without_target_and_radius_specific_status_filters(
     expand = page.get_by_role(
         "button", name="Perluas pemeriksaan dan tampilkan kandidat", exact=True
     )
+    open_radius_controls(page)
     expansion_radius = page.get_by_label("Radius perluasan (meter)", exact=True)
     expansion_radius.fill("100")
     expect(expand).to_be_disabled()

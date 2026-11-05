@@ -12,6 +12,8 @@ from app.models.matching import MatchCandidate, MatchingRun, ReconciliationProce
 from app.modules.corrections.results import export_results, results_summary
 from app.modules.corrections.service import CorrectionKind
 from app.modules.corrections.spreadsheet import Spreadsheet
+from app.modules.history.deletion import delete_history
+from app.modules.upload.storage import database_write_error
 
 DbSession = Annotated[Session, Depends(get_db)]
 
@@ -52,44 +54,31 @@ def get_process_history(db: DbSession):
 
 
 @router.delete("/history/processes/{process_id}")
-def delete_process(process_id: int, db: DbSession):
+def delete_process(process_id: int, db: DbSession) -> dict[str, str]:
     """Menghapus satu riwayat proses beserta semua kandidat hasil pencocokannya"""
-    process = (
-        db.query(ReconciliationProcess)
-        .filter(ReconciliationProcess.id == process_id)
-        .first()
-    )
-    if not process:
-        raise HTTPException(status_code=404, detail="Proses tidak ditemukan")
-
     try:
-        # Hapus kandidat terkait terlebih dahulu (cascade fallback)
-        db.query(MatchCandidate).filter(
-            MatchCandidate.process_id == process_id
-        ).delete()
-        db.query(MatchingRun).filter(MatchingRun.process_id == process_id).delete()
-        db.delete(process)
+        delete_history(db, process_id)
         db.commit()
         return {"message": f"Riwayat proses #{process_id} berhasil dihapus"}
-    except SQLAlchemyError as e:
+    except HTTPException:
         db.rollback()
-        raise HTTPException(status_code=500, detail=f"Gagal menghapus riwayat: {e!s}")
+        raise
+    except SQLAlchemyError as exc:
+        raise database_write_error(db, exc, "penghapusan riwayat") from exc
 
 
 @router.delete("/history/processes")
-def clear_all_history(db: DbSession):
+def clear_all_history(db: DbSession) -> dict[str, str]:
     """Menghapus semua riwayat proses rekonsiliasi"""
     try:
-        db.query(MatchCandidate).delete()
-        db.query(MatchingRun).delete()
-        db.query(ReconciliationProcess).delete()
+        delete_history(db)
         db.commit()
         return {"message": "Semua riwayat proses rekonsiliasi berhasil dibersihkan"}
-    except SQLAlchemyError as e:
+    except HTTPException:
         db.rollback()
-        raise HTTPException(
-            status_code=500, detail=f"Gagal membersihkan riwayat: {e!s}"
-        )
+        raise
+    except SQLAlchemyError as exc:
+        raise database_write_error(db, exc, "penghapusan seluruh riwayat") from exc
 
 
 def get_process_generation(

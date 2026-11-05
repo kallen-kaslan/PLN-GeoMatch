@@ -2,13 +2,6 @@
 
 from typing import Annotated, Any, Literal
 
-from fastapi import APIRouter, Depends, HTTPException, Query
-from fastapi.responses import StreamingResponse
-from sqlalchemy import and_, func, or_
-from sqlalchemy.orm import Query as OrmQuery
-from sqlalchemy.orm import Session, load_only, undefer
-from sqlalchemy.sql.selectable import Subquery
-
 from app.database import get_db
 from app.models.correction import CorrectionCheck, CorrectionTarget
 from app.models.correction_decision import CorrectionDecision
@@ -24,7 +17,6 @@ from app.modules.corrections.export_data import (
     coordinate_sources,
     result_columns,
     source_label,
-    target_columns,
     text,
 )
 from app.modules.corrections.service import CorrectionKind, check_process
@@ -34,6 +26,13 @@ from app.modules.corrections.spreadsheet import (
     Spreadsheet,
 )
 from app.modules.upload.normalization import extract_standard_fields
+from app.search_index import pending_search, prepare_search, search_candidates
+from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi.responses import StreamingResponse
+from sqlalchemy import and_, func, or_
+from sqlalchemy.orm import Query as OrmQuery
+from sqlalchemy.orm import Session, load_only, undefer
+from sqlalchemy.sql.selectable import Subquery
 
 router = APIRouter()
 DbSession = Annotated[Session, Depends(get_db)]
@@ -195,6 +194,10 @@ def result_query(
     elif status == "not_processed":
         query = query.filter(CorrectionTarget.id.is_(None))
     if q.strip():
+        query = query.filter(search_candidates(db, (
+            ("source", SourceRecord.id), ("target", CorrectionTarget.id),
+            ("decision", CorrectionDecision.id),
+        ), q))
         pattern = (
             "%"
             + q.strip().replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
@@ -267,6 +270,13 @@ def saved_results(
     limit: int = Query(25, ge=1, le=100),
 ) -> dict[str, Any]:
     _, process, run = result_scope(db, kind, process_id, generation)
+    if q.strip():
+        state = prepare_search(db, ("source", "target", "decision"))
+        if state and not state["ready"]:
+            return {
+                **pending_search(state),
+                "summary": results_summary(db, kind, process_id, run.generation),
+            }
     query = result_query(db, process, run, q, status)
     total = query.count()
     batch = db.get(UploadBatch, process.target_batch_id)
@@ -340,7 +350,7 @@ def export_info(
         ["Status pemeriksaan", run.status.value],
         ["Cakupan ekspor", scope],
         [
-            "noagenda / verif",
+            "noagenda",
             "Nilai dari data target; kosong jika sumber tidak mengisinya.",
         ],
         [
@@ -360,12 +370,8 @@ def export_info(
             "Observasi master berkoordinat sama dengan kandidat pilihan. Beberapa sumber dipisahkan baris baru.",
         ],
         [
-            "x_acc / y_acc",
-            "Koordinat kandidat yang disetujui: x_acc adalah longitude (bujur), y_acc adalah latitude (lintang).",
-        ],
-        [
-            "Data Target",
-            "Identitas, koordinat, berkas, dan baris target sebelum koreksi.",
+            "x_akhir / y_akhir",
+            "Koordinat kandidat yang disetujui: x_akhir adalah longitude (bujur), y_akhir adalah latitude (lintang).",
         ],
         [
             "Observasi Sumber",
@@ -453,42 +459,6 @@ def export_results(
     assert batch is not None
     book = Spreadsheet()
     main = book.sheet("Hasil Koreksi", RESULT_HEADERS, RESULT_WIDTHS)
-    targets = book.sheet("Data Target", RESULT_HEADERS[:8], RESULT_WIDTHS[:8])
-    evidence = evidence_sheet(book)
-    radius_sheet = book.sheet(
-        "Pemeriksaan Radius",
-        [
-            "baris_target",
-            "idpelanggan_awal",
-            "nama",
-            "status_pemeriksaan",
-            "jumlah_kandidat",
-            "radius_meter",
-            "versi_pemeriksaan",
-        ],
-        [18, 22, 36, 28, 20, 20, 22],
-    )
-    choice_radii = {
-        version: radius
-        for version, radius in db.query(
-            MatchingRun.generation, MatchingRun.radius_meters
-        ).filter_by(process_id=process_id)
-    }
-    audit = book.sheet(
-        "Keputusan Aktif",
-        [
-            "baris_target",
-            "status",
-            "versi_pilihan",
-            "revisi_pilihan",
-            "petugas",
-            "waktu_utc",
-            "alasan",
-            "jarak_meter",
-            "radius_pilihan_meter",
-        ],
-        [18, 24, 18, 18, 28, 30, 60, 18, 22],
-    )
     for source, outcome, decision in (
         result_query(db, process, run, q, status)
         .options(undefer(SourceRecord.data))
@@ -502,41 +472,6 @@ def export_results(
         book.append(
             main, result_columns(source, batch, item["target_fields"], candidate)
         )
-        book.append(targets, target_columns(source, batch, item["target_fields"]))
-        book.append(
-            radius_sheet,
-            [
-                source.row_number,
-                text(item["target_fields"].get("idpel")),
-                item["target_fields"].get("nama"),
-                outcome.search_status if outcome else "not_checked",
-                outcome.candidate_count if outcome else None,
-                run.radius_meters,
-                run.generation,
-            ],
-        )
-        append_evidence(book, evidence, source, decision)
-        book.append(
-            audit,
-            [
-                source.row_number,
-                item["status"],
-                decision.generation if decision else None,
-                decision.revision if decision else None,
-                decision.actor if decision else None,
-                decision.created_at.isoformat() if decision else None,
-                decision.reason if decision else None,
-                candidate.get("distance_meters"),
-                choice_radii.get(decision.generation) if decision else None,
-            ],
-        )
-    export_info(
-        book,
-        batch,
-        process_id,
-        run,
-        f"Filter: {status}; pencarian: {q or '(semua)'}",
-    )
     return book.response(radius_filename("hasil", kind, process_id, run))
 
 

@@ -34,6 +34,7 @@ def test_master_progress_is_saved_and_ready_snapshot_can_be_reused(page: Page, s
     page.get_by_role("button", name="Jalankan pemeriksaan", exact=True).click()
     progress = page.get_by_role("region", name="Progres pemeriksaan koreksi")
     preparation = progress.get_by_label("Progres persiapan master", exact=True)
+    progress.get_by_text("Detail persiapan master", exact=True).click()
     expect(preparation.get_by_text("2.000 / 5.003 baris", exact=True)).to_be_visible(timeout=20000)
     assert 0 < float(progress.get_by_role("progressbar").get_attribute("value")) < 100
     expect(progress.get_by_text("Baris koreksi tersimpan", exact=True).locator("..").get_by_text("0 / 1 baris", exact=True)).to_be_visible()
@@ -47,6 +48,7 @@ def test_master_progress_is_saved_and_ready_snapshot_can_be_reused(page: Page, s
     assert before["source_rows"] == 2000
     page.unroute("**/corrections/idpel_kosong/checks/*/advance", hold_second)
     page.reload()
+    progress.get_by_text("Detail persiapan master", exact=True).click()
     expect(preparation.get_by_text("2.000 / 5.003 baris", exact=True)).to_be_visible()
     page.get_by_role("button", name="Lanjutkan pemeriksaan koreksi", exact=True).click()
     expect(page.get_by_role("dialog", name="Pemeriksaan koreksi selesai", exact=True)).to_be_visible(timeout=30000)
@@ -59,6 +61,7 @@ def test_master_progress_is_saved_and_ready_snapshot_can_be_reused(page: Page, s
     page.get_by_role("button", name="Pemeriksaan baru", exact=True).click()
     expect(page.get_by_role("dialog", name="Pemeriksaan koreksi selesai", exact=True)).to_be_visible(timeout=20000)
     page.get_by_role("button", name="Lihat hasil pemeriksaan", exact=True).click()
+    progress.get_by_text("Detail persiapan master", exact=True).click()
     expect(page.get_by_text("Snapshot master yang sesuai digunakan kembali", exact=True)).to_be_visible()
     later_process = int(page.url.split("process_id=")[1])
     reused = httpx.get(f"{api}/corrections/idpel_kosong/checks/{later_process}").json()

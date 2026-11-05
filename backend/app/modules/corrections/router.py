@@ -24,6 +24,9 @@ from app.models.matching import (
 from app.models.pdpj import PdpjReview
 from app.models.upload import BatchStatus, DatasetType, SourceRecord, UploadBatch
 from app.modules.corrections.decisions import router as decisions_router
+from app.modules.corrections.overview import router as overview_router
+from app.modules.corrections.workflow import router as workflow_router
+from app.modules.corrections.radius_router import router as radius_router
 from app.modules.corrections.map_summary import radius_summary
 from app.modules.corrections.pdpj_updates import pdpj_update_info
 from app.modules.corrections.progress import advance_progress, control_progress
@@ -46,6 +49,7 @@ from app.modules.upload.normalization import (
 from app.modules.upload.pagination import load_original_cells, source_page_ids
 from app.modules.upload.storage import database_write_error
 from app.processing_activity import monitor_request, request_activity
+from app.search_index import pending_search, prepare_search, search_candidates
 from app.tasks.spatial_tasks import (
     execute_batch_reconciliation_pipeline,
     mark_process_failed,
@@ -579,6 +583,10 @@ def list_records(
     if saved_only:
         query = query.filter(CorrectionTarget.id.is_not(None))
     if q.strip():
+        state = prepare_search(db, ("source",))
+        if state and not state["ready"]:
+            return pending_search(state)
+        query = query.filter(search_candidates(db, (("source", SourceRecord.id),), q))
         pattern = (
             "%"
             + q.strip().replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
@@ -597,6 +605,8 @@ def list_records(
                         "meter_ref",
                         "agenda_ref",
                         "survey_ref",
+                        "nomor_meter_kwh",
+                        "nomor_meter_prepaid",
                     )
                 )
             )
@@ -671,6 +681,7 @@ def record_detail(
     skip: int = Query(0, ge=0),
     limit: int = Query(25, ge=1, le=100),
     radius_meters: float | None = Query(None, gt=0, le=100000, allow_inf_nan=False),
+    sort_order: Literal["nearest", "farthest"] = Query("nearest"),
 ) -> dict[str, Any]:
     """Read candidate snapshots only; inspecting a row must not reload the master."""
     record = db.get(SourceRecord, record_id)
@@ -716,7 +727,11 @@ def record_detail(
                 "observations": evidence.observations,
                 "is_accepted": candidate.is_accepted,
             }
-            for candidate, evidence in candidates.order_by(MatchCandidate.rank)
+            for candidate, evidence in candidates.order_by(
+                MatchCandidate.distance_meters.desc() if sort_order == "farthest"
+                else MatchCandidate.distance_meters.asc(),
+                MatchCandidate.rank, MatchCandidate.id,
+            )
             .offset(skip)
             .limit(limit)
             .all()
@@ -724,5 +739,8 @@ def record_detail(
     }
 
 
+router.include_router(overview_router)
+router.include_router(workflow_router)
+router.include_router(radius_router)
 router.include_router(decisions_router)
 router.include_router(results_router)

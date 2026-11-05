@@ -8,7 +8,7 @@ Perbaikan pembacaan `KOORDINAT_X`/`KOORDINAT_Y` dan pemulihan data lama dijelask
 
 1. Buka salah satu jenis Data Master dan pilih **Unggah berkas**.
 2. Pilih CSV atau XLSX. Untuk Excel, pilih sheet yang berisi data. Baris kosong di awal sheet dilewati; baris pertama yang terisi dipakai sebagai nama kolom, termasuk bila header berada di baris kedua atau lebih jauh. Pratinjau menampilkan posisi header dan nomor baris asli. Periode berkas opsional berformat `YYYY-MM`.
-3. Periksa deteksi kolom dan sesuaikan mapping jika nama kolom berbeda. IDPEL wajib tersedia; koordinat boleh kosong.
+3. Kolom dikenali otomatis tanpa formulir pemetaan manual. Setelah pratinjau selesai dibaca dan kolom IDPEL dikenali, tombol simpan aktif; koordinat boleh kosong. Jika kolom IDPEL tidak ditemukan, pilih sheet yang sesuai atau sesuaikan nama kolom pada berkas sumber. Mapping tersimpan tetap digunakan saat melanjutkan batch yang menunggu mapping.
 4. Pilih **Simpan dan validasi master**. Baris bermasalah tetap disimpan dan dapat diperiksa melalui filter kondisi.
 5. Gunakan pencarian, filter berkas, dan pagination. Tombol **Detail** menampilkan nilai hasil mapping, data asli, nama berkas, sheet, nomor baris, dan periode.
 

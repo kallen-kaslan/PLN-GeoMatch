@@ -43,6 +43,7 @@ from app.models.schema_state import SchemaState
 from app.models.upload import SourceRecord, UploadBatch
 from app.models.upload_file import UploadFileArchive, UploadSheetImport
 from app.models.user import User
+from app.models.radius_analysis import RadiusAnalysis, RadiusAnalysisRow
 
 target_metadata = Base.metadata
 

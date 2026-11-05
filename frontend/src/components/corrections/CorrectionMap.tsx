@@ -11,8 +11,8 @@ export function CorrectionMap(scene: MapScene) {
   }, []);
   useEffect(() => { provider.current?.render(scene); }, [scene]);
   return <div>
-    {!available && <p role="alert" className="border-2 border-amber-600 bg-amber-50 p-3 text-sm">Peta belum dapat dimuat. Periksa koneksi lalu muat ulang. Anda tetap dapat memilih target dan kandidat melalui tabel.</p>}
-    <div ref={container} aria-label="Peta target koreksi" className="relative z-0 h-[420px] w-full rounded-sm border-2 border-neo-border sm:h-[520px]" />
+    {!available && <p role="alert" className="border border-amber-600 bg-amber-50 p-3 text-sm">Peta belum dapat dimuat. Periksa koneksi lalu muat ulang. Anda tetap dapat memilih target dan kandidat melalui tabel.</p>}
+    <div ref={container} aria-label="Peta target koreksi" className="relative z-0 h-[360px] w-full rounded-lg border border-ui-border sm:h-[440px] xl:h-[clamp(320px,48dvh,560px)]" />
     <p className="mt-2 text-xs">Jingga: target · Biru: target terpilih · Abu-abu: target lain · Hijau: kandidat. Titik bertumpuk menyediakan daftar pilihan saat diklik.</p>
   </div>;
 }

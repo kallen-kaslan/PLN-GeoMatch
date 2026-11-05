@@ -12,6 +12,15 @@ from openpyxl import Workbook
 from playwright.sync_api import Page, expect
 
 
+def select_master_sheet(page: Page, name: str) -> None:
+    dropdown = page.locator("details").filter(has_text="Pilih sheet untuk diimpor")
+    if dropdown.get_attribute("open") is None:
+        dropdown.locator("summary").click()
+    dropdown.get_by_role("button", name="Batal pilih semua", exact=True).click()
+    dropdown.get_by_label(f"Impor sheet {name}", exact=True).check()
+    page.get_by_label("Pratinjau sheet", exact=True).select_option(name)
+
+
 @pytest.mark.parametrize(
     "encoding, prefix",
     [
@@ -76,7 +85,7 @@ def test_excel_header_after_empty_rows_is_previewed_and_imported(
         }
     )
     expect(page.get_by_role("alert")).to_have_count(0)
-    expect(page.get_by_label("Kolom IDPEL", exact=True)).to_have_value("IDPEL")
+    expect(page.get_by_role("button", name="Simpan dan validasi master")).to_be_enabled()
     preview = page.get_by_role("region", name="Impor master DIL").get_by_role("table")
     expect(preview.get_by_role("row")).to_have_count(6)
     expect(preview.get_by_role("row").nth(1).get_by_role("cell").first).to_have_text(
@@ -113,16 +122,16 @@ def test_excel_empty_first_sheet_uses_data_sheet(page: Page, hidden: bool) -> No
             "buffer": content.getvalue(),
         }
     )
-    expect(page.get_by_label("Sheet yang diimpor")).to_have_value("DIL")
-    expect(page.get_by_label("Kolom IDPEL", exact=True)).to_have_value("IDPEL")
+    expect(page.get_by_label("Pratinjau sheet")).to_have_value("DIL")
+    expect(page.get_by_role("button", name="Simpan dan validasi master")).to_be_enabled()
     expect(page.get_by_role("alert")).to_have_count(0)
     if not hidden:
-        page.get_by_label("Sheet yang diimpor").select_option("Kosong")
+        select_master_sheet(page, "Kosong")
         expect(page.get_by_role("alert")).to_contain_text("Sheet")
         expect(
             page.get_by_role("button", name="Simpan dan validasi master")
         ).to_be_disabled()
-        page.get_by_label("Sheet yang diimpor").select_option("DIL")
+        select_master_sheet(page, "DIL")
     page.get_by_role("button", name="Simpan dan validasi master").click()
     expect(page.get_by_text("dil.xlsx berhasil disimpan.", exact=True)).to_be_visible()
     expect(page.get_by_role("row").filter(has_text="000123456789")).to_contain_text(
@@ -170,10 +179,7 @@ def test_excel_bad_dimensions_preview_matches_import_and_empty_sheet_can_recover
             "buffer": patched.getvalue(),
         }
     )
-    expect(page.get_by_label("Kolom IDPEL", exact=True)).to_have_value(
-        "IDPEL", timeout=20000
-    )
-    expect(page.get_by_label("Kolom Nama pelanggan", exact=True)).to_have_value("NAMA")
+    expect(page.get_by_role("button", name="Simpan dan validasi master")).to_be_enabled(timeout=20000)
     form = page.get_by_role("region", name="Impor master DIL")
     preview = form.get_by_role("table")
     expect(preview.get_by_role("row").nth(1).get_by_role("cell").first).to_have_text(
@@ -184,15 +190,13 @@ def test_excel_bad_dimensions_preview_matches_import_and_empty_sheet_can_recover
     if header_row > 64:
         assert any("/upload/files/" in url and "/preview?" in url for url in requests)
         assert not any(url.endswith("/upload/preview") for url in requests)
-    page.get_by_label("Sheet yang diimpor").select_option("Kosong")
+    select_master_sheet(page, "Kosong")
     expect(page.get_by_role("alert")).to_contain_text("Kosong")
     expect(
         page.get_by_role("button", name="Simpan dan validasi master")
     ).to_be_disabled()
-    page.get_by_label("Sheet yang diimpor").select_option(sheet.title)
-    expect(page.get_by_label("Kolom IDPEL", exact=True)).to_have_value(
-        "IDPEL", timeout=20000
-    )
+    select_master_sheet(page, sheet.title)
+    expect(page.get_by_role("button", name="Simpan dan validasi master")).to_be_enabled(timeout=20000)
     expect(page.get_by_role("alert")).to_have_count(0)
     page.get_by_role("button", name="Simpan dan validasi master").click()
     expect(
@@ -224,9 +228,9 @@ def test_excel_empty_workbook_can_select_sheet_and_replace_file(page: Page) -> N
             "buffer": content.getvalue(),
         }
     )
-    expect(page.get_by_label("Sheet yang diimpor")).to_be_visible()
+    expect(page.get_by_label("Pratinjau sheet")).to_be_visible()
     expect(page.get_by_role("alert")).to_contain_text("Sheet")
-    page.get_by_label("Sheet yang diimpor").select_option("Kosong kedua")
+    select_master_sheet(page, "Kosong kedua")
     expect(page.get_by_role("alert")).to_contain_text("Kosong kedua")
     file_input.set_input_files(
         {
@@ -236,10 +240,10 @@ def test_excel_empty_workbook_can_select_sheet_and_replace_file(page: Page) -> N
         }
     )
     expect(page.get_by_role("alert")).to_have_count(0)
-    expect(page.get_by_label("Kolom IDPEL", exact=True)).to_have_value("IDPEL")
+    expect(page.get_by_role("button", name="Simpan dan validasi master")).to_be_enabled()
 
 
-def test_csv_upload_mapping_details_and_category_isolation(
+def test_csv_automatic_mapping_details_and_category_isolation(
     page: Page, tmp_path: Path
 ) -> None:
     page.goto("/master/dil")
@@ -251,17 +255,12 @@ def test_csv_upload_mapping_details_and_category_isolation(
         {
             "name": "dil-custom.csv",
             "mimeType": "text/csv",
-            "buffer": b"CUSTOMER,CUSTOM_NAME,CODE_RAW,GARDU_CODE,Y_POS,X_POS\n000123456789,Budi,DL-01,G-03,-6.2,106.8\n000123456790,Siti,DL-02,G-04,,\n",
+            "buffer": b"IDPEL,NAMA,KODE_DIL,NOMOR_GARDU,LAT,LON\n000123456789,Budi,DL-01,G-03,-6.2,106.8\n000123456790,Siti,DL-02,G-04,,\n",
         }
     )
-    page.get_by_label("Kolom IDPEL", exact=True).select_option("CUSTOMER")
-    page.get_by_label("Kolom Nama pelanggan", exact=True).select_option("CUSTOM_NAME")
-    page.get_by_label("Kolom Kode DIL", exact=True).select_option("CODE_RAW")
-    page.get_by_label("Kolom Kode gardu", exact=True).select_option("GARDU_CODE")
-    page.get_by_label("Kolom Latitude (lintang)", exact=True).select_option("Y_POS")
-    page.get_by_label("Kolom Longitude (bujur)", exact=True).select_option(
-        "X_POS"
-    )
+    expect(page.get_by_role("button", name="Simpan dan validasi master")).to_be_enabled()
+    expect(page.get_by_role("heading", name="Pemetaan kolom", exact=True)).to_have_count(0)
+    expect(page.get_by_label("Kolom IDPEL", exact=True)).to_have_count(0)
     page.get_by_role("button", name="Simpan dan validasi master").click()
     expect(
         page.get_by_text("dil-custom.csv berhasil disimpan.", exact=True)
@@ -272,7 +271,7 @@ def test_csv_upload_mapping_details_and_category_isolation(
     first_row.get_by_role("button", name="Lihat detail baris 2").click()
     dialog = page.get_by_role("dialog")
     expect(dialog.get_by_text("Data asli berkas", exact=True)).to_be_visible()
-    expect(dialog.get_by_text("CODE_RAW", exact=True)).to_be_visible()
+    expect(dialog.get_by_text("KODE_DIL", exact=True)).to_be_visible()
     expect(dialog.get_by_text("000123456789", exact=True).first).to_be_visible()
     page.keyboard.press("Escape")
     expect(dialog).to_have_count(0)
@@ -340,16 +339,13 @@ def test_excel_sheet_selection_preserves_source_details(page: Page) -> None:
             "buffer": output.getvalue(),
         }
     )
-    page.get_by_label("Sheet yang diimpor").select_option("Data DIL")
-    expect(page.get_by_label("Kolom IDPEL", exact=True)).to_have_value("IDPEL")
-    expect(page.get_by_label("Kolom Tanggal baca / periode", exact=True)).to_have_value(
-        "V_BULAN_REKAP"
-    )
-    expect(page.get_by_label("Kolom Kode gardu", exact=True)).to_have_value(
-        "NOMOR_GARDU"
-    )
-    expect(page.get_by_label("Kolom KODEDLPD", exact=True)).to_have_value("KODEDLPD")
-    expect(page.get_by_label("Kolom Kode DIL", exact=True)).to_have_value("")
+    select_master_sheet(page, "Data DIL")
+    expect(page.get_by_role("button", name="Simpan dan validasi master")).to_be_enabled()
+    select_master_sheet(page, "Petunjuk")
+    expect(page.get_by_role("alert")).to_contain_text("Kolom wajib tidak ditemukan: IDPEL")
+    expect(page.get_by_role("button", name="Simpan dan validasi master")).to_be_disabled()
+    select_master_sheet(page, "Data DIL")
+    expect(page.get_by_role("button", name="Simpan dan validasi master")).to_be_enabled()
     page.get_by_label("Periode berkas (opsional)").fill("2026-10")
     page.get_by_role("button", name="Simpan dan validasi master").click()
     expect(
@@ -374,14 +370,14 @@ def test_pending_mapping_can_resume_without_duplicate_upload(
     response = httpx.post(
         f"{servers[1]}/upload/",
         data={"dataset_type": "dil"},
-        files={"file": ("pending.csv", b"C\n000123456789\n", "text/csv")},
+        files={"file": ("pending.csv", b"IDPEL\n000123456789\n", "text/csv")},
     )
     response.raise_for_status()
     source_id = response.json()["id"]
     page.goto("/master/dil")
     page.get_by_label("Berkas sumber", exact=True).select_option(str(source_id))
     page.get_by_role("button", name="Lanjutkan mapping", exact=True).click()
-    page.get_by_label("Kolom IDPEL", exact=True).select_option("C")
+    expect(page.get_by_role("button", name="Simpan dan validasi master")).to_be_enabled()
     page.get_by_role("button", name="Simpan dan validasi master").click()
     expect(
         page.get_by_text("pending.csv berhasil disimpan.", exact=True)

@@ -24,6 +24,7 @@ def test_radius_summary_filters_saved_candidates_and_compares_incremental_expans
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     identity = "" if kind == "idpel_kosong" else "999"
+    additional_matched = 1 if kind == "idpel_kosong" else 0
     batch = upload(
         client,
         kind,
@@ -55,15 +56,11 @@ def test_radius_summary_filters_saved_candidates_and_compares_incremental_expans
     assert response.status_code == 200
     original = response.json()
     assert original["total_rows"] == original["saved_rows"] == 6
-    assert original["matched"] == 1 and original["no_candidates"] == 2
-    assert original["candidate_total"] == 8 and len(original["candidate_counts"]) == 1
+    assert original["matched"] == 1 + additional_matched and original["no_candidates"] == 2
+    assert original["candidate_total"] == 8 * (1 + additional_matched) and len(original["candidate_counts"]) == 1 + additional_matched
     assert original["not_checked"] == 0 and original["newly_matched"] == 0
-    assert (
-        original["pdpj_conflicts"]
-        == original["invalid_data"]
-        == original["incomplete_coordinates"]
-        == 1
-    )
+    assert original["pdpj_conflicts"] == 1 - additional_matched
+    assert original["invalid_data"] == original["incomplete_coordinates"] == 1
     assert not any(
         forbidden in sql
         for sql in statements
@@ -77,7 +74,7 @@ def test_radius_summary_filters_saved_candidates_and_compares_incremental_expans
         )
     )
     narrow = client.get(endpoint, params={**params, "radius_meters": 1}).json()
-    assert narrow["matched"] == 1 and narrow["candidate_total"] == 7
+    assert narrow["matched"] == 1 + additional_matched and narrow["candidate_total"] == 7 * (1 + additional_matched)
     assert narrow["no_candidates"] == 2 and narrow["baseline"]["radius_meters"] == 100
     assert (
         client.get(endpoint, params={**params, "radius_meters": 101}).status_code == 409
@@ -130,9 +127,9 @@ def test_radius_summary_filters_saved_candidates_and_compares_incremental_expans
             assert partial["newly_matched"] == 1
             assert partial["baseline"]["no_candidates"] == 2
     final = client.get(endpoint, params=expanded_params).json()
-    assert final["matched"] == 2 and final["no_candidates"] == 1
+    assert final["matched"] == 2 + additional_matched and final["no_candidates"] == 1
     assert final["newly_matched"] == 1 and not final["partial"]
-    assert final["candidate_total"] == 16
+    assert final["candidate_total"] == 16 + 8 * additional_matched
     assert saved_snapshot is not None
     with monkeypatch.context() as patch:
         patch.setattr(
@@ -147,5 +144,5 @@ def test_radius_summary_filters_saved_candidates_and_compares_incremental_expans
     smaller = client.get(
         endpoint, params={**expanded_params, "radius_meters": 1}
     ).json()
-    assert smaller["matched"] == 1 and smaller["no_candidates"] == 2
+    assert smaller["matched"] == 1 + additional_matched and smaller["no_candidates"] == 2
     assert smaller["baseline"]["generation"] == 2

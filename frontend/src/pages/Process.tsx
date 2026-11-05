@@ -1,312 +1,120 @@
-import { useState, useEffect } from "react";
-import { api } from "@/lib/api";
-import { useNavigate } from "react-router-dom";
-import { Compass, FolderCheck, MapPin, Play, ArrowRight, CheckCircle2 } from "lucide-react";
+import { useRef, useState, type FormEvent } from "react";
+import { Link, useNavigate } from "react-router-dom";
+import { useQueryClient } from "@tanstack/react-query";
+import { LoaderCircle, MapPin, Save } from "lucide-react";
+import { unparse } from "papaparse";
+import { api, type ApiError } from "@/lib/api";
+import { buttonClass } from "@/lib/button";
+import { CORRECTION_TYPES } from "@/lib/corrections";
+import type { ImportResult } from "@/lib/master";
+
+const control = "w-full rounded-lg border border-ui-border bg-white px-3 py-2 text-sm";
+
+function coordinate(value: string, limit: number, label: string): string {
+  const text = value.trim().replace(",", ".");
+  if (!/^[+-]?(?:\d+(?:\.\d*)?|\.\d+)$/.test(text) || Math.abs(Number(text)) > limit) {
+    throw new Error(label + " harus berupa angka antara -" + limit + " dan " + limit + ".");
+  }
+  return text;
+}
 
 export default function ProcessPage() {
   const navigate = useNavigate();
+  const queryClient = useQueryClient();
+  const [sessionName, setSessionName] = useState("");
+  const [reference, setReference] = useState("");
+  const [idpel, setIdpel] = useState("");
+  const [agenda, setAgenda] = useState("");
+  const [meter, setMeter] = useState("");
+  const [latitude, setLatitude] = useState("");
+  const [longitude, setLongitude] = useState("");
+  const [radius, setRadius] = useState("150");
+  const [stage, setStage] = useState<string | null>(null);
+  const [error, setError] = useState("");
+  const pending = useRef(false);
+  // Reuse the uploaded row when mapping fails, rather than uploading it again.
+  const uploaded = useRef<{ content: string; filename: string; batchId: number } | null>(null);
+  const descriptor = CORRECTION_TYPES.find((item) => item.key === (idpel.trim() ? "idpel_tidak_ketemu" : "idpel_kosong"))!;
 
-  // Lazy initializer to avoid impure Date call during render
-  const [processName, setProcessName] = useState(() => {
-    return "Pencocokan Koordinat PLN - " + new Date().toISOString().slice(0, 10);
-  });
-  const [batches, setBatches] = useState<any[]>([]);
-  const [targetBatchId, setTargetBatchId] = useState<string>("");
-  const [radiusMeters, setRadiusMeters] = useState<number>(150);
-  const [maxCandidates, setMaxCandidates] = useState<number>(5);
-
-  // Tab mode: Batch Matching vs Manual Single Coordinate Test
-  const [activeTab, setActiveTab] = useState<"batch" | "manual">("batch");
-  const [manualLat, setManualLat] = useState<string>("-6.20890");
-  const [manualLon, setManualLon] = useState<string>("106.84570");
-  const [manualRef, setManualRef] = useState<string>("TIANG-UJI-01");
-
-  const [loading, setLoading] = useState(false);
-  const [result, setResult] = useState<any>(null);
-  const [error, setError] = useState<string | null>(null);
-
-  useEffect(() => {
-    let isMounted = true;
-    api.get("/upload/batches")
-      .then((res) => {
-        if (!isMounted) return;
-        setBatches(res.data);
-        const targetBatch = res.data.find(
-          (b: any) => b.dataset_type === "koordinat_kosong" || b.dataset_type === "target"
-        );
-        if (targetBatch) {
-          setTargetBatchId(String(targetBatch.id));
-        } else if (res.data.length > 0) {
-          setTargetBatchId(String(res.data[0].id));
-        }
-      })
-      .catch(() => {});
-    return () => {
-      isMounted = false;
-    };
-  }, []);
-
-  const handleStartMatching = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setLoading(true);
-    setError(null);
-    setResult(null);
-
+  const save = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    if (pending.current) return;
+    pending.current = true;
+    setError("");
     try {
-      let batchIdToUse = targetBatchId;
-
-      if (activeTab === "manual") {
-        const manualFormData = new FormData();
-        const csvContent = `NOMOR_METER,LATITUDEY,LONGITUDEX,KETERANGAN\n${manualRef},${manualLat},${manualLon},Input Manual Petugas\n`;
-        const blob = new Blob([csvContent], { type: "text/csv" });
-        manualFormData.append("file", blob, "manual_single_target.csv");
-        manualFormData.append("dataset_type", "koordinat_kosong");
-
-        const uploadRes = await api.post("/upload/", manualFormData, {
-          headers: { "Content-Type": "multipart/form-data" },
-        });
-        batchIdToUse = String(uploadRes.data.id);
-        await api.post("/upload/confirm-mapping", {
-          batch_id: Number(batchIdToUse),
-          column_mapping: {
-            nomor_meter: "NOMOR_METER",
-            lat: "LATITUDEY",
-            lon: "LONGITUDEX",
-          },
-        });
+      if (!sessionName.trim() || !reference.trim()) throw new Error("Isi nama sesi dan referensi titik.");
+      const lat = coordinate(latitude, 90, "Latitude (Y)");
+      const lon = coordinate(longitude, 180, "Longitude (X)");
+      const radiusMeters = Number(radius);
+      if (!radius.trim() || !Number.isFinite(radiusMeters) || radiusMeters <= 0 || radiusMeters > 100000) {
+        throw new Error("Radius harus lebih dari 0 dan paling besar 100.000 meter.");
       }
-
-      if (!batchIdToUse) {
-        throw new Error("Pilih batch target / koordinat kosong yang valid.");
+      const content = unparse([
+        ["IDPEL", "ID_TITIK", "NOAGENDA", "NOMOR_METER", "LATITUDEY", "LONGITUDEX", "KETERANGAN"],
+        [idpel.trim(), reference.trim(), agenda.trim(), meter.trim(), lat, lon, sessionName.trim()],
+      ]);
+      const filename = "manual-" + sessionName.trim().replace(/[^\p{L}\p{N}_-]/gu, "_").slice(0, 80) + ".csv";
+      setStage("Menyimpan titik manual ke Data Koreksi...");
+      if (uploaded.current?.content !== content || uploaded.current.filename !== filename) {
+        const form = new FormData();
+        form.append("file", new Blob([content], { type: "text/csv;charset=utf-8" }), filename);
+        form.append("dataset_type", descriptor.key);
+        const response = await api.post<{ id: number }>("/upload/", form, { headers: { "Content-Type": "multipart/form-data" } });
+        uploaded.current = { content, filename, batchId: response.data.id };
       }
-
-      const res = await api.post("/process/run-matching", {
-        process_name: processName,
-        target_batch_id: Number(batchIdToUse),
-        radius_meters: Number(radiusMeters),
-        max_candidates: Number(maxCandidates),
+      const batchId = uploaded.current.batchId;
+      setStage("Memvalidasi identitas dan koordinat titik...");
+      const response = await api.post<ImportResult>("/upload/confirm-mapping", {
+        batch_id: batchId,
+        column_mapping: {
+          idpel: "IDPEL", survey_ref: "ID_TITIK", agenda_ref: "NOAGENDA", meter_ref: "NOMOR_METER",
+          lat: "LATITUDEY", lon: "LONGITUDEX",
+        },
       });
-
-      setResult(res.data);
-    } catch (err: any) {
-      setError(err.message || "Gagal menjalankan proses pencocokan spasial.");
+      if (response.data.error_rows || response.data.rows !== 1) {
+        throw new Error("Data titik belum valid. Periksa identitas dan koordinat, lalu simpan kembali.");
+      }
+      await queryClient.invalidateQueries({ queryKey: ["corrections", descriptor.key] });
+      const params = new URLSearchParams({ batch_id: String(batchId), radius_meters: String(radiusMeters) });
+      navigate("/koreksi/" + descriptor.slug + "?" + params);
+    } catch (err) {
+      setError((err as ApiError | Error).message || "Gagal menyimpan titik manual. Silakan coba kembali.");
     } finally {
-      setLoading(false);
+      pending.current = false;
+      setStage(null);
     }
   };
 
-  return (
-    <div className="space-y-5 sm:space-y-6">
-      <div className="border-b border-neo-border pb-3">
-        <h1 className="fluid-h1 font-black tracking-tight text-neo-black">
-          Input Manual & Konfigurasi Pencocokan
-        </h1>
-        <p className="text-xs sm:text-sm text-neo-border mt-0.5">
-          Tentukan parameter spasial, pilih batch koordinat kosong, atau input manual satu titik untuk dicari kandidat IDPEL-nya di Master Sisa.
-        </p>
-      </div>
-
-      {error && (
-        <div className="p-3.5 sm:p-4 border-2 border-[#dc2626] bg-[#fee2e2] text-[#dc2626] rounded-sm text-xs sm:text-sm font-bold shadow-[2px_2px_0_#dc2626]">
-          Error: {error}
-        </div>
-      )}
-
-      {/* Tab Switcher: Batch vs Single Manual Coordinate */}
-      <div className="flex flex-col sm:flex-row gap-2 border-b-2 border-neo-border pb-2.5">
-        <button
-          type="button"
-          onClick={() => setActiveTab("batch")}
-          className={`flex items-center justify-center gap-2 px-4 py-2.5 touch-min border-2 rounded-sm text-xs sm:text-sm font-bold transition active:translate-y-0.5 ${
-            activeTab === "batch"
-              ? "border-neo-black bg-neo-black text-white shadow-[2px_2px_0_#ff6b35]"
-              : "border-neo-border bg-white text-neo-black hover:bg-[#e5e4e7] shadow-[2px_2px_0_#0a0a0a]"
-          }`}
-        >
-          <FolderCheck size={16} />
-          <span>Pencocokan Berdasarkan Batch Data</span>
-        </button>
-        <button
-          type="button"
-          onClick={() => setActiveTab("manual")}
-          className={`flex items-center justify-center gap-2 px-4 py-2.5 touch-min border-2 rounded-sm text-xs sm:text-sm font-bold transition active:translate-y-0.5 ${
-            activeTab === "manual"
-              ? "border-neo-black bg-neo-black text-white shadow-[2px_2px_0_#ff6b35]"
-              : "border-neo-border bg-white text-neo-black hover:bg-[#e5e4e7] shadow-[2px_2px_0_#0a0a0a]"
-          }`}
-        >
-          <MapPin size={16} />
-          <span>Input Manual 1 Titik Koordinat</span>
-        </button>
-      </div>
-
-      {/* Main Form Container */}
-      <div className="p-4 sm:p-6 border-2 border-neo-border rounded-sm bg-white shadow-[4px_4px_0_#0a0a0a] max-w-2xl w-full">
-        <form onSubmit={handleStartMatching} className="space-y-4 sm:space-y-5">
-          <div>
-            <label className="block text-xs sm:text-sm font-bold text-neo-black mb-1.5">
-              Nama Sesi Pencocokan <span className="text-[#dc2626]">*</span>
-            </label>
-            <input
-              type="text"
-              required
-              value={processName}
-              onChange={(e) => setProcessName(e.target.value)}
-              className="w-full border-2 border-neo-border p-2.5 rounded-sm mobile-input bg-white text-neo-black focus:outline-none focus:ring-2 focus:ring-neo-accent"
-              placeholder="Contoh: Pencocokan Koordinat PLN Gardu A"
-            />
-          </div>
-
-          {activeTab === "batch" ? (
-            <div>
-              <label className="block text-xs sm:text-sm font-bold text-neo-black mb-1.5">
-                Pilih Batch Koordinat Kosong / Target <span className="text-[#dc2626]">*</span>
-              </label>
-              {batches.length === 0 ? (
-                <div className="p-3.5 border-2 border-dashed border-neo-border rounded-sm text-xs text-neo-border bg-neo-white">
-                  Belum ada batch terupload. Silakan unggah data di menu <strong>Upload & Bentuk Master</strong> atau jalankan Quick Demo.
-                </div>
-              ) : (
-                <select
-                  required
-                  value={targetBatchId}
-                  onChange={(e) => setTargetBatchId(e.target.value)}
-                  className="w-full border-2 border-neo-border p-2.5 rounded-sm mobile-input bg-white text-neo-black focus:outline-none focus:ring-2 focus:ring-neo-accent"
-                >
-                  <option value="">-- Pilih Batch Target --</option>
-                  {batches.map((b) => (
-                    <option key={b.id} value={b.id}>
-                      #{b.id} - {b.filename} ({b.dataset_type.toUpperCase()} - {b.total_rows} baris)
-                    </option>
-                  ))}
-                </select>
-              )}
-            </div>
-          ) : (
-            <div className="p-3.5 sm:p-4 border-2 border-neo-border bg-[#fafafa] rounded-sm space-y-3.5">
-              <div className="flex items-center gap-1.5 text-xs font-black text-neo-black uppercase tracking-wide">
-                <Compass size={16} />
-                <span>Data Titik Lapangan Manual</span>
-              </div>
-              <div>
-                <label className="block text-xs font-bold text-neo-black mb-1">
-                  Nama / ID Titik / No. Tiang <span className="text-[#dc2626]">*</span>
-                </label>
-                <input
-                  type="text"
-                  required
-                  value={manualRef}
-                  onChange={(e) => setManualRef(e.target.value)}
-                  className="w-full border-2 border-neo-border p-2 rounded-sm mobile-input bg-white text-neo-black"
-                />
-              </div>
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                <div>
-                  <label className="block text-xs font-bold text-neo-black mb-1">
-                    Latitude (Y) <span className="text-[#dc2626]">*</span>
-                  </label>
-                  <input
-                    type="text"
-                    required
-                    value={manualLat}
-                    onChange={(e) => setManualLat(e.target.value)}
-                    className="w-full border-2 border-neo-border p-2 rounded-sm mobile-input bg-white text-neo-black font-mono"
-                  />
-                </div>
-                <div>
-                  <label className="block text-xs font-bold text-neo-black mb-1">
-                    Longitude (X) <span className="text-[#dc2626]">*</span>
-                  </label>
-                  <input
-                    type="text"
-                    required
-                    value={manualLon}
-                    onChange={(e) => setManualLon(e.target.value)}
-                    className="w-full border-2 border-neo-border p-2 rounded-sm mobile-input bg-white text-neo-black font-mono"
-                  />
-                </div>
-              </div>
-            </div>
-          )}
-
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-4">
-            <div>
-              <label className="block text-xs sm:text-sm font-bold text-neo-black mb-1">
-                Radius Maksimal (Meter)
-              </label>
-              <input
-                type="number"
-                min="5"
-                max="1000"
-                value={radiusMeters}
-                onChange={(e) => setRadiusMeters(Number(e.target.value))}
-                className="w-full border-2 border-neo-border p-2 rounded-sm mobile-input bg-white text-neo-black font-mono"
-              />
-              <span className="text-[11px] text-neo-border mt-0.5 block">Default rekomendasi: 150 meter</span>
-            </div>
-
-            <div>
-              <label className="block text-xs sm:text-sm font-bold text-neo-black mb-1">
-                Max Kandidat / Titik
-              </label>
-              <input
-                type="number"
-                min="1"
-                max="10"
-                value={maxCandidates}
-                onChange={(e) => setMaxCandidates(Number(e.target.value))}
-                className="w-full border-2 border-neo-border p-2 rounded-sm mobile-input bg-white text-neo-black font-mono"
-              />
-              <span className="text-[11px] text-neo-border mt-0.5 block">Urutan ranking jarak terdekat</span>
-            </div>
-          </div>
-
-          <button
-            type="submit"
-            disabled={loading}
-            className="w-full touch-min py-3 px-4 border-2 border-neo-black bg-neo-black text-white text-xs sm:text-sm font-bold rounded-sm shadow-[3px_3px_0_#ff6b35] hover:bg-[#1a1a1a] transition active:translate-y-0.5 disabled:opacity-50 flex items-center justify-center gap-2"
-          >
-            {loading ? (
-              <>
-                <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
-                <span>Menjalankan Pencocokan Spasial...</span>
-              </>
-            ) : (
-              <>
-                <Play size={16} />
-                <span>Jalankan Pencocokan Koordinat</span>
-              </>
-            )}
-          </button>
-        </form>
-      </div>
-
-      {/* Matching Result Summary */}
-      {result && (
-        <div className="p-4 sm:p-6 border-2 border-[#16a34a] bg-[#dcfce7] rounded-sm shadow-[4px_4px_0_#16a34a] max-w-2xl w-full space-y-3.5">
-          <div className="flex items-center gap-2 text-[#16a34a]">
-            <CheckCircle2 size={22} />
-            <h2 className="text-base sm:text-lg font-black">Pencocokan Spasial Selesai!</h2>
-          </div>
-
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-xs text-neo-black bg-white/70 p-3 rounded-sm border border-[#16a34a]/30">
-            <p>ID Sesi: <strong>#{result.process_id}</strong></p>
-            <p>Total Titik: <strong>{result.total_targets}</strong></p>
-            <p className="text-[#16a34a]">Menemukan Kandidat: <strong>{result.matched_targets}</strong></p>
-            <p className="text-[#dc2626]">Di Luar Radius: <strong>{result.unmatched_targets}</strong></p>
-            <p className="sm:col-span-2">Total Pasangan Terhubung: <strong>{result.total_candidates_found}</strong></p>
-          </div>
-
-          <button
-            onClick={() => navigate(`/candidates?process_id=${result.process_id}`)}
-            className="w-full touch-min py-3 px-4 border-2 border-neo-border bg-neo-black text-white text-xs sm:text-sm font-bold rounded-sm shadow-[3px_3px_0_#0a0a0a] hover:bg-[#222] transition active:translate-y-0.5 flex items-center justify-center gap-2"
-          >
-            <span>Buka Peta & Review Spasial Koordinat</span>
-            <ArrowRight size={16} />
-          </button>
-        </div>
-      )}
+  return <div className="space-y-5">
+    <div className="space-y-2 border-b border-ui-border pb-4">
+      <h1 className="flex items-center gap-2 text-xl font-semibold"><MapPin size={22} />Input Manual & Matching</h1>
+      <p className="text-sm text-ui-muted">Masukkan satu titik lapangan, lalu periksa melalui Data Koreksi, pilih kandidat di Peta Koreksi, dan unduh Hasil Koreksi.</p>
     </div>
-  );
+    <div className="mx-auto flex w-full max-w-5xl flex-wrap gap-2 text-sm">
+      {CORRECTION_TYPES.map((item) => <Link key={item.key} to={"/koreksi/" + item.slug} className={buttonClass.secondary}>Gunakan berkas {item.label}</Link>)}
+    </div>
+    <form onSubmit={save} className="mx-auto w-full max-w-5xl space-y-4 rounded-lg border border-ui-border bg-white p-4 sm:p-6 lg:p-8" aria-label="Input manual satu titik">
+      <fieldset disabled={stage !== null} className="min-w-0 space-y-4 disabled:opacity-70">
+        <legend className="mb-4 font-semibold">Input Manual 1 Titik Koordinat</legend>
+        <div className="grid gap-4 md:grid-cols-2">
+        <label className="block space-y-1 text-sm font-semibold"><span>Nama sesi</span><input required maxLength={120} value={sessionName} onChange={(event) => setSessionName(event.target.value)} className={control} placeholder="Contoh: Survei Gardu A" /></label>
+        <label className="block space-y-1 text-sm font-semibold"><span>Referensi survei / ID titik</span><input required maxLength={120} value={reference} onChange={(event) => setReference(event.target.value)} className={control} placeholder="Contoh: TIANG-001" /></label>
+        <label className="block space-y-1 text-sm font-semibold"><span>IDPEL awal (opsional)</span><input value={idpel} onChange={(event) => setIdpel(event.target.value)} maxLength={64} className={control} placeholder="Kosongkan jika belum diketahui" /></label>
+        <label className="block space-y-1 text-sm font-semibold"><span>Radius pemeriksaan (meter)</span><input required type="number" min="0.01" max="100000" step="any" value={radius} onChange={(event) => setRadius(event.target.value)} className={control} /></label>
+        </div>
+        <p role="status" className="text-xs text-ui-muted">Titik akan disimpan pada kategori <strong>{descriptor.label}</strong>. Referensi titik disimpan sebagai referensi survei.</p>
+        <div className="grid gap-4 sm:grid-cols-2">
+          <label className="block space-y-1 text-sm font-semibold"><span>Nomor agenda (opsional)</span><input value={agenda} onChange={(event) => setAgenda(event.target.value)} maxLength={120} className={control} /></label>
+          <label className="block space-y-1 text-sm font-semibold"><span>Nomor meter (opsional)</span><input value={meter} onChange={(event) => setMeter(event.target.value)} maxLength={120} className={control} /></label>
+          <label className="block space-y-1 text-sm font-semibold"><span>Latitude (Y)</span><input required inputMode="decimal" value={latitude} onChange={(event) => setLatitude(event.target.value)} className={control} placeholder="Contoh: -6.20890" /></label>
+          <label className="block space-y-1 text-sm font-semibold"><span>Longitude (X)</span><input required inputMode="decimal" value={longitude} onChange={(event) => setLongitude(event.target.value)} className={control} placeholder="Contoh: 106.84570" /></label>
+        </div>
+        <p className="text-sm text-ui-muted">Setelah disimpan, pilih versi PDPJ yang selesai divalidasi dan isi nama petugas di Data Koreksi, lalu jalankan pemeriksaan. Semua kandidat dalam radius dapat ditinjau.</p>
+        <button type="submit" className={buttonClass.primary}>{stage ? <LoaderCircle size={16} className="animate-spin" /> : <Save size={16} />}Simpan & Buka Data Koreksi</button>
+      </fieldset>
+      {stage && <p role="status" className="flex items-center gap-2 text-sm"><LoaderCircle size={16} className="animate-spin" />{stage}</p>}
+      {error && <p role="alert" className="text-sm text-red-700">{error}</p>}
+    </form>
+  </div>;
 }
 

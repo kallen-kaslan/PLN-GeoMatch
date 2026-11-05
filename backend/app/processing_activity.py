@@ -99,11 +99,13 @@ def activity_lock(
     else:
         stream = path.open("r+b")
     with stream:
-        if not path.stat().st_size:
-            stream.write(b"\0")
-            stream.flush()
+        # Lock before initializing byte zero. A concurrent status probe must not
+        # write a placeholder into a byte already locked by another Windows handle.
         acquired = file_lock(stream)
         try:
+            if acquired and not os.fstat(stream.fileno()).st_size:
+                stream.write(b"\0")
+                stream.flush()
             metadata: dict[str, Any] = {}
             if acquired and operation is not None:
                 metadata = {"operation": operation, "started_at": utc_now()}

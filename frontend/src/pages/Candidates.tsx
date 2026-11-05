@@ -1,3 +1,4 @@
+import { MetricCard } from "@/components/data/MetricCard";
 import { useState, useEffect, useRef, useCallback } from "react";
 import { useSearchParams, useNavigate } from "react-router-dom";
 import { api } from "@/lib/api";
@@ -343,30 +344,30 @@ export default function CandidatesPage() {
   return (
     <div className="space-y-6">
       {/* Top Header & Finish Button */}
-      <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-3 sm:gap-4 border-b border-neo-border pb-3">
+      <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-3 sm:gap-4 border-b border-ui-border pb-3">
         <div>
-          <h1 className="fluid-h1 font-black tracking-tight text-neo-black">
+          <h1 className="fluid-h1 font-semibold tracking-tight text-neo-black">
             Review & Peta Spasial Koordinat
           </h1>
-          <p className="text-xs sm:text-sm text-neo-border mt-0.5">
+          <p className="text-xs sm:text-sm text-ui-muted mt-0.5">
             Klik baris pada tabel untuk melacak langsung (auto-track) lokasi di peta dan periksa kelayakan IDPEL.
           </p>
         </div>
 
         <div className="flex flex-wrap items-center gap-2 sm:gap-2.5">
-          <div className="flex items-center gap-1.5 border-2 border-neo-border px-2.5 py-1.5 rounded-sm bg-white shadow-[2px_2px_0_#0a0a0a]">
-            <label className="text-xs font-bold text-neo-black">ID:</label>
+          <div className="flex items-center gap-1.5 border border-ui-border px-2.5 py-1.5 rounded-lg bg-white ">
+            <label className="text-xs font-semibold text-neo-black">ID:</label>
             <input
               type="number"
               value={processId}
               onChange={(e) => setSearchParams({ process_id: e.target.value })}
-              className="w-14 text-xs font-bold text-neo-black focus:outline-none"
+              className="w-14 text-xs font-semibold text-neo-black focus:outline-none"
             />
           </div>
 
           <button
             onClick={fetchCandidates}
-            className="touch-min px-3 py-1.5 min-h-[38px] border-2 border-neo-border bg-neo-white hover:bg-[#e5e4e7] text-xs font-bold rounded-sm shadow-[2px_2px_0_#0a0a0a] transition active:translate-y-0.5"
+            className="touch-min px-3 py-1.5 min-h-[38px] border border-ui-border bg-neo-white hover:bg-slate-100 text-xs font-semibold rounded-lg  transition "
           >
             🔄 Refresh
           </button>
@@ -374,7 +375,7 @@ export default function CandidatesPage() {
           <button
             onClick={handleReset}
             disabled={loading}
-            className="touch-min px-3 py-1.5 min-h-[38px] border-2 border-[#dc2626] bg-[#fee2e2] hover:bg-[#fef2f2] text-[#dc2626] text-xs font-bold rounded-sm shadow-[2px_2px_0_#dc2626] transition active:translate-y-0.5 disabled:opacity-50"
+            className="touch-min px-3 py-1.5 min-h-[38px] border border-[#dc2626] bg-[#fee2e2] hover:bg-[#fef2f2] text-[#dc2626] text-xs font-semibold rounded-lg  transition  disabled:opacity-50"
             title="Hapus semua data dan mulai dari awal"
           >
             🗑️ Reset
@@ -383,7 +384,7 @@ export default function CandidatesPage() {
           <button
             onClick={handleFinishReview}
             disabled={loading}
-            className="touch-min px-4 py-2 min-h-[38px] border-2 border-neo-border bg-neo-accent hover:bg-[#e85a26] text-white text-xs font-bold rounded-sm shadow-[2px_2px_0_#0a0a0a] flex items-center gap-1.5 transition active:translate-y-0.5 disabled:opacity-50"
+            className="touch-min px-4 py-2 min-h-[38px] border border-ui-border bg-neo-accent hover:bg-ui-primary-hover text-white text-xs font-semibold rounded-lg  flex items-center gap-1.5 transition  disabled:opacity-50"
             title="Selesaikan verifikasi dan lihat rekapitulasi serta download CSV"
           >
             <span>✅ Selesai & Buka Hasil</span>
@@ -394,14 +395,14 @@ export default function CandidatesPage() {
 
       {/* Banner Celery Worker Background Processing */}
       {(processStatus === "queued" || processStatus === "running") && (
-        <div className="p-3.5 sm:p-4 border-2 border-neo-black bg-[#fef9c3] rounded-sm shadow-[3px_3px_0_#0a0a0a] flex items-center justify-between gap-3">
+        <div className="p-3.5 sm:p-4 border border-neo-black bg-[#fef9c3] rounded-lg  flex items-center justify-between gap-3">
           <div className="flex items-center gap-3">
-            <div className="w-5 h-5 border-3 border-neo-black border-t-transparent rounded-full animate-spin shrink-0"></div>
+            <div className="w-5 h-5 border border-neo-black border-t-transparent rounded-full animate-spin shrink-0"></div>
             <div>
-              <p className="text-xs sm:text-sm font-black text-neo-black">
+              <p className="text-xs sm:text-sm font-semibold text-neo-black">
                 {processStatus === "queued" ? "⏳ Proses Masuk Antrean (QUEUED)" : "⚙️ Celery Worker Sedang Memproses Matching (RUNNING)..."}
               </p>
-              <p className="text-[11px] text-neo-border">
+              <p className="text-xs text-ui-muted">
                 Halaman ini otomatis me-refresh data begitu worker menyelesaikan perhitungan spasial.
               </p>
             </div>
@@ -409,7 +410,7 @@ export default function CandidatesPage() {
           <button
             type="button"
             onClick={fetchCandidates}
-            className="px-3 py-1.5 border border-neo-black bg-white text-xs font-bold rounded-xs shadow-[1px_1px_0_#0a0a0a] hover:bg-neo-white shrink-0"
+            className="px-3 py-1.5 border border-neo-black bg-white text-xs font-semibold rounded-md  hover:bg-neo-white shrink-0"
           >
             🔄 Refresh Manual
           </button>
@@ -418,44 +419,26 @@ export default function CandidatesPage() {
 
       {/* SUMMARY STATS BOX */}
       {candidates.length > 0 && (
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-2.5 sm:gap-4">
-          <div className="p-3.5 sm:p-4 border-2 border-neo-border rounded-sm bg-white shadow-[3px_3px_0_#0a0a0a]">
-            <p className="text-[11px] sm:text-xs font-bold text-neo-border uppercase">TOTAL KANDIDAT</p>
-            <p className="text-2xl sm:text-3xl font-black mt-1 text-neo-black">{totalCount}</p>
-          </div>
-          <div className="p-3.5 sm:p-4 border-2 border-[#16a34a] rounded-sm bg-[#dcfce7] shadow-[3px_3px_0_#16a34a]">
-            <p className="text-[11px] sm:text-xs font-bold text-[#16a34a] uppercase">VALID</p>
-            <p className="text-2xl sm:text-3xl font-black mt-1 text-[#16a34a]">
-              {candidates.filter(c => c.is_accepted === 1).length}
-            </p>
-          </div>
-          <div className="p-3.5 sm:p-4 border-2 border-[#dc2626] rounded-sm bg-[#fee2e2] shadow-[3px_3px_0_#dc2626]">
-            <p className="text-[11px] sm:text-xs font-bold text-[#dc2626] uppercase">DITOLAK</p>
-            <p className="text-2xl sm:text-3xl font-black mt-1 text-[#dc2626]">
-              {candidates.filter(c => c.is_accepted === -1).length}
-            </p>
-          </div>
-          <div className="p-3.5 sm:p-4 border-2 border-[#d97706] rounded-sm bg-[#fef3c7] shadow-[3px_3px_0_#d97706]">
-            <p className="text-[11px] sm:text-xs font-bold text-[#d97706] uppercase">PENDING</p>
-            <p className="text-2xl sm:text-3xl font-black mt-1 text-[#d97706]">
-              {candidates.filter(c => c.is_accepted === 0).length}
-            </p>
-          </div>
+        <div className="geo-metrics geo-metrics-4">
+          <MetricCard label="TOTAL KANDIDAT" value={totalCount} tone="primary" />
+          <MetricCard label="VALID" value={candidates.filter(c => c.is_accepted === 1).length} tone="success" />
+          <MetricCard label="DITOLAK" value={candidates.filter(c => c.is_accepted === -1).length} tone="danger" />
+          <MetricCard label="PENDING" value={candidates.filter(c => c.is_accepted === 0).length} tone="warning" />
         </div>
       )}
 
       {/* PETA INTERAKTIF */}
-      <div className="p-3.5 sm:p-4 border-2 border-neo-border rounded-sm bg-white shadow-[3px_3px_0_#0a0a0a] space-y-3">
+      <div className="p-3.5 sm:p-4 border border-ui-border rounded-lg bg-white  space-y-3">
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
           <div className="flex items-center gap-2">
-            <h2 className="text-xs sm:text-sm font-black text-neo-black">
+            <h2 className="text-xs sm:text-sm font-semibold text-neo-black">
               📍 Peta Geografis Spasial (Tracking Interaktif)
             </h2>
           </div>
 
-          <div className="flex flex-wrap items-center gap-2 sm:gap-3 text-[10px] sm:text-[11px] font-bold">
+          <div className="flex flex-wrap items-center gap-2 sm:gap-3 text-xs sm:text-xs font-semibold">
             <span className="flex items-center gap-1">
-              <span className="w-2.5 h-2.5 bg-[#2563eb] rounded-xs inline-block"></span>
+              <span className="w-2.5 h-2.5 bg-[#2563eb] rounded-md inline-block"></span>
               <span>Target</span>
             </span>
             <span className="flex items-center gap-1">
@@ -471,7 +454,7 @@ export default function CandidatesPage() {
               <span>&lt; 5m</span>
             </span>
             <span className="flex items-center gap-1">
-              <span className="w-2.5 h-2.5 bg-[#dc2626] rounded-xs inline-block"></span>
+              <span className="w-2.5 h-2.5 bg-[#dc2626] rounded-md inline-block"></span>
               <span>Luar Jangkauan</span>
             </span>
           </div>
@@ -480,24 +463,24 @@ export default function CandidatesPage() {
         {/* Map Canvas dengan tinggi adaptif & perlindungan gesture */}
         <div
           ref={mapContainerRef}
-          className="border-2 border-neo-border rounded-sm bg-[#e5e4e7] w-full h-[270px] sm:h-[350px] md:h-[420px] relative z-10"
+          className="border border-ui-border rounded-lg bg-slate-100 w-full h-[270px] sm:h-[350px] md:h-[420px] relative z-10"
         ></div>
 
-        <p className="text-[11px] text-neo-border bg-neo-white p-2.5 border border-neo-border rounded-xs">
+        <p className="text-xs text-ui-muted bg-neo-white p-2.5 border border-ui-border rounded-md">
           💡 <strong>Interaktivitas Peta:</strong> Klik salah satu baris pada tabel di bawah untuk membuat peta langsung <strong>terbang (fly-to)</strong> dan fokus pada koordinat titik tersebut. Klik marker untuk membuka langsung di <strong>Google Maps</strong>.
         </p>
       </div>
 
       {/* MULTI-FILTER CHECKBOX PANEL */}
-      <div className="p-4 border border-neo-border rounded-sm bg-white shadow-[0_4px_0_#0a0a0a] space-y-4">
-        <h3 className="text-sm font-bold flex items-center gap-2">
+      <div className="p-4 border border-ui-border rounded-lg bg-white  space-y-4">
+        <h3 className="text-sm font-semibold flex items-center gap-2">
           🔍 Filter Multi-Kriteria (Bisa pilih lebih dari satu)
         </h3>
 
         <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
           {/* KELAYAKAN DATA */}
           <div>
-            <h4 className="text-xs font-bold mb-2 flex items-center gap-1">
+            <h4 className="text-xs font-semibold mb-2 flex items-center gap-1">
               <span className="w-2 h-2 bg-[#16a34a] rounded-full"></span>
               Kelayakan Data
             </h4>
@@ -521,7 +504,7 @@ export default function CandidatesPage() {
                       }
                       setCurrentPage(1);
                     }}
-                    className="border border-neo-border rounded-sm"
+                    className="border border-ui-border rounded-lg"
                   />
                   <span className="w-2 h-2 rounded-full" style={{ backgroundColor: color }}></span>
                   <span>{label}</span>
@@ -532,7 +515,7 @@ export default function CandidatesPage() {
 
           {/* LAYANAN */}
           <div>
-            <h4 className="text-xs font-bold mb-2 flex items-center gap-1">
+            <h4 className="text-xs font-semibold mb-2 flex items-center gap-1">
               <span className="w-2 h-2 bg-[#2563eb] rounded-full"></span>
               Jenis Layanan
             </h4>
@@ -550,9 +533,9 @@ export default function CandidatesPage() {
                       }
                       setCurrentPage(1);
                     }}
-                    className="border border-neo-border rounded-sm"
+                    className="border border-ui-border rounded-lg"
                   />
-                  <span className={`neo-highlight px-2 py-0.5 text-[10px] rounded ${layanan === "PRABAYAR" ? "bg-blue-100 text-blue-800" : "bg-gray-100 text-gray-800"}`}>
+                  <span className={`neo-highlight px-2 py-0.5 text-xs rounded ${layanan === "PRABAYAR" ? "bg-blue-100 text-blue-800" : "bg-gray-100 text-gray-800"}`}>
                     {layanan}
                   </span>
                 </label>
@@ -562,7 +545,7 @@ export default function CandidatesPage() {
 
           {/* IDPEL STATUS */}
           <div>
-            <h4 className="text-xs font-bold mb-2 flex items-center gap-1">
+            <h4 className="text-xs font-semibold mb-2 flex items-center gap-1">
               <span className="w-2 h-2 bg-[#ff6b35] rounded-full"></span>
               Status IDPEL
             </h4>
@@ -585,7 +568,7 @@ export default function CandidatesPage() {
                       }
                       setCurrentPage(1);
                     }}
-                    className="border border-neo-border rounded-sm"
+                    className="border border-ui-border rounded-lg"
                   />
                   <span>{label}</span>
                 </label>
@@ -595,17 +578,17 @@ export default function CandidatesPage() {
         </div>
 
         {/* STATUS REVIEW (existing) */}
-        <div className="pt-2 border-t border-neo-border">
+        <div className="pt-2 border-t border-ui-border">
           <div className="flex flex-wrap items-center gap-3">
             <div>
-              <label className="font-bold mr-2 text-xs">Status Review:</label>
+              <label className="font-semibold mr-2 text-xs">Status Review:</label>
               <select
                 value={statusFilter}
                 onChange={(e) => {
                   setStatusFilter(e.target.value);
                   setCurrentPage(1);
                 }}
-                className="border border-neo-border p-1.5 rounded-sm bg-white text-xs"
+                className="border border-ui-border p-1.5 rounded-lg bg-white text-xs"
               >
                 <option value="all">Semua</option>
                 <option value="0">Menunggu (Pending)</option>
@@ -614,7 +597,7 @@ export default function CandidatesPage() {
               </select>
             </div>
 
-            <div className="ml-auto text-[11px] text-neo-border">
+            <div className="ml-auto text-xs text-ui-muted">
               Total data: <strong>{totalCount}</strong> | Menampilkan halaman <strong>{currentPage}</strong> dari <strong>{totalPages}</strong>
             </div>
           </div>
@@ -627,10 +610,10 @@ export default function CandidatesPage() {
           <button
             type="button"
             onClick={handleBulkDecision}
-            className={`px-4 py-2 text-xs font-bold border rounded-sm transition ${
+            className={`px-4 py-2 text-xs font-semibold border rounded-lg transition ${
               candidates.every((c) => c.is_accepted === 1)
-                ? "border-[#dc2626] bg-[#fee2e2] text-[#dc2626] shadow-[0_2px_0_#dc2626] hover:bg-[#fef2f2]"
-                : "border-[#16a34a] bg-[#dcfce7] text-[#16a34a] shadow-[0_2px_0_#16a34a] hover:bg-[#f0fdf4]"
+                ? "border-[#dc2626] bg-[#fee2e2] text-[#dc2626]  hover:bg-[#fef2f2]"
+                : "border-[#16a34a] bg-[#dcfce7] text-[#16a34a]  hover:bg-[#f0fdf4]"
             }`}
           >
             {candidates.every((c) => c.is_accepted === 1) ? (
@@ -643,50 +626,50 @@ export default function CandidatesPage() {
       )}
 
       {error && (
-        <div className="p-4 border border-[#dc2626] bg-[#fee2e2] text-[#dc2626] rounded-sm text-sm">
+        <div className="p-4 border border-[#dc2626] bg-[#fee2e2] text-[#dc2626] rounded-lg text-sm">
           {error}
         </div>
       )}
 
       {/* TABEL HASIL */}
       {loading ? (
-        <div className="p-8 text-center text-sm text-neo-border">Memuat data kandidat...</div>
+        <div className="p-8 text-center text-sm text-ui-muted">Memuat data kandidat...</div>
       ) : candidates.length === 0 ? (
-        <div className="p-8 border border-dashed border-neo-border rounded-sm text-center bg-white space-y-3 shadow-[0_2px_0_#0a0a0a]">
+        <div className="p-8 border border-dashed border-ui-border rounded-lg text-center bg-white space-y-3 ">
           <p className="text-sm font-semibold text-neo-black">Belum Ada Data Kandidat untuk Proses #{processId}</p>
-          <p className="text-xs text-neo-border max-w-md mx-auto">
+          <p className="text-xs text-ui-muted max-w-md mx-auto">
             Proses ini belum memiliki data kandidat atau pencocokan belum dijalankan. Anda dapat menjalankan alur data demo secara instan atau upload file baru.
           </p>
           <div className="flex justify-center gap-3 pt-2">
             <button
               onClick={handleQuickDemoHere}
               disabled={seedingQuick}
-              className="px-4 py-2 border border-neo-border bg-neo-accent text-white text-xs font-bold rounded-sm shadow-[0_2px_0_#0a0a0a] hover:bg-[#e85a26] disabled:opacity-50"
+              className="px-4 py-2 border border-ui-border bg-neo-accent text-white text-xs font-semibold rounded-lg  hover:bg-ui-primary-hover disabled:opacity-50"
             >
               {seedingQuick ? "Memproses Data Demo..." : "⚡ Muat Data Demo Lengkap Langsung"}
             </button>
             <button
               onClick={() => navigate("/upload")}
-              className="px-4 py-2 border border-neo-border bg-white text-neo-black text-xs font-semibold rounded-sm shadow-[0_2px_0_#0a0a0a] hover:bg-[#e5e4e7]"
+              className="px-4 py-2 border border-ui-border bg-white text-neo-black text-xs font-semibold rounded-lg  hover:bg-slate-100"
             >
               📤 Buka Menu Upload
             </button>
           </div>
         </div>
       ) : (
-        <div className="border-2 border-neo-border rounded-sm bg-white shadow-[3px_3px_0_#0a0a0a] overflow-x-auto neo-scrollbar">
-          <table className="w-full text-left text-xs border-collapse whitespace-nowrap min-w-[950px]">
-            <thead className="bg-[#e5e4e7] border-b-2 border-neo-border font-bold">
+        <div className="border border-ui-border rounded-lg bg-white  overflow-x-auto neo-scrollbar">
+          <table className="w-full text-left text-[13px] border-collapse whitespace-nowrap min-w-[950px]">
+            <thead className="bg-slate-100 border-b border-ui-border font-semibold">
               <tr>
-                <th className="p-3 border-r border-neo-border">Rank</th>
-                <th className="p-3 border-r border-neo-border">Target Koordinat Kosong</th>
-                <th className="p-3 border-r border-neo-border">Kandidat IDPEL</th>
-                <th className="p-3 border-r border-neo-border">Nama Pelanggan</th>
-                <th className="p-3 border-r border-neo-border">Layanan</th>
-                <th className="p-3 border-r border-neo-border">Jarak</th>
-                <th className="p-3 border-r border-neo-border">Kelayakan Data</th>
-                <th className="p-3 border-r border-neo-border text-center">Google Maps</th>
-                <th className="p-3 border-r border-neo-border">Status</th>
+                <th className="p-3 border-r border-ui-border">Rank</th>
+                <th className="p-3 border-r border-ui-border">Target Koordinat Kosong</th>
+                <th className="p-3 border-r border-ui-border">Kandidat IDPEL</th>
+                <th className="p-3 border-r border-ui-border">Nama Pelanggan</th>
+                <th className="p-3 border-r border-ui-border">Layanan</th>
+                <th className="p-3 border-r border-ui-border">Jarak</th>
+                <th className="p-3 border-r border-ui-border">Kelayakan Data</th>
+                <th className="p-3 border-r border-ui-border text-center">Google Maps</th>
+                <th className="p-3 border-r border-ui-border">Status</th>
                 <th className="p-3 text-center">Aksi Petugas</th>
               </tr>
             </thead>
@@ -702,42 +685,42 @@ export default function CandidatesPage() {
                   <tr
                     key={c.id}
                     onClick={() => handleSelectRow(c)}
-                    className={`border-b border-neo-border cursor-pointer transition ${
+                    className={`border-b border-ui-border cursor-pointer transition ${
                       isSelected ? "bg-[#fef9c3] font-semibold" : "hover:bg-[#f5f5f5]"
                     }`}
                   >
-                    <td className="p-3 border-r border-neo-border font-bold text-center">
+                    <td className="p-3 border-r border-ui-border font-semibold text-center">
                       #{(currentPage - 1) * rowsPerPage + index + 1}
                     </td>
-                    <td className="p-3 border-r border-neo-border">
+                    <td className="p-3 border-r border-ui-border">
                       <div className="font-semibold text-neo-black">{c.target_ref}</div>
-                      <div className="text-[10px] text-gray-500 font-mono">
+                      <div className="text-xs text-gray-500 font-mono">
                         {c.target_lat.toFixed(5)}, {c.target_lon.toFixed(5)}
                       </div>
                     </td>
-                    <td className="p-3 border-r border-neo-border font-semibold">
+                    <td className="p-3 border-r border-ui-border font-semibold">
                       {c.validity_status === "DILUAR_RADIUS" ? (
-                        <span className="text-[#dc2626] font-bold">🔴 Di Luar Radius</span>
+                        <span className="text-[#dc2626] font-semibold">🔴 Di Luar Radius</span>
                       ) : c.validity_status === "IDPEL_KOSONG" ? (
-                        <span className="text-[#ea580c] font-bold">IDPEL KOSONG</span>
+                        <span className="text-[#ea580c] font-semibold">IDPEL KOSONG</span>
                       ) : c.validity_status === "TIDAK_DITEMUKAN" ? (
                         <span className="text-[#f97316]">TIDAK DITEMUKAN</span>
                       ) : c.validity_status === "VALID" && c.candidate_idpel && !c.candidate_idpel.startsWith("UNASSIGNED-") && c.candidate_idpel !== "IDPEL_KOSONG" ? (
                         <div>
-                          <span className="text-[#16a34a] font-bold">✓ VALID</span>
-                          <div className="text-[10px] font-mono text-gray-500">{c.candidate_idpel}</div>
+                          <span className="text-[#16a34a] font-semibold">✓ VALID</span>
+                          <div className="text-xs font-mono text-gray-500">{c.candidate_idpel}</div>
                         </div>
                       ) : c.validity_status === "VALID" ? (
-                        <span className="text-[#16a34a] font-bold">✓ VALID</span>
+                        <span className="text-[#16a34a] font-semibold">✓ VALID</span>
                       ) : c.validity_status === "PERLU_KONFIRMASI_IDPEL" ? (
                         <span className="text-[#ca8a04]">PERLU KONFIRMASI</span>
                       ) : (
                         <span className="text-gray-500">-</span>
                       )}
                     </td>
-                    <td className="p-3 border-r border-neo-border">{c.candidate_nama || "-"}</td>
-                    <td className="p-3 border-r border-neo-border">
-                      <span className={`neo-highlight px-1.5 py-1 rounded text-[10px] font-bold ${
+                    <td className="p-3 border-r border-ui-border">{c.candidate_nama || "-"}</td>
+                    <td className="p-3 border-r border-ui-border">
+                      <span className={`neo-highlight px-1.5 py-1 rounded text-xs font-semibold ${
                         (c.jenis_layanan || "PASCABAYAR") === "PRABAYAR"
                           ? "bg-blue-100 text-blue-800"
                           : "bg-gray-100 text-gray-800"
@@ -745,52 +728,52 @@ export default function CandidatesPage() {
                         {c.jenis_layanan || "PASCABAYAR"}
                       </span>
                     </td>
-                    <td className="p-3 border-r border-neo-border font-mono">
-                      <span className={`font-bold ${isOutOfRadius ? "text-[#dc2626]" : isUnder5m ? "text-[#7c3aed]" : "text-[#ff6b35]"}`}>
+                    <td className="p-3 border-r border-ui-border font-mono">
+                      <span className={`font-semibold ${isOutOfRadius ? "text-[#dc2626]" : isUnder5m ? "text-[#7c3aed]" : "text-[#ff6b35]"}`}>
                         {c.distance_meters} m
                       </span>
                       {isUnder5m && (
-                        <span className="block text-[10px] text-[#7c3aed] font-semibold">&lt; 5m (Min 5m)</span>
+                        <span className="block text-xs text-[#7c3aed] font-semibold">&lt; 5m (Min 5m)</span>
                       )}
                     </td>
-                    <td className="p-3 border-r border-neo-border">
+                    <td className="p-3 border-r border-ui-border">
                       {isOutOfRadius ? (
-                        <span className="neo-highlight px-2 py-1 border border-[#dc2626] bg-[#fee2e2] text-[#dc2626] rounded text-[10px] font-bold">
+                        <span className="neo-highlight px-2 py-1 border border-[#dc2626] bg-[#fee2e2] text-[#dc2626] rounded text-xs font-semibold">
                           🔴 LUAR JANGKAUAN
                         </span>
                       ) : hasRealIdpel ? (
-                        <span className="neo-highlight px-2 py-1 border border-[#16a34a] bg-[#dcfce7] text-[#16a34a] rounded text-[10px] font-bold">
+                        <span className="neo-highlight px-2 py-1 border border-[#16a34a] bg-[#dcfce7] text-[#16a34a] rounded text-xs font-semibold">
                           ✓ VALID (ASLI)
                         </span>
                       ) : (
-                        <span className="neo-highlight px-2 py-1 border border-[#ea580c] bg-[#ffedd5] text-[#ea580c] rounded text-[10px] font-bold">
+                        <span className="neo-highlight px-2 py-1 border border-[#ea580c] bg-[#ffedd5] text-[#ea580c] rounded text-xs font-semibold">
                           ⚠️ KONFIRMASI ULANG
                         </span>
                       )}
                     </td>
-                    <td className="p-3 border-r border-neo-border text-center" onClick={(e) => e.stopPropagation()}>
+                    <td className="p-3 border-r border-ui-border text-center" onClick={(e) => e.stopPropagation()}>
                       <a
                         href={gmapsUrl}
                         target="_blank"
                         rel="noreferrer"
-                        className="touch-min px-2.5 py-1 border border-neo-border bg-white hover:bg-[#e5e4e7] rounded text-[10px] font-bold inline-flex items-center gap-1 shadow-[0_1px_0_#0a0a0a]"
+                        className="touch-min px-2.5 py-1 border border-ui-border bg-white hover:bg-slate-100 rounded text-xs font-semibold inline-flex items-center gap-1 "
                       >
                         📍 GMaps
                       </a>
                     </td>
-                    <td className="p-3 border-r border-neo-border">
+                    <td className="p-3 border-r border-ui-border">
                       {c.is_accepted === 1 && (
-                        <span className="neo-highlight px-2 py-1 border border-[#16a34a] bg-[#dcfce7] text-[#16a34a] rounded text-[10px] font-bold">
+                        <span className="neo-highlight px-2 py-1 border border-[#16a34a] bg-[#dcfce7] text-[#16a34a] rounded text-xs font-semibold">
                           VALID
                         </span>
                       )}
                       {c.is_accepted === -1 && (
-                        <span className="neo-highlight px-2 py-1 border border-[#dc2626] bg-[#fee2e2] text-[#dc2626] rounded text-[10px] font-bold">
+                        <span className="neo-highlight px-2 py-1 border border-[#dc2626] bg-[#fee2e2] text-[#dc2626] rounded text-xs font-semibold">
                           DITOLAK
                         </span>
                       )}
                       {c.is_accepted === 0 && (
-                        <span className="px-2 py-1 border border-[#d97706] bg-[#fef3c7] text-[#d97706] rounded text-[10px] font-bold">
+                        <span className="px-2 py-1 border border-[#d97706] bg-[#fef3c7] text-[#d97706] rounded text-xs font-semibold">
                           PENDING
                         </span>
                       )}
@@ -799,7 +782,7 @@ export default function CandidatesPage() {
                       <div className="flex justify-center items-center gap-1.5">
                         <button
                           onClick={(e) => handleDecision(c.id, 1, e)}
-                          className={`touch-min px-3 py-1.5 min-h-[36px] border-2 border-neo-border rounded text-xs font-bold shadow-[1px_1px_0_#0a0a0a] transition active:translate-y-0.5 ${
+                          className={`touch-min px-3 py-1.5 min-h-[36px] border border-ui-border rounded text-xs font-semibold  transition  ${
                             c.is_accepted === 1
                               ? "bg-[#16a34a] text-white"
                               : "bg-white text-[#16a34a] hover:bg-[#dcfce7]"
@@ -809,7 +792,7 @@ export default function CandidatesPage() {
                         </button>
                         <button
                           onClick={(e) => handleDecision(c.id, -1, e)}
-                          className={`touch-min px-3 py-1.5 min-h-[36px] border-2 border-neo-border rounded text-xs font-bold shadow-[1px_1px_0_#0a0a0a] transition active:translate-y-0.5 ${
+                          className={`touch-min px-3 py-1.5 min-h-[36px] border border-ui-border rounded text-xs font-semibold  transition  ${
                             c.is_accepted === -1
                               ? "bg-[#dc2626] text-white"
                               : "bg-white text-[#dc2626] hover:bg-[#fee2e2]"
@@ -829,16 +812,16 @@ export default function CandidatesPage() {
 
       {/* PAGINATION CONTROLS */}
       {totalCandidates > rowsPerPage && (
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 p-3.5 sm:p-4 border-2 border-neo-border rounded-sm bg-white shadow-[2px_2px_0_#0a0a0a]">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 p-3.5 sm:p-4 border border-ui-border rounded-lg bg-white ">
           <div className="flex items-center gap-2">
-            <label className="text-xs font-bold text-neo-black">Baris per halaman:</label>
+            <label className="text-xs font-semibold text-neo-black">Baris per halaman:</label>
             <select
               value={rowsPerPage}
               onChange={(e) => {
                 setRowsPerPage(Number(e.target.value));
                 setCurrentPage(1);
               }}
-              className="border-2 border-neo-border p-1.5 rounded-sm text-xs bg-white font-bold"
+              className="border border-ui-border p-1.5 rounded-lg text-xs bg-white font-semibold"
             >
               <option value={25}>25</option>
               <option value={50}>50</option>
@@ -847,7 +830,7 @@ export default function CandidatesPage() {
             </select>
           </div>
 
-          <div className="text-xs font-bold text-neo-black">
+          <div className="text-xs font-semibold text-neo-black">
             Halaman <strong>{currentPage}</strong> dari <strong>{totalPages}</strong> ({totalCandidates} total)
           </div>
 
@@ -855,14 +838,14 @@ export default function CandidatesPage() {
             <button
               onClick={() => setCurrentPage(Math.max(1, currentPage - 1))}
               disabled={currentPage === 1}
-              className="touch-min px-4 py-2 min-h-[40px] border-2 border-neo-border bg-white hover:bg-[#e5e4e7] text-xs font-bold rounded-sm shadow-[1px_1px_0_#0a0a0a] transition active:translate-y-0.5 disabled:opacity-50 disabled:cursor-not-allowed flex-1 sm:flex-initial"
+              className="touch-min px-4 py-2 min-h-[40px] border border-ui-border bg-white hover:bg-slate-100 text-xs font-semibold rounded-lg  transition  disabled:opacity-50 disabled:cursor-not-allowed flex-1 sm:flex-initial"
             >
               ← Sebelumnya
             </button>
             <button
               onClick={() => setCurrentPage(Math.min(totalPages, currentPage + 1))}
               disabled={currentPage === totalPages}
-              className="touch-min px-4 py-2 min-h-[40px] border-2 border-neo-border bg-white hover:bg-[#e5e4e7] text-xs font-bold rounded-sm shadow-[1px_1px_0_#0a0a0a] transition active:translate-y-0.5 disabled:opacity-50 disabled:cursor-not-allowed flex-1 sm:flex-initial"
+              className="touch-min px-4 py-2 min-h-[40px] border border-ui-border bg-white hover:bg-slate-100 text-xs font-semibold rounded-lg  transition  disabled:opacity-50 disabled:cursor-not-allowed flex-1 sm:flex-initial"
             >
               Selanjutnya →
             </button>
@@ -872,15 +855,15 @@ export default function CandidatesPage() {
 
       {/* Bottom Action Finish */}
       {candidates.length > 0 && (
-        <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between p-4 sm:p-5 border-2 border-neo-border rounded-sm bg-white shadow-[3px_3px_0_#0a0a0a] gap-3">
+        <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between p-4 sm:p-5 border border-ui-border rounded-lg bg-white  gap-3">
           <div>
-            <span className="text-xs sm:text-sm font-bold text-neo-black block">Sudah selesai memverifikasi kandidat?</span>
-            <p className="text-[11px] sm:text-xs text-neo-border mt-0.5">Lanjutkan untuk melihat statistik final dan mengunduh laporan CSV.</p>
+            <span className="text-xs sm:text-sm font-semibold text-neo-black block">Sudah selesai memverifikasi kandidat?</span>
+            <p className="text-xs sm:text-xs text-ui-muted mt-0.5">Lanjutkan untuk melihat statistik final dan mengunduh laporan CSV.</p>
           </div>
           <button
             onClick={handleFinishReview}
             disabled={loading}
-            className="touch-min px-5 py-3 min-h-[44px] border-2 border-neo-border bg-neo-black text-white text-xs sm:text-sm font-bold rounded-sm shadow-[2px_2px_0_#ff6b35] hover:bg-[#222] transition active:translate-y-0.5 disabled:opacity-50 shrink-0 text-center"
+            className="touch-min px-5 py-3 min-h-[44px] border border-ui-border bg-ui-primary text-white text-xs sm:text-sm font-semibold rounded-lg  hover:bg-ui-primary-hover transition  disabled:opacity-50 shrink-0 text-center"
           >
             ✅ Selesaikan Review & Buka Hasil Rekonsiliasi →
           </button>

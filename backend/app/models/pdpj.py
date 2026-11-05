@@ -3,6 +3,7 @@
 from datetime import datetime
 from typing import Any, cast
 
+from app.database import Base
 from sqlalchemy import (
     JSON,
     Boolean,
@@ -13,10 +14,11 @@ from sqlalchemy import (
     Integer,
     String,
     UniqueConstraint,
+    bindparam,
+    func,
+    or_,
 )
 from sqlalchemy.orm import Mapped, mapped_column
-
-from app.database import Base
 
 
 class PdpjReview(Base):
@@ -76,6 +78,38 @@ Index(
     "ix_pdpj_rows_review_identity",
     PdpjRow.review_id,
     PdpjRow.current_fields["idpel"].as_string(),
+)
+
+
+def pdpj_coordinates_missing() -> Any:
+    return or_(
+        *(
+            PdpjRow.current_fields[
+                bindparam(
+                    None, field, type_=JSON.JSONStrIndexType(), literal_execute=True
+                )
+            ]
+            .as_float()
+            .is_(None)
+            for field in ("lat", "lon")
+        )
+    )
+
+
+def pdpj_issue_count() -> Any:
+    return func.json_array_length(PdpjRow.issues)
+
+
+PDPJ_SUMMARY_INDEX = "ix_pdpj_rows_review_summary"
+Index(
+    PDPJ_SUMMARY_INDEX,
+    PdpjRow.review_id,
+    PdpjRow.existence,
+    pdpj_coordinates_missing(),
+    pdpj_issue_count(),
+    PdpjRow.exception,
+    PdpjRow.row_number,
+    PdpjRow.id,
 )
 
 

@@ -2,14 +2,15 @@
 
 from typing import Annotated, Any, Literal
 
-from fastapi import APIRouter, Depends, HTTPException, Query
-from pydantic import BaseModel, ConfigDict, Field, field_validator
-from sqlalchemy import and_, case, func, or_
-from sqlalchemy.exc import SQLAlchemyError
-from sqlalchemy.orm import Session, defer, object_session
-
 from app.database import get_db
-from app.models.pdpj import PdpjChange, PdpjRecommendation, PdpjReview, PdpjRow
+from app.models.pdpj import (
+    PdpjChange,
+    PdpjRecommendation,
+    PdpjReview,
+    PdpjRow,
+    pdpj_coordinates_missing,
+    pdpj_issue_count,
+)
 from app.models.upload import DatasetType, SourceRecord, UploadBatch
 from app.modules.master.router import batch_info
 from app.modules.pdpj.service import (
@@ -24,9 +25,16 @@ from app.modules.pdpj.service import (
     refresh_rows,
     update_fields,
 )
+from app.modules.pdpj.summary import review_counts, saved_total
 from app.modules.upload.storage import database_write_error
 from app.pdpj_warning_schema import DUPLICATE_IDPEL
 from app.processing_activity import monitor_request, request_activity
+from app.search_index import pending_search, prepare_search, search_candidates
+from fastapi import APIRouter, Depends, HTTPException, Query
+from pydantic import BaseModel, ConfigDict, Field, field_validator
+from sqlalchemy import case, func, or_
+from sqlalchemy.exc import SQLAlchemyError
+from sqlalchemy.orm import Session, defer, object_session
 
 DbSession = Annotated[Session, Depends(get_db)]
 router = APIRouter(prefix="/pdpj", tags=["Validasi PDPJ"])
@@ -242,40 +250,10 @@ def processing_status(review_id: int, db: DbSession) -> dict[str, Any]:
 def review_summary(review_id: int, db: DbSession) -> dict[str, Any]:
     """Aggregate the entire review, independent of row filters and pagination."""
     review = get_review(db, review_id)
-    query = db.query(PdpjRow).filter(PdpjRow.review_id == review.id)
-    unresolved = and_(
-        func.json_array_length(PdpjRow.issues) > 0, PdpjRow.exception.is_(False)
-    )
-    total, found, not_found, empty, invalid, incomplete, exceptions, pending = (
-        query.with_entities(
-            func.count(PdpjRow.id),
-            func.count(PdpjRow.id).filter(PdpjRow.existence == "found"),
-            func.count(PdpjRow.id).filter(PdpjRow.existence == "not_found"),
-            func.count(PdpjRow.id).filter(PdpjRow.existence == "empty"),
-            func.count(PdpjRow.id).filter(PdpjRow.existence == "invalid"),
-            func.count(PdpjRow.id).filter(
-                or_(
-                    PdpjRow.current_fields["lat"].as_float().is_(None),
-                    PdpjRow.current_fields["lon"].as_float().is_(None),
-                )
-            ),
-            func.count(PdpjRow.id).filter(PdpjRow.exception.is_(True)),
-            func.count(PdpjRow.id).filter(unresolved),
-        ).one()
-    )
+    counts = review_counts(db, review)
     return {
         **review_info(review),
-        "summary": {
-            "total_rows": total,
-            "found": found,
-            "not_found": not_found,
-            "empty": empty,
-            "invalid": invalid,
-            "incomplete_coordinates": incomplete,
-            "exceptions": exceptions,
-            "unresolved": pending,
-            "ready": total - pending - exceptions,
-        },
+        "summary": counts,
         "masters": [
             batch_info(batch)
             for batch in db.query(UploadBatch)
@@ -313,9 +291,13 @@ def list_rows(
     limit: int = Query(25, ge=1, le=100),
 ) -> dict[str, Any]:
     """Include invalid and empty identities rather than silently discarding rows."""
-    get_review(db, review_id)
+    review = get_review(db, review_id)
     query = db.query(PdpjRow).filter(PdpjRow.review_id == review_id)
     if q.strip():
+        state = prepare_search(db, ("pdpj",))
+        if state and not state["ready"]:
+            return pending_search(state)
+        query = query.filter(search_candidates(db, (("pdpj", PdpjRow.id),), q))
         pattern = (
             "%"
             + q.strip().replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
@@ -325,30 +307,30 @@ def list_rows(
             or_(
                 *(
                     PdpjRow.current_fields[key].as_string().ilike(pattern, escape="\\")
-                    for key in ("idpel", "nama", "target_ref")
+                    for key in (
+                        "idpel",
+                        "nama",
+                        "target_ref",
+                        "meter_ref",
+                        "nomor_meter_kwh",
+                        "nomor_meter_prepaid",
+                    )
                 )
             )
         )
     if status in {"found", "not_found", "empty", "invalid"}:
         query = query.filter(PdpjRow.existence == status)
     elif status == "incomplete":
-        query = query.filter(
-            or_(
-                PdpjRow.current_fields["lat"].as_float().is_(None),
-                PdpjRow.current_fields["lon"].as_float().is_(None),
-            )
-        )
+        query = query.filter(pdpj_coordinates_missing().is_(True))
     elif status == "unresolved":
-        query = query.filter(
-            func.json_array_length(PdpjRow.issues) > 0, PdpjRow.exception.is_(False)
-        )
+        query = query.filter(pdpj_issue_count() > 0, PdpjRow.exception.is_(False))
     elif status == "exception":
         query = query.filter(PdpjRow.exception.is_(True))
     elif status == "ready":
-        query = query.filter(
-            func.json_array_length(PdpjRow.issues) == 0, PdpjRow.exception.is_(False)
-        )
-    total = query.with_entities(func.count(PdpjRow.id)).scalar() or 0
+        query = query.filter(pdpj_issue_count() == 0, PdpjRow.exception.is_(False))
+    total = saved_total(db, review, status) if not q.strip() else None
+    if total is None:
+        total = query.with_entities(func.count(PdpjRow.id)).scalar() or 0
     page_ids = (
         query.with_entities(PdpjRow.id)
         .order_by(PdpjRow.row_number, PdpjRow.id)
