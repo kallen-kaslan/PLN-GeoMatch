@@ -3,7 +3,7 @@
 from typing import Any
 
 from app.models.upload import SourceRecord, UploadBatch
-from app.modules.upload.normalization import raw_fields
+from app.modules.upload.normalization import normalize_column_name, raw_fields
 
 
 def text(value: Any) -> str:
@@ -54,6 +54,8 @@ def result_columns(
     batch: UploadBatch,
     target: dict[str, Any],
     candidate: dict[str, Any],
+    *,
+    radius_meters: float | None,
 ) -> list[Any]:
     values = target_columns(source, batch, target)
     fields = candidate.get("fields", {})
@@ -65,4 +67,19 @@ def result_columns(
         for item in observations
     )
     values[6] = "\n".join(text(item.get("row_number")) for item in observations)
-    return [*values, text(fields.get("lon")), text(fields.get("lat"))]
+    objectid = next(
+        (
+            value
+            for key, value in (source.data or {}).items()
+            if normalize_column_name(key) == "objectid"
+        ),
+        None,
+    )
+    return [
+        text(objectid),
+        *values,
+        text(fields.get("lon")),
+        text(fields.get("lat")),
+        radius_meters,
+        candidate.get("distance_meters"),
+    ]

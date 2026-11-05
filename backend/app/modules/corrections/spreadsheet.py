@@ -12,6 +12,7 @@ from openpyxl.worksheet._write_only import WriteOnlyWorksheet
 
 XLSX_MEDIA_TYPE = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
 RESULT_HEADERS = [
+    "objectid",
     "noagenda",
     "idpelanggan",
     "jenispelanggan",
@@ -21,8 +22,10 @@ RESULT_HEADERS = [
     "sel (baris ke berapa)",
     "x_akhir",
     "y_akhir",
+    "radius_pemeriksaan_meter",
+    "jarak_kandidat_meter",
 ]
-RESULT_WIDTHS = [26, 22, 22, 24, 24, 58, 26, 24, 24]
+RESULT_WIDTHS = [16, 26, 22, 22, 24, 24, 58, 26, 24, 24, 30, 26]
 
 
 class Spreadsheet:

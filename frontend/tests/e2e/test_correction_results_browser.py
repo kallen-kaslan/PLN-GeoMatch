@@ -54,7 +54,7 @@ def test_partial_results_export_history_resume_replace_and_cancel(
     exported = dict(zip(rows[0], rows[1]))
     assert "verif" not in exported
     assert "x_acc" not in exported and "y_acc" not in exported
-    assert len(rows[0]) == 9
+    assert len(rows[0]) == 12
     assert exported["idpelanggan"] == "002"
     assert exported["latitudey"] == "-6.2"
     assert exported["x_akhir"] == "106.8"
@@ -62,7 +62,7 @@ def test_partial_results_export_history_resume_replace_and_cancel(
     assert "dil.csv" in exported["sumber file (sheet)"]
     assert book["Hasil Koreksi"].freeze_panes is None
     assert book["Hasil Koreksi"]["A1"].fill.patternType is None
-    assert book["Hasil Koreksi"]["B2"].data_type == "s"
+    assert book["Hasil Koreksi"]["C2"].data_type == "s"
     book.close()
     page.reload()
     expect(results).to_contain_text("002")
@@ -94,13 +94,13 @@ def test_partial_results_export_history_resume_replace_and_cancel(
     download.value.save_as(tmp_path / "history-results.xlsx")
     book = load_workbook(tmp_path / "history-results.xlsx")
     assert book.sheetnames == ["Hasil Koreksi"]
-    assert book["Hasil Koreksi"]["B2"].value == "002"
+    assert book["Hasil Koreksi"]["C2"].value == "002"
     book.close()
     with page.expect_download() as download:
         audit.get_by_role("button", name="Unduh riwayat XLSX", exact=True).click()
     download.value.save_as(tmp_path / "history.xlsx")
     book = load_workbook(tmp_path / "history.xlsx")
-    assert book["Riwayat Pilihan"]["B2"].value == "002"
+    assert book["Riwayat Pilihan"]["C2"].value == "002"
     book.close()
     page.get_by_role("link", name="Hasil", exact=True).click()
     response = httpx.post(base + "/resume", json={"run_id": run["id"]})

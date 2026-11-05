@@ -135,7 +135,7 @@ function MapWorkspace({ kind, batchParam, processParam, generationParam, params,
   const processStarted = useCallback(() => setNotice(""), []);
   const choiceKey = ["correction-choice", kind, process, selected, generation];
   const choice = useQuery({ queryKey: choiceKey, queryFn: () => correctionApi.choice(kind, process!, selected!, generation), enabled: Boolean(process && selected && active) });
-  const download = useMutation({ mutationFn: () => resultsApi.download(kind, process!, run!.generation, run!.radius_meters, "", "all"), onSuccess: (file) => downloadSpreadsheet(file.blob, file.filename) });
+  const download = useMutation({ mutationFn: () => resultsApi.download(kind, process!, run!.generation, displayRadius!, "", "all"), onSuccess: (file) => downloadSpreadsheet(file.blob, file.filename) });
   const expand = useMutation({
     mutationFn: () => {
       if (!validExpansion || historical || expansionBlocked || !actor.trim()) throw new Error("Isi radius perluasan yang lebih besar dari radius terbaru dan nama petugas.");
@@ -204,8 +204,8 @@ function MapWorkspace({ kind, batchParam, processParam, generationParam, params,
       </fieldset>
       </div>
       <Link className="inline-block text-xs font-semibold underline" to={`/koreksi/${descriptor.slug}${batch ? `?batch_id=${batch}${process ? `&process_id=${process}` : ""}` : ""}`}>Buka data dan riwayat pemeriksaan</Link>
-      {process && <div className="flex flex-wrap gap-4 text-xs font-semibold"><Link to={`/result?category=${kind}&process_id=${process}${generation ? `&generation=${generation}` : ""}`} className="underline">Lihat Hasil Koreksi</Link><Link to={`/history?process_id=${process}${generation ? `&generation=${generation}` : ""}`} className="underline">Lihat Riwayat Proses</Link><button type="button" className="underline disabled:opacity-50" disabled={!run || download.isPending || !scopeReady} onClick={() => download.mutate()}>{download.isPending ? "Menyiapkan XLSX…" : `Unduh hasil radius ${run?.radius_meters ?? ""} m XLSX`}</button></div>}
-      <details className="text-xs"><summary>Cakupan ekspor</summary>      {run && <p className="text-xs">Ekspor seluruh hasil pemeriksaan versi {run.generation}, radius tersimpan {run.radius_meters} m. Format kolom tetap polos; radius dan versi dicantumkan pada file.</p>}</details>
+      {process && <div className="flex flex-wrap gap-4 text-xs font-semibold"><Link to={`/result?category=${kind}&process_id=${process}${generation ? `&generation=${generation}` : ""}${displayRadius !== null ? `&radius_meters=${displayRadius}` : ""}`} className="underline">Lihat Hasil Koreksi</Link><Link to={`/history?process_id=${process}${generation ? `&generation=${generation}` : ""}`} className="underline">Lihat Riwayat Proses</Link><button type="button" className="underline disabled:opacity-50" disabled={!run || displayRadius === null || download.isPending || !scopeReady} onClick={() => download.mutate()}>{download.isPending ? "Menyiapkan XLSX…" : `Unduh hasil radius ${displayRadius ?? ""} m XLSX`}</button></div>}
+      <details className="text-xs"><summary>Cakupan ekspor</summary>      {run && <p className="text-xs">Ekspor mengikuti filter radius {displayRadius ?? "?"} m pada versi {run.generation} (pencarian tersimpan {run.radius_meters} m). Pilihan kandidat di luar filter tidak disertakan. Baris tanpa pilihan tetap disertakan dengan jarak kosong.</p>}</details>
       {download.isError && <p role="alert" className="text-sm text-red-700">{message(download.error)}</p>}
       {dataError && <p role="alert" className="text-sm text-red-700">{message(dataError)}</p>}
       {!process && !checks.isPending && <p className="text-sm">Belum ada pemeriksaan. Selesaikan pemeriksaan pada Data Koreksi untuk menampilkan peta.</p>}

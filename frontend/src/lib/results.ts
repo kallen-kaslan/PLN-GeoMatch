@@ -33,15 +33,15 @@ async function spreadsheet(path: string, params: Record<string, unknown>, fallba
 }
 export const resultsApi = {
   processes: async (signal?: AbortSignal) => (await api.get<ProcessHistory[]>("/history/processes", { signal })).data,
-  rows: async (kind: CorrectionKind, id: number, params: { q: string; status: ResultFilter; skip: number; limit: number; generation?: number }, signal?: AbortSignal) =>
+  rows: async (kind: CorrectionKind, id: number, params: { q: string; status: ResultFilter; skip: number; limit: number; generation?: number; radius_meters?: number }, signal?: AbortSignal) =>
     (await api.get<SearchPage<SavedResult> & { summary: ResultSummary }>(`/corrections/${kind}/checks/${id}/results`, { params, signal })).data,
   history: async (kind: CorrectionKind, id: number, record_id: number | undefined, skip: number, signal?: AbortSignal, generation?: number) =>
     (await api.get<{ total: number; items: DecisionEvent[] }>(`/corrections/${kind}/checks/${id}/results/history`, { params: { record_id, skip, limit: 20, generation }, signal })).data,
-  export: async (kind: CorrectionKind, id: number, params: { q: string; status: ResultFilter; generation?: number }) =>
+  export: async (kind: CorrectionKind, id: number, params: { q: string; status: ResultFilter; generation?: number; radius_meters?: number }) =>
     (await api.get<Blob>(`/corrections/${kind}/checks/${id}/results/export`, { params, responseType: "blob" })).data,
   exportHistory: async (kind: CorrectionKind, id: number, record_id?: number) =>
     (await api.get<Blob>(`/corrections/${kind}/checks/${id}/results/history/export`, { params: { record_id }, responseType: "blob" })).data,
-  download: (kind: CorrectionKind, id: number, generation: number, radius: number, q = "", status: ResultFilter = "selected") => spreadsheet(`/corrections/${kind}/checks/${id}/results/export`, { generation, q, status }, radiusFilename("hasil", kind, id, generation, radius)),
+  download: (kind: CorrectionKind, id: number, generation: number, radius: number, q = "", status: ResultFilter = "selected") => spreadsheet(`/corrections/${kind}/checks/${id}/results/export`, { generation, q, status, radius_meters: radius }, radiusFilename("hasil", kind, id, generation, radius)),
   downloadHistory: (kind: CorrectionKind, id: number, generation: number, radius: number, record_id?: number) => spreadsheet(`/corrections/${kind}/checks/${id}/results/history/export`, { generation, record_id }, radiusFilename("riwayat", kind, id, generation, radius)),
 };
 
