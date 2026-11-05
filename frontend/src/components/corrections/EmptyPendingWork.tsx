@@ -1,7 +1,8 @@
+import type { CorrectionKind } from "@/lib/master";
 import { Link } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import { buttonClass } from "@/lib/button";
-import { correctionApi, type EmptyPendingProcess } from "@/lib/corrections";
+import { correctionApi, CORRECTION_TYPES, type EmptyPendingProcess } from "@/lib/corrections";
 
 function resumeLink(item: EmptyPendingProcess) {
   return item.process_id && !item.analysis_id
@@ -21,12 +22,13 @@ const stateLabel: Record<string, string> = {
   ready: "Analisis selesai",
 };
 
-export function EmptyPendingWork({ enabled }: { enabled: boolean }) {
-  const work = useQuery({ queryKey: ["corrections", "idpel_kosong", "pending"], queryFn: ({ signal }) => correctionApi.emptyPending(signal), enabled, staleTime: 0, refetchInterval: 5000 });
+export function EmptyPendingWork({ enabled, kind = "idpel_kosong" }: { enabled: boolean; kind?: CorrectionKind }) {
+  const label = CORRECTION_TYPES.find((item) => item.key === kind)!.label;
+  const work = useQuery({ queryKey: ["corrections", kind, "pending"], queryFn: ({ signal }) => correctionApi.overviewPending(kind, signal), enabled, staleTime: 0, refetchInterval: 5000 });
   if (!enabled) return null;
   if (work.isError) return <p className="text-sm">Daftar proses tertunda belum dapat dimuat. <button type="button" className="font-semibold underline" onClick={() => void work.refetch()}>Coba lagi</button></p>;
   if (!work.data?.length) return null;
-  return <section aria-label="Proses IDPEL Kosong belum selesai" className="space-y-3">
+  return <section aria-label={`Proses ${label} belum selesai`} className="space-y-3">
     <h2 className="text-base font-semibold">Proses belum selesai</h2>
     <div className="grid gap-3">{work.data.map((item) => <article key={item.batch_id} className="grid min-w-0 items-center gap-3 rounded-lg border border-ui-border bg-white px-4 py-3 sm:grid-cols-[minmax(0,1fr)_auto] sm:gap-5">
       <div className="min-w-0 space-y-1"><h3 className="text-sm font-semibold [overflow-wrap:anywhere]">{item.filename}</h3>{item.source_sheet && <p className="mt-1 text-xs text-ui-muted [overflow-wrap:anywhere]">Sheet: {item.source_sheet}</p>}

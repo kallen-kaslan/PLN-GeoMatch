@@ -1,3 +1,4 @@
+import { TablePagination } from "@/components/data/TablePagination";
 import { MetricCard } from "@/components/data/MetricCard";
 import { useState, useEffect, useCallback } from "react";
 import { useAppStore } from "@/store/app";
@@ -16,6 +17,8 @@ export default function AdminPage() {
   const { user } = useAppStore();
   const [users, setUsers] = useState<MockUser[]>([]);
   const [searchQuery, setSearchQuery] = useState("");
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(25);
   const [loading, setLoading] = useState(true);
   const [actionLoading, setActionLoading] = useState<string | null>(null);
 
@@ -67,6 +70,9 @@ export default function AdminPage() {
     u.email.toLowerCase().includes(searchQuery.toLowerCase())
   );
 
+  const activePage = Math.min(page, Math.max(1, Math.ceil(filteredUsers.length / pageSize)));
+  const pageRows = filteredUsers.slice((activePage - 1) * pageSize, activePage * pageSize);
+
   const stats = {
     total: users.length,
     active: users.filter((u) => u.status === "active").length,
@@ -117,7 +123,7 @@ export default function AdminPage() {
           <input
             type="text"
             value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
+            onChange={(e) => { setSearchQuery(e.target.value); setPage(1); }}
             placeholder="Cari username atau email..."
             className="mobile-input w-full border border-ui-border pl-11 pr-4 py-2.5 rounded-lg font-semibold text-sm focus:outline-none focus:ring-2 focus:ring-neo-accent"
           />
@@ -133,7 +139,7 @@ export default function AdminPage() {
         <>
           {/* Mobile Card List (< md) */}
           <div className="block md:hidden space-y-3">
-            {filteredUsers.map((u) => (
+            {pageRows.map((u) => (
               <div
                 key={u.id}
                 className="border border-neo-black rounded-lg bg-white p-4  space-y-3"
@@ -223,7 +229,7 @@ export default function AdminPage() {
                 </tr>
               </thead>
               <tbody>
-                {filteredUsers.map((u) => (
+                {pageRows.map((u) => (
                   <tr key={u.id} className="border-b border-ui-border hover:bg-neo-white transition-colors">
                     <td className="p-3 border-r border-ui-border font-semibold">
                       <div className="flex items-center gap-2">
@@ -300,6 +306,7 @@ export default function AdminPage() {
         </div>
       )}
 
+      <TablePagination context="pengguna" page={activePage} pageSize={pageSize} total={loading ? undefined : filteredUsers.length} loading={loading} onPageChange={setPage} onPageSizeChange={(size) => { setPageSize(size); setPage(1); }} />
       {/* Info Footer */}
       <div className="p-4 border border-[#2563eb] bg-[#dbeafe] rounded-lg text-xs text-[#1e40af]">
         <p className="font-semibold mb-1">ℹ️ Informasi Admin:</p>

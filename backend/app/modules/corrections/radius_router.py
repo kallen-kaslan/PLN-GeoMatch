@@ -2,7 +2,7 @@
 
 from typing import Annotated, Literal
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 from sqlalchemy.orm import Session
 
@@ -11,10 +11,40 @@ from app.models.correction import CorrectionAttempt, CorrectionCheck, utc_now
 from app.models.matching import ReconciliationProcess
 from app.models.master_sisa import MasterSnapshot, CorrectionObservationCatalog
 from app.models.radius_analysis import RadiusAnalysis
+from app.models.upload import UploadBatch
+from app.modules.corrections.service import CorrectionKind
+from app.modules.corrections.empty_rules import TARGET_POLICY_KEY
 from app.modules.corrections.radius_analysis import analysis_info, advance_analysis, automatic_review, create_analysis, get_analysis
 from app.modules.corrections.empty_jobs import control_job, workflow_info
 
-router = APIRouter(prefix="/idpel_kosong/radius-analyses")
+async def verify_category(request: Request, kind: CorrectionKind, db: Session = Depends(get_db)) -> None:
+    """Validate the category before any analysis read or mutation."""
+    analysis_id = request.path_params.get("analysis_id")
+    batch_id = request.query_params.get("batch_id")
+    if analysis_id is not None:
+        try:
+            identity = int(analysis_id)
+        except (TypeError, ValueError):
+            return  # The endpoint's parameter validation supplies HTTP 422.
+        item = get_analysis(db, identity)
+        batch_id = item.batch_id
+    elif request.method == "POST":
+        try:
+            payload = await request.json()
+        except ValueError:
+            return
+        batch_id = payload.get("batch_id") if isinstance(payload, dict) else None
+    if batch_id is not None:
+        try:
+            identity = int(batch_id)
+        except (TypeError, ValueError):
+            return
+        batch = db.get(UploadBatch, identity)
+        if batch is None or batch.dataset_type.value != kind.value:
+            raise HTTPException(404, "Unggahan atau analisis tidak sesuai kategori")
+
+
+router = APIRouter(prefix="/{kind}/radius-analyses", dependencies=[Depends(verify_category)])
 
 
 class StartAnalysis(BaseModel):
@@ -159,17 +189,18 @@ def search(analysis_id: int, req: SearchRequest, db: Session = Depends(get_db)):
     catalog = db.get(CorrectionObservationCatalog, prepared.master_snapshot_id) if prepared.master_snapshot_id else None
     if snapshot is None or not snapshot.ready or catalog is None or not catalog.processing.get("ready"):
         raise HTTPException(409, "Master dan indeks koordinat belum siap; selesaikan analisis terlebih dahulu")
-    process = ReconciliationProcess(process_name="Koreksi IDPEL KOSONG", target_batch_id=item.batch_id, source_batches=prepared.source_batches, master_snapshot_id=prepared.master_snapshot_id, radius_meters=radius)
+    category = db.get(UploadBatch, item.batch_id).dataset_type.value
+    process = ReconciliationProcess(process_name=f"Koreksi {category.replace('_', ' ').upper()}", target_batch_id=item.batch_id, source_batches=prepared.source_batches, master_snapshot_id=prepared.master_snapshot_id, radius_meters=radius)
     db.add(process)
     db.flush()
-    db.add(CorrectionCheck(process_id=process.id, category="idpel_kosong", pdpj_review_id=item.pdpj_review_id))
+    db.add(CorrectionCheck(process_id=process.id, category=category, pdpj_review_id=item.pdpj_review_id))
     db.flush()
     run = reserve_run(db, process, req.request_key, item.actor, radius)
     initialize_progress(db, process, run)
     # Reuse exactly the prepared eligible observations. No second exclusion or
     # source selection pass when the operator chooses the search radius.
     run.processing = {**run.processing, "stage": "matching", "radius_analysis_id": item.id,
-                      "coordinate_rows": 0, "no_candidate_rows": 0, "other_issue_rows": 0}
+                      "coordinate_rows": 0, "no_candidate_rows": 0, "other_issue_rows": 0, "idpel_in_pdpj_rows": 0, TARGET_POLICY_KEY: item.progress.get(TARGET_POLICY_KEY)}
     item.progress = {**item.progress, "search_process_id": process.id}
     item.revision += 1
     db.commit()

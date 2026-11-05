@@ -17,6 +17,7 @@ from sqlalchemy.orm import Session, sessionmaker
 
 from app.models.matching import MatchingRun, ProcessStatus
 from app.models.radius_analysis import RadiusAnalysis
+from app.models.upload import UploadBatch
 from app.modules.corrections.progress import advance_progress, control_progress
 from app.modules.corrections.radius_analysis import analysis_info, advance_analysis, get_analysis
 from app.modules.corrections.service import CorrectionKind
@@ -25,6 +26,13 @@ from app.processing_activity import activity_lock, database_engine, request_acti
 logger = logging.getLogger(__name__)
 SCOPE = "empty_workflow"
 JobKind = Literal["analysis", "search"]
+
+
+def analysis_category(db: Session, item: RadiusAnalysis) -> CorrectionKind:
+    batch = db.get(UploadBatch, item.batch_id)
+    if batch is None:
+        raise HTTPException(404, "Unggahan koreksi tidak ditemukan")
+    return CorrectionKind(batch.dataset_type.value)
 
 
 def search_run(db: Session, item: RadiusAnalysis) -> MatchingRun | None:
@@ -52,6 +60,7 @@ def workflow_info(db: Session, item: RadiusAnalysis, radius: float | None = None
             "no_candidate_rows": progress.get("no_candidate_rows", 0),
             "coordinate_rows": progress.get("coordinate_rows", 0),
             "other_issue_rows": progress.get("other_issue_rows", 0),
+            "idpel_in_pdpj_rows": progress.get("idpel_in_pdpj_rows", 0),
             "elapsed_seconds": progress.get("elapsed_seconds", 0.0),
             "radius_meters": run.radius_meters, "error": progress.get("error"),
         },
@@ -92,7 +101,7 @@ def _work_locked(db: Session, analysis_id: int, kind: JobKind) -> None:
                 if run is None or run.status == ProcessStatus.COMPLETED or (run.processing or {}).get("state") != "running":
                     return
                 progress = run.processing or {}
-                advance_progress(db, CorrectionKind.EMPTY, run.process_id, run.id, progress["revision"], 1 if progress["stage"] == "matching" else 400)
+                advance_progress(db, analysis_category(db, item), run.process_id, run.id, progress["revision"], 1 if progress["stage"] == "matching" else 400)
             # End read transactions before checking a pause / next writer.
             db.rollback()
             sleep(0)
@@ -130,7 +139,7 @@ def _set_state(db: Session, analysis_id: int, kind: JobKind, state: str) -> None
         run = search_run(db, item)
         if run is None:
             raise HTTPException(409, "Pencarian belum dibuat")
-        control_progress(db, CorrectionKind.EMPTY, run.process_id, run.id, state)
+        control_progress(db, analysis_category(db, item), run.process_id, run.id, state)
     item.progress = {**item.progress, "managed": True, "job_kind": kind}
     db.commit()
 

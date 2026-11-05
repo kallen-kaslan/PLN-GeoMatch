@@ -136,11 +136,11 @@ def test_overview_loads_without_batch_list_and_syncs_new_upload(page: Page, serv
     page.route("**/corrections/idpel_kosong/batches", lambda route: route.abort())
     page.goto("/koreksi/idpel-kosong")
     summary = page.get_by_role("region", name="Ringkasan IDPEL Kosong", exact=True)
-    total = summary.get_by_text("Total data", exact=True).locator("..")
+    total = summary.get_by_text("Total Data", exact=True).locator("..")
     expect(total).to_contain_text("0")
     upload(servers[1], "idpel_kosong", "noagenda,latitudey,longitude\nNEW-LIVE,-6.2,106.8\n")
     expect(total).to_contain_text("1", timeout=12000)
-    expect(summary.get_by_text("Belum diproses", exact=True).locator("..")).to_contain_text("1", timeout=12000)
+    expect(summary.get_by_text("Belum Diproses", exact=True).locator("..")).to_contain_text("1", timeout=12000)
     expect(page.get_by_role("cell", name="NEW-LIVE", exact=True)).to_be_visible(timeout=12000)
 
 

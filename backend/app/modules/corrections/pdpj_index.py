@@ -185,6 +185,7 @@ def chunk_context(
     fields: Sequence[Evidence],
     raw_targets: Sequence[Evidence],
     target_batch: UploadBatch,
+    *, identities_only: bool = False,
 ) -> ConflictContext:
     batch = db.get(UploadBatch, review.batch_id)
     assert batch is not None
@@ -193,11 +194,12 @@ def chunk_context(
     for target, raw in zip(fields, raw_targets):
         if identity := target.get("idpel"):
             wanted.update(index.identities.get(identity, []))
-        for kind, values in reference_tokens(
-            target, raw, target_batch.column_mapping
-        ).items():
-            for value in values:
-                wanted.update(index.references.get((kind, value), []))
+        if not identities_only:
+            for kind, values in reference_tokens(
+                target, raw, target_batch.column_mapping
+            ).items():
+                for value in values:
+                    wanted.update(index.references.get((kind, value), []))
     evidence: dict[int, Evidence] = {}
     tokens = sorted(wanted)
     for start in range(0, len(tokens), 400):
@@ -241,6 +243,6 @@ def chunk_context(
         raise ValueError("Bukti benturan PDPJ tidak sesuai versi tersimpan")
     return ConflictContext(
         EvidenceLookup(index.identities, evidence),
-        EvidenceLookup(index.references, evidence),
-        index.coordinates,
+        {} if identities_only else EvidenceLookup(index.references, evidence),
+        {} if identities_only else index.coordinates,
     )

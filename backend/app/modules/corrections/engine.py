@@ -26,7 +26,7 @@ from app.modules.corrections.coordinate_query import observation_window
 from app.modules.corrections.pdpj_index import chunk_context
 from app.modules.corrections.service import CORRECTION_TYPES, reference_tokens
 from app.modules.corrections.writer import SearchWriter
-from app.modules.corrections.empty_rules import target_errors
+from app.modules.corrections.empty_rules import COORDINATE_IDPEL_POLICY, TARGET_POLICY_KEY, target_errors
 from app.modules.pdpj.service import completed_review, pending_pdpj_records
 from app.modules.spatial.engine import (
     calculate_haversine_distance,
@@ -150,6 +150,7 @@ def run_correction_matching(
         if progress
         else records_query.yield_per(100)
     )
+    coordinate_only = (run.processing or {}).get(TARGET_POLICY_KEY) == COORDINATE_IDPEL_POLICY
     target_fields = (
         [
             extract_standard_fields(record.data or {}, batch.column_mapping)
@@ -165,7 +166,7 @@ def run_correction_matching(
         identities, references, coordinates = {}, {}, {}
     elif progress:
         context = chunk_context(
-            db, review, target_fields, [record.data or {} for record in records], batch
+            db, review, target_fields, [record.data or {} for record in records], batch, identities_only=coordinate_only
         )
         identities, references, coordinates = (
             context.identities,
@@ -323,7 +324,7 @@ def run_correction_matching(
         total_targets += 1
         last_source_id, last_row_number = record.id, record.row_number
         fields = extract_standard_fields(record.data or {}, batch.column_mapping)
-        errors = target_errors(validate_fields(fields, batch.dataset_type), batch.dataset_type)
+        errors = target_errors(validate_fields(fields, batch.dataset_type), batch.dataset_type, coordinate_only=coordinate_only)
         fields.pop("validation_errors", None)
         identity = (
             "empty"
@@ -379,7 +380,9 @@ def run_correction_matching(
             "warnings": warnings,
         }
         if progress is not None:
-            coordinate_issue = lat is None or lon is None or any(error["field"] in {"lat", "lon"} for error in errors)
+            if any(conflict["code"] == "idpel_sama_pdpj" for conflict in conflicts):
+                progress["idpel_in_pdpj_rows"] = progress.get("idpel_in_pdpj_rows", 0) + 1
+            coordinate_issue = not conflicts and (lat is None or lon is None or any(error["field"] in {"lat", "lon"} for error in errors))
             key = "coordinate_rows" if coordinate_issue else "other_issue_rows" if status != "no_candidates" else None
             if key:
                 progress[key] = progress.get(key, 0) + 1

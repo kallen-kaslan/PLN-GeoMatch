@@ -59,7 +59,7 @@ def test_preview_page_jump_row_counts_filters_source_changes_and_mobile(
     expect(
         table.get_by_role("button", name=f"{detail_label} 77", exact=True)
     ).to_be_visible()
-    expect(footer).to_contain_text("Menampilkan 76–100")
+    expect(footer).to_contain_text("76\u2013100")
     page.get_by_role(
         "button",
         name="Halaman berikutnya" if master else "Halaman koreksi berikutnya",

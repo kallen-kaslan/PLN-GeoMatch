@@ -682,6 +682,7 @@ def record_detail(
     limit: int = Query(25, ge=1, le=100),
     radius_meters: float | None = Query(None, gt=0, le=100000, allow_inf_nan=False),
     sort_order: Literal["nearest", "farthest"] = Query("nearest"),
+    analysis_id: int | None = Query(None, gt=0),
 ) -> dict[str, Any]:
     """Read candidate snapshots only; inspecting a row must not reload the master."""
     record = db.get(SourceRecord, record_id)
@@ -711,8 +712,28 @@ def record_detail(
                 409, "Perluas pemeriksaan terlebih dahulu untuk radius ini"
             )
         candidates = candidates.filter(MatchCandidate.distance_meters <= radius_meters)
+    info = record_info(record, batch, outcome)
+    if kind == CorrectionKind.NOT_FOUND and outcome is None:
+        from app.models.radius_analysis import RadiusAnalysis, RadiusAnalysisRow
+        from app.models.pdpj import PdpjReview
+        from app.modules.corrections.pdpj_index import chunk_context
+        analyses = db.query(RadiusAnalysis).filter_by(batch_id=record.batch_id)
+        if analysis_id is not None:
+            analyses = analyses.filter_by(id=analysis_id)
+        analysis = analyses.order_by(RadiusAnalysis.id.desc()).first()
+        if analysis_id is not None and analysis is None:
+            raise HTTPException(404, "Analisis tidak sesuai dengan data ini")
+        analyzed = db.query(RadiusAnalysisRow).filter_by(analysis_id=analysis.id, source_record_id=record.id).first() if analysis else None
+        if analyzed and analyzed.issue == "idpel_in_pdpj":
+            review = db.get(PdpjReview, analysis.pdpj_review_id)
+            if review is None:
+                raise HTTPException(409, "Acuan PDPJ analisis tidak tersedia")
+            context = chunk_context(db, review, [info["fields"]], [record.data or {}], batch, identities_only=True)
+            identity = info["fields"].get("idpel")
+            info["conflicts"] = [{"code": "idpel_sama_pdpj", "value": identity, **evidence} for evidence in context.identities.get(identity, [])]
+            info["search_status"] = "pdpj_conflict"
     return {
-        **record_info(record, batch, outcome),
+        **info,
         "raw_data": record.data,
         "column_mapping": batch.column_mapping or {},
         "generation": run.generation if run else None,
