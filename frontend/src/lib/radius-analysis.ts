@@ -1,3 +1,4 @@
+import type { CorrectionKind } from "@/lib/master";
 import { api } from "@/lib/api";
 
 export interface RadiusAnalysis {
@@ -5,7 +6,7 @@ export interface RadiusAnalysis {
   state: "running" | "paused" | "failed" | "ready";
   stage: "preparing" | "analyzing" | "done"; revision: number;
   total_rows: number; processed_rows: number; eligible_rows: number; invalid_rows: number;
-  coordinate_rows: number; category_rows: number; elapsed_seconds: number;
+  coordinate_rows: number; category_rows: number; idpel_in_pdpj_rows?: number; reference_conflict_rows?: number; elapsed_seconds: number;
   covered_rows: number; outside_limit_rows: number;
   recommended_radius_meters: number | null; partial_radius_meters: number | null;
   max_analysis_radius_meters: number; selected_radius_meters: number | null;
@@ -17,15 +18,16 @@ export interface EmptySearchProgress {
   process_id: number; run_id: number; generation: number; status: string;
   state: string; stage: string; total_rows: number; processed_rows: number;
   matched_rows: number; no_candidate_rows: number; coordinate_rows: number;
-  other_issue_rows: number; elapsed_seconds: number; radius_meters: number; error: string | null;
+  other_issue_rows: number; idpel_in_pdpj_rows?: number; elapsed_seconds: number; radius_meters: number; error: string | null;
 }
 export interface EmptyWorkflow {
   analysis: RadiusAnalysis; search: EmptySearchProgress | null;
   activity: { active: boolean; operation: string | null; started_at: string | null };
   job_kind: "analysis" | "search" | null;
 }
-const base = "/corrections/idpel_kosong/radius-analyses";
-export const radiusAnalysisApi = {
+export const radiusAnalysisApiFor = (kind: CorrectionKind) => {
+const base = `/corrections/${kind}/radius-analyses`;
+return {
   workflow: async (batch_id: number, radius_meters?: number, signal?: AbortSignal, analysis_id?: number) => (await api.get<EmptyWorkflow | null>(`${base}/workflow`, { params: { batch_id, radius_meters, analysis_id }, signal })).data,
   analysisJob: async (id: number, state: "running" | "paused") => (await api.post<EmptyWorkflow>(`${base}/${id}/analysis-job`, { state })).data,
   searchJob: async (id: number, body: { state: "running" | "paused"; radius_meters?: number; request_key?: string }) => (await api.post<EmptyWorkflow>(`${base}/${id}/search-job`, body)).data,
@@ -37,5 +39,7 @@ export const radiusAnalysisApi = {
   saveRadius: async (item: RadiusAnalysis, radius_meters: number) => (await api.put<RadiusAnalysis>(`${base}/${item.id}/radius`, { revision: item.revision, radius_meters })).data,
   search: async (item: RadiusAnalysis, request_key: string) => (await api.post<{ batch_id: number; process_id: number }>(`${base}/${item.id}/search`, { revision: item.revision, request_key })).data,
 };
+};
+export const radiusAnalysisApi = radiusAnalysisApiFor("idpel_kosong");
 
 export const validRadius = (value: string) => value.trim() !== "" && Number.isFinite(Number(value)) && Number(value) > 0 && Number(value) <= 100000;

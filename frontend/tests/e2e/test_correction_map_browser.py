@@ -98,7 +98,7 @@ def test_map_highlights_selected_target_and_links_candidate_to_later_card_page(
     expect(candidates).to_contain_text("12 kandidat tersimpan", timeout=20000)
     page.locator(".leaflet-overlay-pane path[fill='#22c55e']").click()
     page.get_by_role("button", name="Kandidat 12 · 013 · 0.00 m", exact=True).click()
-    expect(candidates).to_contain_text("Halaman kandidat 2 dari 2")
+    expect(candidates.get_by_label("Nomor halaman kandidat peta", exact=True)).to_have_value("2")
     expect(
         candidates.get_by_role("article", name="Kandidat peta 12", exact=True)
     ).to_be_focused()
@@ -288,7 +288,8 @@ def test_map_preview_page_input_sizes_filters_and_mobile(
     expect(size).to_have_value("25")
     jump.fill("4")
     jump.press("Enter")
-    expect(footer).to_contain_text("Menampilkan 76–100. Halaman 4 dari 5")
+    expect(footer).to_contain_text("76\u2013100")
+    expect(jump).to_have_value("4")
     expect(
         table.get_by_role("button", name="Pilih target baris 77", exact=True)
     ).to_be_visible()

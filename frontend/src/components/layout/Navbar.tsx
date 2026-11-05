@@ -23,9 +23,9 @@ export default function Navbar() {
   const feature = titles[pathname] ?? "PLN GeoMatch";
   const params = new URLSearchParams(location.search);
   // Only separate pages add a breadcrumb. Filters, dialogs and workflow steps do not.
-  const child = pathname === "/koreksi/idpel-kosong"
+  const child = ["/koreksi/idpel-kosong", "/koreksi/idpel-tidak-ketemu"].includes(pathname)
     ? params.has("detail_record_id") ? "Detail Data"
-      : params.get("flow") === "upload" ? "Unggah Data"
+      : params.get("flow") === "upload" || params.get("upload") === "1" ? "Unggah Data"
       : params.has("workspace") || params.has("batch_id") || params.has("process_id") ? "Pemeriksaan" : null
     : null;
   const page = child ?? feature;

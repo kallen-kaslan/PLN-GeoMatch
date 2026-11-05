@@ -45,7 +45,7 @@ export function mergeCheckProgress(previous: CorrectionCheck | undefined, next: 
     current_generation: latest.status === "completed" ? latest.generation : Math.max(previous.current_generation, next.current_generation),
     runs: next.runs.map((run) => run.id === latest.id ? latest : run) };
 }
-export interface CorrectionScope { batch_id?: number; process_id?: number; generation?: number }
+export interface CorrectionScope { batch_id?: number; process_id?: number; generation?: number; analysis_id?: number }
 export const emptyStatusLabel = {
   not_processed: "Belum diproses",
   coordinate_issues: "Koordinat bermasalah",
@@ -53,6 +53,9 @@ export const emptyStatusLabel = {
   candidates_found: "Kandidat ditemukan",
 } as const;
 export type EmptyStatus = keyof typeof emptyStatusLabel;
+export const correctionOverviewStatusLabel = { ...emptyStatusLabel, idpel_in_pdpj: "IDPEL Sudah Ada di PDPJ" } as const;
+export type OverviewStatus = keyof typeof correctionOverviewStatusLabel;
+export interface CorrectionOverviewRow extends Omit<EmptyOverviewRow, "status"> { status: OverviewStatus }
 export interface EmptyPendingProcess {
   batch_id: number; filename: string; source_sheet: string | null;
   stage: "upload" | "analysis" | "radius" | "search"; state: string;
@@ -91,6 +94,10 @@ export interface CorrectionChoice { revision: number; current: CorrectionDecisio
 export interface ChoiceRequest { generation: number; expected_revision: number; candidate_id: number | null; actor: string; reason: string; request_key: string }
 
 export const correctionApi = {
+  overviewPending: async (kind: CorrectionKind, signal?: AbortSignal) => (await api.get<EmptyPendingProcess[]>(`/corrections/${kind}/workflow/pending`, { signal })).data,
+  overviewSummary: async (kind: CorrectionKind, signal?: AbortSignal) => (await api.get<{ total_rows: number; counts: Partial<Record<OverviewStatus, number>> }>(`/corrections/${kind}/overview/summary`, { signal })).data,
+  overviewSources: async (kind: CorrectionKind, signal?: AbortSignal) => (await api.get<{ id: number; filename: string; source_sheet: string | null }[]>(`/corrections/${kind}/overview/sources`, { signal })).data,
+  overviewRows: async (kind: CorrectionKind, params: { q: string; status: OverviewStatus | "all"; source?: "all" | "document" | "manual"; batch_id?: number; skip: number; limit: number }, signal?: AbortSignal) => (await api.get<{ total: number; items: CorrectionOverviewRow[] }>(`/corrections/${kind}/overview/records`, { params, signal })).data,
   emptyPending: async (signal?: AbortSignal) => (await api.get<EmptyPendingProcess[]>("/corrections/idpel_kosong/workflow/pending", { signal })).data,
   emptySummary: async (signal?: AbortSignal) => (await api.get<{ total_rows: number; counts: Partial<Record<EmptyStatus, number>> }>("/corrections/idpel_kosong/overview/summary", { signal })).data,
   emptyRows: async (params: { q: string; status: EmptyStatus | "all"; skip: number; limit: number }, signal?: AbortSignal) => (await api.get<{ total: number; items: EmptyOverviewRow[] }>("/corrections/idpel_kosong/overview/records", { params, signal })).data,

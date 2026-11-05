@@ -32,7 +32,8 @@ def test_master_search_debounces_prepares_and_preserves_pagination(
     expect(page.get_by_role("cell", name="000026", exact=False)).to_be_visible()
     field.fill("Needle")
     expect(page.get_by_role("cell", name="999999 SearchNeedle", exact=False)).to_be_visible()
-    expect(page.get_by_label("Navigasi halaman master")).to_contain_text("Halaman 1 dari 1")
+    expect(page.get_by_label("Nomor halaman master", exact=True)).to_have_value("1")
+    expect(page.get_by_role("button", name="Halaman berikutnya", exact=True)).to_be_disabled()
     field.fill("")
     expect(page.get_by_label("Navigasi halaman master")).to_contain_text("1.002 baris")
 

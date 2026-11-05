@@ -1,15 +1,19 @@
+import { CORRECTION_TYPES } from "@/lib/corrections";
+import type { CorrectionKind } from "@/lib/master";
 import { useEffect, useRef, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useAppStore } from "@/store/app";
-import { radiusAnalysisApi, validRadius, type EmptyWorkflow } from "@/lib/radius-analysis";
+import { radiusAnalysisApiFor, validRadius, type EmptyWorkflow } from "@/lib/radius-analysis";
 import { CorrectionFlowLayout, type FlowDocument } from "./CorrectionFlowLayout";
 import { EmptyCandidatePanel, type ProcessView } from "./EmptyCandidatePreview";
 
 type Command = "analysis-start" | "analysis-pause" | "search-start" | "search-pause";
 const errorText = (error: unknown) => (error as { message?: string })?.message ?? "Permintaan belum berhasil. Hasil terakhir tetap tersimpan.";
 
-export function EmptyRadiusWorkflow({ batchId, document }: { batchId: number; document: FlowDocument }) {
+export function EmptyRadiusWorkflow({ kind = "idpel_kosong", batchId, document }: { kind?: CorrectionKind; batchId: number; document: FlowDocument }) {
+  const radiusAnalysisApi = radiusAnalysisApiFor(kind);
+  const root = `/koreksi/${CORRECTION_TYPES.find((item) => item.key === kind)!.slug}`;
   const [params, setParams] = useSearchParams();
   const parsedAnalysis = Number(params.get("analysis_id"));
   const analysisId = Number.isInteger(parsedAnalysis) && parsedAnalysis > 0 ? parsedAnalysis : undefined;
@@ -25,7 +29,7 @@ export function EmptyRadiusWorkflow({ batchId, document }: { batchId: number; do
   const startKey = useRef(crypto.randomUUID());
   const searchKey = useRef(crypto.randomUUID());
   useEffect(() => { mounted.current = true; return () => { mounted.current = false; }; }, []);
-  const key = ["corrections", "idpel_kosong", "workflow", batchId, analysisId ?? "latest"];
+  const key = ["corrections", kind, "workflow", batchId, analysisId ?? "latest"];
   const saved = useQuery({
     queryKey: key, queryFn: ({ signal }) => radiusAnalysisApi.workflow(batchId, undefined, signal, analysisId),
     refetchInterval: (query) => command || query.state.data?.activity.active || query.state.data?.analysis.state === "running" || query.state.data?.search?.state === "running" ? 1000 : false,
@@ -35,12 +39,12 @@ export function EmptyRadiusWorkflow({ batchId, document }: { batchId: number; do
   const item = data?.analysis;
   useEffect(() => {
     if (!analysisId && data) {
-      client.setQueryData(["corrections", "idpel_kosong", "workflow", batchId, data.analysis.id], data);
+      client.setQueryData(["corrections", kind, "workflow", batchId, data.analysis.id], data);
       const next = new URLSearchParams(params);
       next.set("analysis_id", String(data.analysis.id));
       setParams(next, { replace: true });
     }
-  }, [analysisId, data, client, batchId, params, setParams]);
+  }, [analysisId, data, client, batchId, params, setParams, kind]);
   const radius = data?.search ? String(data.search.radius_meters) : radiusInput ?? String(item?.selected_radius_meters ?? item?.recommended_radius_meters ?? item?.partial_radius_meters ?? "");
   useEffect(() => {
     const timer = window.setTimeout(() => setDebouncedRadius(radius), 250);
@@ -54,8 +58,8 @@ export function EmptyRadiusWorkflow({ batchId, document }: { batchId: number; do
   });
   const remember = (next: EmptyWorkflow) => {
     client.setQueryData(key, next);
-    void client.invalidateQueries({ queryKey: ["corrections", "idpel_kosong", "pending"] });
-    void client.invalidateQueries({ queryKey: ["corrections", "idpel_kosong", "overview"] });
+    void client.invalidateQueries({ queryKey: ["corrections", kind, "pending"] });
+    void client.invalidateQueries({ queryKey: ["corrections", kind, "overview"] });
   };
   const perform = async (action: Command) => {
     if (gate.current) return;
@@ -101,12 +105,12 @@ export function EmptyRadiusWorkflow({ batchId, document }: { batchId: number; do
   const coverageReady = item?.state === "ready" && radius === debouncedRadius && coverage.isSuccess;
   const coverageData = coverageReady ? coverage.data?.analysis : undefined;
   return <div className="w-full pb-6">
-    <CorrectionFlowLayout stage={2} steps={["Unggah data", "Cari kandidat"]} onStep={(step) => { if (step === 1) back(); }}>
+    <CorrectionFlowLayout kind={kind} stage={2} steps={["Unggah data", "Cari kandidat"]} onStep={(step) => { if (step === 1) back(); }}>
       {saved.isPending ? <p role="status" className="py-4 text-sm text-gray-500">Memuat progres tersimpan…</p> : saved.isError ? <p role="alert" className="py-4 text-sm text-red-700">Progres belum dapat dimuat. <button type="button" onClick={() => void saved.refetch()} className="font-semibold underline">Coba lagi</button></p> : <EmptyCandidatePanel
-        document={document} analysis={analysisView} search={searchView}
+        kind={kind} document={document} analysis={analysisView} search={searchView}
         recommendation={item?.recommended_radius_meters ?? item?.partial_radius_meters ?? null}
         recommendationComplete={item?.recommended_radius_meters != null}
-        outsideLimit={item?.outside_limit_rows ?? 0} categoryIssues={item?.category_rows ?? 0}
+        outsideLimit={item?.outside_limit_rows ?? 0} idpelInPdpj={data?.search?.idpel_in_pdpj_rows ?? 0} excludedIdpel={item?.idpel_in_pdpj_rows ?? 0} referenceIssues={item?.reference_conflict_rows ?? 0} categoryIssues={item?.category_rows ?? 0}
         radius={radius} onRadius={setRadius}
         coverage={coverageData ? { found: coverageData.coverage_rows ?? 0, outside: coverageData.eligible_rows - (coverageData.coverage_rows ?? 0), invalid: coverageData.coordinate_rows } : null}
         coverageLoading={item?.state === "ready" && validRadius(radius) && !coverageReady && !coverage.isError}
@@ -115,7 +119,7 @@ export function EmptyRadiusWorkflow({ batchId, document }: { batchId: number; do
         coordinateIssues={data?.search?.coordinate_rows ?? 0} otherIssues={data?.search?.other_issue_rows ?? 0}
         onAnalysisAction={() => void perform(analysisView.state === "running" ? "analysis-pause" : "analysis-start")}
         onSearchAction={() => void perform(searchView.state === "running" ? "search-pause" : "search-start")}
-        onBack={back} onResults={() => { void client.invalidateQueries({ queryKey: ["corrections", "idpel_kosong"] }); navigate("/koreksi/idpel-kosong"); }}
+        onBack={back} onResults={() => { void client.invalidateQueries({ queryKey: ["corrections", kind] }); navigate(root); }}
       />}
     </CorrectionFlowLayout>
   </div>;

@@ -1,3 +1,4 @@
+import { TablePagination } from "@/components/data/TablePagination";
 import { SearchFeedback } from "@/components/data/SearchFeedback";
 import { useDebouncedSearch } from "@/hooks/useDebouncedSearch";
 import { CandidateCoordinateSource } from "@/components/corrections/CandidateCoordinateSource";
@@ -71,6 +72,7 @@ function MapWorkspace({ kind, batchParam, processParam, generationParam, params,
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(25);
   const [candidatePage, setCandidatePage] = useState(1);
+  const [candidatePageSize, setCandidatePageSize] = useState(10);
   const [notice, setNotice] = useState("");
   const [contextOpen, setContextOpen] = useState(false);
   const viewParam = params.get("map_view");
@@ -177,7 +179,7 @@ function MapWorkspace({ kind, batchParam, processParam, generationParam, params,
     heading?.scrollIntoView({ block: "start", behavior: "auto" });
     heading?.focus({ preventScroll: true });
   }, [selected, mobileView]);
-  const candidateFocus = useCallback((id: number) => { updateView({ map_view: "detail" }); const index = candidates.findIndex((item) => item.id === id); if (index >= 0) { setCandidatePage(Math.floor(index / 10) + 1); setFocusedCandidate(id); } }, [updateView, candidates]);
+  const candidateFocus = useCallback((id: number) => { updateView({ map_view: "detail" }); const index = candidates.findIndex((item) => item.id === id); if (index >= 0) { setCandidatePage(Math.floor(index / candidatePageSize) + 1); setFocusedCandidate(id); } }, [updateView, candidates, candidatePageSize]);
   useEffect(() => { if (focusedCandidate !== null) { const element = document.getElementById(`candidate-${focusedCandidate}`); element?.scrollIntoView({ behavior: window.matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth", block: "center" }); element?.focus({ preventScroll: true }); } }, [focusedCandidate, candidatePage]);
   const searchableRows = useMemo(() => statusRows.map((row) => ({ row, values: Object.values(row.fields).map((value) => String(value ?? "").toLowerCase()) })), [statusRows]);
   const filtered = useMemo(() => {
@@ -186,9 +188,9 @@ function MapWorkspace({ kind, batchParam, processParam, generationParam, params,
   }, [searchableRows, searchQuery]);
   const activePage = Math.min(page, Math.max(1, Math.ceil(filtered.length / pageSize)));
   const pageRows = filtered.slice((activePage - 1) * pageSize, activePage * pageSize);
-  const candidatePages = Math.max(1, Math.ceil(candidates.length / 10));
+  const candidatePages = Math.max(1, Math.ceil(candidates.length / candidatePageSize));
   const activeCandidatePage = Math.min(candidatePage, candidatePages);
-  const visibleCandidates = candidates.slice((activeCandidatePage - 1) * 10, activeCandidatePage * 10);
+  const visibleCandidates = candidates.slice((activeCandidatePage - 1) * candidatePageSize, activeCandidatePage * candidatePageSize);
   const canChoose = Boolean(scopeReady && !historical && !blockedBySearch && !expand.isPending && !choose.isPending && choice.data && !choice.isFetching && actor.trim() && (!choice.data.current || reason.trim()));
   const selectedChoice = choice.data?.current?.candidate;
   const dataError = batches.error || checks.error || check.error || rows.error;
@@ -301,7 +303,7 @@ function MapWorkspace({ kind, batchParam, processParam, generationParam, params,
         : candidateQuery.isSuccess && !candidates.length ? <p className="text-sm">Tidak ada kandidat dalam radius ini.</p> : null}
       {active && candidateQuery.isSuccess && !targetLoading && !readSearchBlocked && <p className="text-xs">{candidates.length} kandidat tersimpan. Jarak dihitung dari koordinat target sebelum koreksi.</p>}
       <div className="grid gap-3">{visibleCandidates.map((candidate) => <CandidateCard key={candidate.id} candidate={candidate} selected={choice.data?.current?.candidate_id === candidate.id} disabled={!canChoose || !candidates.some((item) => item.id === candidate.id)} choose={() => choose.mutate(candidate.id)} />)}</div>
-      <div className="flex flex-wrap items-center justify-between gap-3 text-xs"><span>Halaman kandidat {activeCandidatePage} dari {candidatePages}</span><div className="flex gap-3"><button className={button} disabled={activeCandidatePage <= 1} onClick={() => setCandidatePage(activeCandidatePage - 1)}>Kandidat sebelumnya</button><button className={button} disabled={activeCandidatePage >= candidatePages} onClick={() => setCandidatePage(activeCandidatePage + 1)}>Kandidat berikutnya</button></div></div>
+      <TablePagination context="kandidat peta" previousLabel="Kandidat sebelumnya" nextLabel="Kandidat berikutnya" page={activeCandidatePage} pageSize={candidatePageSize} total={candidates.length} loading={candidateQuery.isFetching} unit="kandidat" onPageChange={setCandidatePage} onPageSizeChange={(size) => { setCandidatePageSize(size); setCandidatePage(1); }} />
     </section>}
       </aside>
     </div>

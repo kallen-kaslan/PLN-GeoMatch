@@ -14,7 +14,8 @@ from app.models.matching import ProcessStatus, ReconciliationProcess
 from app.models.pdpj import PdpjReview
 from app.models.radius_analysis import RadiusAnalysis, RadiusAnalysisRow
 from app.models.upload import BatchStatus, DatasetType, SourceRecord, UploadBatch
-from app.modules.corrections.empty_rules import target_errors
+from app.modules.corrections.empty_rules import COORDINATE_IDPEL_POLICY, TARGET_POLICY_KEY, target_errors
+from app.modules.corrections.pdpj_index import chunk_context
 from app.modules.corrections.coordinate_query import observation_window
 from app.modules.corrections.observations import advance_observations
 from app.modules.pdpj.service import completed_review, lock_review_session
@@ -64,27 +65,28 @@ def create_analysis(db: Session, batch_id: int, review_id: int, actor: str, requ
         return previous
     batch = db.get(UploadBatch, batch_id)
     review = db.get(PdpjReview, review_id)
-    if batch is None or batch.dataset_type != DatasetType.IDPEL_KOSONG:
-        raise HTTPException(404, "Unggahan IDPEL Kosong tidak ditemukan")
+    if batch is None or batch.dataset_type not in {DatasetType.IDPEL_KOSONG, DatasetType.IDPEL_TIDAK_KETEMU}:
+        raise HTTPException(404, "Unggahan koreksi tidak ditemukan")
     if batch.status != BatchStatus.COMPLETED:
         raise HTTPException(409, "Simpan data unggahan terlebih dahulu")
     if review is None:
         raise HTTPException(404, "Acuan PDPJ tidak ditemukan")
     try:
         completed_review(db, review.batch_id, review_id)
-        sources = pin_pipeline_sources(db, None, None, review.batch_id, batch_id, pdpj_review_id=review_id, correction_category="idpel_kosong")
+        sources = pin_pipeline_sources(db, None, None, review.batch_id, batch_id, pdpj_review_id=review_id, correction_category=batch.dataset_type.value)
     except ValueError as exc:
         raise HTTPException(422, str(exc)) from exc
-    # A frozen source interpretation can serve repeated requests/radius changes.
+    target_policy = COORDINATE_IDPEL_POLICY if batch.dataset_type == DatasetType.IDPEL_TIDAK_KETEMU else None
+    # Reuse only analyses whose frozen source interpretation and rules agree.
     for item, process in db.query(RadiusAnalysis, ReconciliationProcess).join(
         ReconciliationProcess, ReconciliationProcess.id == RadiusAnalysis.process_id
     ).filter(RadiusAnalysis.batch_id == batch_id, RadiusAnalysis.pdpj_review_id == review_id).order_by(RadiusAnalysis.id.desc()).all():
-        if process.source_batches == sources:
+        if process.source_batches == sources and item.progress.get(TARGET_POLICY_KEY) == target_policy:
             return item
-    process = ReconciliationProcess(process_name="Analisis radius IDPEL Kosong", target_batch_id=batch_id, source_batches=sources)
+    process = ReconciliationProcess(process_name=f"Analisis radius {batch.dataset_type.value.replace('_', ' ')}", target_batch_id=batch_id, source_batches=sources)
     db.add(process)
     db.flush()
-    item = RadiusAnalysis(batch_id=batch_id, pdpj_review_id=review_id, process_id=process.id, actor=actor, request_key=request_key, total_rows=db.query(SourceRecord.id).filter_by(batch_id=batch_id).count())
+    item = RadiusAnalysis(batch_id=batch_id, pdpj_review_id=review_id, process_id=process.id, actor=actor, request_key=request_key, progress={TARGET_POLICY_KEY: target_policy} if target_policy else {}, total_rows=db.query(SourceRecord.id).filter_by(batch_id=batch_id).count())
     db.add(item)
     db.commit()
     return item
@@ -137,11 +139,23 @@ def advance_analysis(db: Session, analysis_id: int, revision: int, chunk_size: i
             batch = db.get(UploadBatch, item.batch_id)
             assert batch is not None and process.master_snapshot_id is not None
             rows = db.query(SourceRecord).filter(SourceRecord.batch_id == item.batch_id, SourceRecord.id > item.last_source_id).order_by(SourceRecord.id).limit(max(1, min(chunk_size, 100))).all()
-            for source in rows:
-                fields = extract_standard_fields(source.data or {}, batch.column_mapping)
-                errors = target_errors(validate_fields(fields, batch.dataset_type), batch.dataset_type)
+            coordinate_only = item.progress.get(TARGET_POLICY_KEY) == COORDINATE_IDPEL_POLICY
+            parsed_fields = [extract_standard_fields(source.data or {}, batch.column_mapping) for source in rows]
+            context = None
+            if batch.dataset_type == DatasetType.IDPEL_TIDAK_KETEMU and rows:
+                review = db.get(PdpjReview, item.pdpj_review_id)
+                assert review is not None
+                context = chunk_context(db, review, parsed_fields, [source.data or {} for source in rows], batch, identities_only=coordinate_only)
+            for source, fields in zip(rows, parsed_fields):
+                errors = target_errors(validate_fields(fields, batch.dataset_type), batch.dataset_type, coordinate_only=coordinate_only)
                 coordinate_errors = any(error["field"] in {"lat", "lon"} for error in errors)
                 issue = "invalid_data" if coordinate_errors else "missing_coordinates" if fields["lat"] is None or fields["lon"] is None else "invalid_category" if errors else None
+                if context is not None:
+                    from app.modules.corrections.service import reference_tokens
+                    if fields.get("idpel") in context.identities:
+                        issue = "idpel_in_pdpj"
+                    elif not coordinate_only and any((key, value) in context.references for key, values in reference_tokens(fields, source.data or {}, batch.column_mapping).items() for value in values):
+                        issue = "reference_conflict"
                 nearest = None if issue else nearest_eligible(db, process.master_snapshot_id, fields["lat"], fields["lon"])
                 if issue is None and nearest is None:
                     issue = "outside_limit"
@@ -175,7 +189,9 @@ def analysis_info(db: Session, item: RadiusAnalysis, radius: float | None = None
     uncovered = query.filter_by(issue="outside_limit").count()
     coordinates = query.filter(RadiusAnalysisRow.issue.in_(["invalid_data", "missing_coordinates"])).count()
     category = query.filter_by(issue="invalid_category").count()
-    invalid = coordinates + category
+    idpel_in_pdpj = query.filter_by(issue="idpel_in_pdpj").count()
+    reference_conflicts = query.filter_by(issue="reference_conflict").count()
+    invalid = coordinates + category + idpel_in_pdpj + reference_conflicts
     maximum = found.with_entities(func.max(RadiusAnalysisRow.distance_meters)).scalar()
     recommendation = max(5, math.ceil(maximum / 5) * 5) if maximum is not None else None
     complete = item.state == "ready"
@@ -186,6 +202,7 @@ def analysis_info(db: Session, item: RadiusAnalysis, radius: float | None = None
         "total_rows": item.total_rows, "processed_rows": item.processed_rows,
         "eligible_rows": found_count + uncovered, "invalid_rows": invalid,
         "coordinate_rows": coordinates, "category_rows": category,
+        "idpel_in_pdpj_rows": idpel_in_pdpj, "reference_conflict_rows": reference_conflicts,
         "elapsed_seconds": item.progress.get("elapsed_seconds", 0.0),
         "covered_rows": found_count, "outside_limit_rows": uncovered,
         "recommended_radius_meters": recommendation if complete and not uncovered else None,

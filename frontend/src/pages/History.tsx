@@ -1,3 +1,4 @@
+import { TablePagination } from "@/components/data/TablePagination";
 import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useSearchParams } from "react-router-dom";
@@ -15,6 +16,10 @@ export default function HistoryPage() {
   const history = useQuery({ queryKey: ["process-history"], queryFn: ({ signal }) => resultsApi.processes(signal), refetchInterval: 5000 });
   const processes = history.data ?? [];
   const loading = history.isPending;
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(25);
+  const activePage = Math.min(page, Math.max(1, Math.ceil(processes.length / pageSize)));
+  const pageRows = processes.slice((activePage - 1) * pageSize, activePage * pageSize);
   const selected = processes.find((item) => item.id === Number(params.get("process_id")));
   const generation = Number(params.get("generation")) || selected?.generation;
   const version = useQuery({ queryKey: ["history-radius-version", selected?.id, generation], queryFn: ({ signal }) => correctionApi.check(selected!.category!, selected!.id, signal), enabled: !!selected?.category && !!params.get("generation") });
@@ -134,7 +139,7 @@ export default function HistoryPage() {
         <>
           {/* Mobile Card List (< md) */}
           <div className="block md:hidden space-y-3">
-            {processes.map((p) => (
+            {pageRows.map((p) => (
               <div
                 key={p.id}
                 className="border border-neo-black rounded-lg bg-white p-4  space-y-3"
@@ -228,7 +233,7 @@ export default function HistoryPage() {
                 </tr>
               </thead>
               <tbody>
-                {processes.map((p) => (
+                {pageRows.map((p) => (
                   <tr key={p.id} className="border-b border-ui-border hover:bg-neo-white transition-colors">
                     <td className="p-3 border-r border-ui-border font-semibold">#{p.id}</td>
                     <td className="p-3 border-r border-ui-border font-semibold text-neo-black">
@@ -286,6 +291,7 @@ export default function HistoryPage() {
           </div>
         </>
       )}
+      <TablePagination context="riwayat proses" page={activePage} pageSize={pageSize} total={history.isPending ? undefined : processes.length} loading={history.isFetching} onPageChange={setPage} onPageSizeChange={(size) => { setPageSize(size); setPage(1); }} />
       {selected?.category && <><p className="text-sm font-semibold">Riwayat pemeriksaan #{selected.id} · Versi {generation} · Radius {radius ?? "…"} m</p><DecisionHistory key={`${selected.id}-${generation}`} kind={selected.category} processId={selected.id} generation={generation} radius={radius} /></>}
     </div>
   );

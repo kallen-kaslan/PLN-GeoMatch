@@ -57,7 +57,7 @@ function CorrectionWorkspace({ kind }: { kind: CorrectionKind }) {
     try { sessionStorage.setItem(`pln_geomatch_correction_actor_${kind}`, actor); }
     catch { /* Keep the editable label available when browser storage is disabled. */ }
   }, [actor, kind]);
-  const [showImport, setShowImport] = useState(() => kind === "idpel_kosong" && params.get("upload") === "1");
+  const [showImport, setShowImport] = useState(() => params.get("upload") === "1");
   const [resumeId, setResumeId] = useState<number | null>(null);
   const [search, setSearch] = useState("");
   const deferredSearch = useDebouncedSearch(search);
@@ -200,8 +200,8 @@ export default function CorrectionsPage() {
   const [params] = useSearchParams();
   const descriptor = CORRECTION_TYPES.find((item) => item.slug === category);
   if (!descriptor) return <Navigate to="/koreksi/idpel-tidak-ketemu" replace />;
-  if (descriptor.key === "idpel_kosong" && params.has("detail_record_id")) return <EmptyCorrectionDetailPage key={params.toString()} />;
-  if (descriptor.key === "idpel_kosong" && params.get("flow") === "upload") return <EmptyCorrectionUpload />;
-  if (descriptor.key === "idpel_kosong" && !params.has("workspace") && !params.has("batch_id") && !params.has("process_id")) return <EmptyCorrectionsOverview />;
+  if (params.has("detail_record_id")) return <EmptyCorrectionDetailPage key={`${descriptor.key}-${params.toString()}`} kind={descriptor.key} />;
+  if (params.get("flow") === "upload") return <EmptyCorrectionUpload kind={descriptor.key} />;
+  if (!params.has("workspace") && !params.has("batch_id") && !params.has("process_id")) return <EmptyCorrectionsOverview key={descriptor.key} kind={descriptor.key} />;
   return <CorrectionWorkspace key={descriptor.key} kind={descriptor.key} />;
 }

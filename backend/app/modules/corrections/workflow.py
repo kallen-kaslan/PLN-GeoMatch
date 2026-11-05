@@ -12,11 +12,10 @@ from app.models.matching import MatchingRun, ProcessStatus, ReconciliationProces
 from app.models.radius_analysis import RadiusAnalysis
 from app.models.upload import BatchStatus, DatasetType, UploadBatch
 
-router = APIRouter(prefix="/idpel_kosong/workflow")
+router = APIRouter()
 
 
-@router.get("/pending")
-def pending(db: Session = Depends(get_db)) -> list[dict[str, Any]]:
+def pending_for_kind(db: Session, kind: DatasetType) -> list[dict[str, Any]]:
     # One latest attempt per import, including attempts without target outcomes.
     # Reading this endpoint never starts or resumes a job.
     latest = (
@@ -26,7 +25,7 @@ def pending(db: Session = Depends(get_db)) -> list[dict[str, Any]]:
         )
         .join(CorrectionCheck, CorrectionCheck.process_id == ReconciliationProcess.id)
         .join(MatchingRun, MatchingRun.process_id == ReconciliationProcess.id)
-        .filter(CorrectionCheck.category == DatasetType.IDPEL_KOSONG.value)
+        .filter(CorrectionCheck.category == kind.value)
         .group_by(ReconciliationProcess.target_batch_id)
         .subquery()
     )
@@ -38,7 +37,7 @@ def pending(db: Session = Depends(get_db)) -> list[dict[str, Any]]:
         .outerjoin(MatchingRun, MatchingRun.id == latest.c.run_id)
         .outerjoin(latest_analysis, latest_analysis.c.batch_id == UploadBatch.id)
         .outerjoin(RadiusAnalysis, RadiusAnalysis.id == latest_analysis.c.analysis_id)
-        .filter(UploadBatch.dataset_type == DatasetType.IDPEL_KOSONG)
+        .filter(UploadBatch.dataset_type == kind)
         .order_by(UploadBatch.id.desc())
         .all()
     ):
@@ -71,3 +70,13 @@ def pending(db: Session = Depends(get_db)) -> list[dict[str, Any]]:
             "processing_stage": progress.get("stage"),
         })
     return result
+
+
+@router.get("/idpel_kosong/workflow/pending")
+def pending(db: Session = Depends(get_db)) -> list[dict[str, Any]]:
+    return pending_for_kind(db, DatasetType.IDPEL_KOSONG)
+
+
+@router.get("/idpel_tidak_ketemu/workflow/pending")
+def not_found_pending(db: Session = Depends(get_db)) -> list[dict[str, Any]]:
+    return pending_for_kind(db, DatasetType.IDPEL_TIDAK_KETEMU)

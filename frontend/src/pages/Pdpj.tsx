@@ -1,3 +1,4 @@
+import { TablePagination } from "@/components/data/TablePagination";
 import { useDebouncedSearch } from "@/hooks/useDebouncedSearch";
 import { SearchFeedback } from "@/components/data/SearchFeedback";
 import { searchPreparing, searchRefreshInterval } from "@/lib/search";
@@ -6,7 +7,7 @@ import { buttonClass } from "@/lib/button";
 import { useEffect, useRef, useState } from "react";
 import { Link, useSearchParams } from "react-router-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { AlertCircle, ArrowLeft, ArrowRight, CheckCircle2, FileCheck2, LoaderCircle, Plus, RefreshCw } from "lucide-react";
+import { AlertCircle, CheckCircle2, FileCheck2, LoaderCircle, Plus, RefreshCw } from "lucide-react";
 import { MasterImport } from "@/components/master/MasterImport";
 import { PdpjRowDetail } from "@/components/pdpj/PdpjRowDetail";
 import { CompleteWithExceptionsDialog } from "@/components/pdpj/CompleteWithExceptionsDialog";
@@ -50,8 +51,6 @@ export default function PdpjPage() {
   const [status, setStatus] = useState<PdpjStatus>("all");
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(25);
-  const [pageInput, setPageInput] = useState<string | null>(null);
-  const [pageError, setPageError] = useState("");
   const [rowId, setRowId] = useState<number | null>(null);
   const [notice, setNotice] = useState("");
   const [completion, setCompletion] = useState<PdpjCompletion | null>(null);
@@ -61,7 +60,7 @@ export default function PdpjPage() {
   const [autoRunId, setAutoRunId] = useState<number | null>(null);
 
   const navigatePage = (next: number) => {
-    setPage(next); setPageInput(null); setPageError(""); setRowId(null);
+    setPage(next); setRowId(null);
   };
 
   const batches = useQuery({ queryKey: ["pdpj", "batches"], queryFn: pdpjApi.batches, staleTime: 30_000 });
@@ -119,16 +118,7 @@ export default function PdpjPage() {
     void queryClient.invalidateQueries({ queryKey: ["pdpj"] });
   };
   const failure = batches.isError || reviews.isError || review.isError || records.isError || masters.isError;
-  const totalPages = Math.max(1, Math.ceil((records.data?.total ?? 0) / pageSize));
-  const openPage = (event: React.FormEvent<HTMLFormElement>) => {
-    event.preventDefault();
-    const requested = Number(pageInput ?? page);
-    if (!Number.isInteger(requested) || requested < 1 || requested > totalPages) {
-      setPageError(`Masukkan nomor halaman antara 1 dan ${count(totalPages)}.`);
-      return;
-    }
-    navigatePage(requested);
-  };
+
   const processingIncomplete = !!review.data?.processing && review.data.processing.state !== "ready";
   const processingLocked = processBusy || review.data?.activity?.active === true || (!!review.data?.processing && (review.data.processing.state === "running" || review.data.processing.processed_rows === 0));
   return <div className="space-y-4">
@@ -172,26 +162,7 @@ export default function PdpjPage() {
         <div className="flex flex-col gap-3 sm:flex-row"><input type="search" maxLength={120} aria-label="Cari data PDPJ" placeholder="Cari IDPEL, nama, atau nomor meter…" value={search} onChange={(event) => { setSearch(event.target.value); navigatePage(1); }} className={`${control} min-w-0 flex-1`} /><select aria-label="Filter pemeriksaan PDPJ" value={status} onChange={(event) => { setStatus(event.target.value as PdpjStatus); navigatePage(1); }} className={control}>{[["all", "Semua kondisi"], ["found", "IDPEL ditemukan"], ["not_found", "IDPEL tidak ditemukan"], ["empty", "IDPEL kosong"], ["invalid", "Format IDPEL bermasalah"], ["incomplete", "Koordinat belum lengkap"], ["unresolved", "Masalah belum selesai"], ["ready", "Siap diselesaikan"], ["exception", "Dengan pengecualian"]].map(([key, label]) => <option key={key} value={key}>{label}</option>)}</select></div>
         <div aria-busy={records.isFetching || searchBusy} className="overflow-x-auto rounded-lg border border-ui-border"><table className="w-full min-w-[900px] text-left text-[13px]"><thead className="bg-ui-table-head"><tr>{["Baris", "IDPEL / Nama", "Keberadaan IDPEL", "Koordinat", "Rekomendasi", "Review", "Detail"].map((label) => <th key={label} className="p-3">{label}</th>)}</tr></thead><tbody>{(records.isPending || searchBusy) ? <tr><td colSpan={7} className="p-8 text-center"><span role="status" className="inline-flex items-center gap-2"><LoaderCircle size={18} aria-hidden="true" className="animate-spin" />Memuat hasil pemeriksaan...</span></td></tr> : records.isError ? <tr><td colSpan={7} className="p-8 text-center text-red-700">Hasil belum dapat dimuat.</td></tr> : records.data?.items.length ? records.data.items.map((row) => <tr key={row.id} className={`border-t border-gray-200 ${row.id === rowId ? "bg-amber-50" : "hover:bg-neo-white"}`}><td className="p-3 font-mono">{row.row_number}</td><td className="p-3"><p className="font-mono font-semibold">{displayValue(row.fields.idpel)}</p><p className="mt-1 max-w-48 truncate">{displayValue(row.fields.nama)}</p></td><td className={`p-3 font-semibold ${row.existence === "found" ? "text-green-800" : "text-red-700"}`}>{existenceLabel[row.existence]}</td><td className="p-3"><p className="font-mono">{displayValue(row.fields.lat)}, {displayValue(row.fields.lon)}</p><p className="mt-1 text-xs">{row.coordinates_complete ? "Lengkap" : "Belum lengkap"}</p></td><td className="p-3">{row.recommendation_count} sumber</td><td className="p-3">{row.exception ? "Pengecualian beralasan" : row.issues.length ? `${row.issues.length} masalah` : row.reviewed ? "Sudah ditinjau" : "Siap disetujui"}{!!row.warnings?.length && <p className="mt-1 text-xs text-blue-800">IDPEL berulang · boleh dilanjutkan</p>}</td><td className="p-3"><button type="button" aria-label={`Detail PDPJ baris ${row.row_number}`} disabled={processingLocked} onClick={() => setRowId(row.id)} className={button}>Detail</button></td></tr>) : <tr><td colSpan={7} className="p-8 text-center">Tidak ada baris sesuai filter.</td></tr>}</tbody></table></div>
       <SearchFeedback state={records.data?.search_index} waiting={search !== deferredSearch} fetching={Boolean(search) && records.isFetching} />
-        <footer aria-label="Navigasi halaman PDPJ" className="flex flex-wrap items-center justify-between gap-3 text-xs">
-          <p aria-live="polite">{count(records.data?.total)} baris sesuai filter. Halaman {count(page)} dari {count(totalPages)}</p>
-          <div className="flex flex-wrap items-center gap-3">
-            <label className="flex items-center gap-2 font-semibold">Baris per halaman
-              <select aria-label="Baris per halaman PDPJ" value={pageSize} onChange={(event) => { setPageSize(Number(event.target.value)); navigatePage(1); }} className={control}>
-                {[10, 25, 50, 100].map((size) => <option key={size} value={size}>{size} baris</option>)}
-              </select>
-            </label>
-            <form noValidate onSubmit={openPage} className="flex flex-wrap items-center gap-2">
-              <label htmlFor="pdpj-page-number" className="font-semibold">Ke halaman</label>
-              <input id="pdpj-page-number" aria-label="Nomor halaman PDPJ" aria-invalid={!!pageError} aria-describedby={pageError ? "pdpj-page-error" : undefined} type="number" inputMode="numeric" min={1} max={totalPages} step={1} value={pageInput ?? page} onChange={(event) => { setPageInput(event.target.value); setPageError(""); }} disabled={(records.isFetching || searchBusy) || !records.data?.total} className={`${control} w-24`} />
-              <button type="submit" disabled={(records.isFetching || searchBusy) || !records.data?.total} className={button}>Buka halaman</button>
-            </form>
-            <div className="flex gap-2">
-              <button type="button" aria-label="Halaman PDPJ sebelumnya" disabled={page <= 1 || (records.isFetching || searchBusy)} onClick={() => navigatePage(page - 1)} className={button}><ArrowLeft size={16} /></button>
-              <button type="button" aria-label="Halaman PDPJ berikutnya" disabled={page >= totalPages || (records.isFetching || searchBusy)} onClick={() => navigatePage(page + 1)} className={button}><ArrowRight size={16} /></button>
-            </div>
-          </div>
-          {pageError && <p id="pdpj-page-error" role="alert" className="w-full text-red-700">{pageError}</p>}
-        </footer>
+        <TablePagination context="PDPJ" page={page} pageSize={pageSize} total={searchBusy ? undefined : records.data?.total} loading={records.isFetching || searchBusy} onPageChange={navigatePage} onPageSizeChange={(size) => { setPageSize(size); navigatePage(1); }} />
         <div className="flex flex-wrap gap-x-6 gap-y-3 border-t border-ui-border pt-3">
         <details className="text-xs"><summary className="cursor-pointer font-semibold">Lihat sumber master pemeriksaan ini</summary><ul className="mt-2 list-disc space-y-1 pl-4">{review.data.masters.map((item) => <li key={item.id} className="break-words">{item.dataset_type.toUpperCase()} · {item.filename}{item.source_sheet ? ` · Sheet ${item.source_sheet}` : ""}</li>)}</ul></details>
         <details><summary className="text-xs">Tentang hasil pemeriksaan</summary><p className="text-xs text-ui-muted">IDPEL ditemukan belum berarti datanya lengkap. Penyelesaian menyetujui seluruh baris lengkap; baris bermasalah memerlukan perbaikan atau alasan pengecualian.</p></details>

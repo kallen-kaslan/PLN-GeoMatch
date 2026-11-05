@@ -4,8 +4,8 @@ import { ArrowRight, FileClock, FileSpreadsheet, LoaderCircle, Upload } from "lu
 import { api, type ApiError } from "@/lib/api";
 import { buttonClass } from "@/lib/button";
 import { previewButton } from "@/lib/empty-correction-preview";
-import { correctionApi } from "@/lib/corrections";
-import { guessMasterMapping, type ImportResult, type MasterBatchPreview } from "@/lib/master";
+import { correctionApi, CORRECTION_TYPES } from "@/lib/corrections";
+import { guessMasterMapping, type CorrectionKind, type ImportResult, type MasterBatchPreview } from "@/lib/master";
 import { uploadFilesApi, type UploadFileHistory } from "@/lib/upload-files";
 import { SearchableSelect } from "@/components/data/SearchableSelect";
 import type { FlowDocument } from "./CorrectionFlowLayout";
@@ -15,8 +15,8 @@ const cell = (value: unknown) => value === null || value === undefined ? "" : St
 const errorText = (error: unknown) => error instanceof Error ? error.message : (error as ApiError)?.message ?? "Permintaan belum berhasil. Coba lagi.";
 const size = (bytes: number) => `${(bytes / 1024 / 1024).toLocaleString("id-ID", { maximumFractionDigits: 1 })} MB`;
 
-export function EmptyCorrectionFileStep({ saved, onBatchCreated, onSaved, previewOnly = false, onDocumentChange, footer, hideFooter = false }: {
-  saved?: MasterBatchPreview; onBatchCreated: (id: number) => void;
+export function EmptyCorrectionFileStep({ kind = "idpel_kosong", saved, onBatchCreated, onSaved, previewOnly = false, onDocumentChange, footer, hideFooter = false }: {
+  kind?: CorrectionKind; saved?: MasterBatchPreview; onBatchCreated: (id: number) => void;
   onSaved: (result: ImportResult, filename: string) => void; onCancel: () => void;
   previewOnly?: boolean;
   onDocumentChange?: (document: FlowDocument) => void;
@@ -24,6 +24,7 @@ export function EmptyCorrectionFileStep({ saved, onBatchCreated, onSaved, previe
   hideFooter?: boolean;
 }) {
   const client = useQueryClient();
+  const label = CORRECTION_TYPES.find((item) => item.key === kind)!.label;
   const input = useRef<HTMLInputElement>(null);
   const [mode, setMode] = useState<"new" | "stored">(saved ? "stored" : "new");
   const [restoreSaved, setRestoreSaved] = useState(!!saved);
@@ -35,7 +36,7 @@ export function EmptyCorrectionFileStep({ saved, onBatchCreated, onSaved, previe
   const archive = picked ?? recovered;
   const sheetName = sheetKey === null ? null : archive?.sheet_names.length ? sheetKey : "";
   const period = archive && saved && archive.imports.some((item) => item.batch_id === saved.id) && sheetName === (saved.source_sheet ?? "") ? saved.period ?? "" : "";
-  const imported = (name: string) => archive?.imports.find((item) => item.dataset_type === "idpel_kosong" && (item.period ?? "") === period && (item.source_sheet ?? "") === name);
+  const imported = (name: string) => archive?.imports.find((item) => item.dataset_type === kind && (item.period ?? "") === period && (item.source_sheet ?? "") === name);
   const restoredCompleted = saved?.status === "completed" && archive?.imports.some((item) => item.batch_id === saved.id) && sheetName === (saved.source_sheet ?? "");
   const alreadySaved = sheetName !== null && imported(sheetName)?.status === "completed";
   const preview = useQuery({ queryKey: ["original-file-preview", archive?.id, sheetName], queryFn: ({ signal }) => uploadFilesApi.originalPreview(archive!.id, sheetName!, signal), enabled: !!archive && sheetName !== null, staleTime: Infinity });
@@ -59,24 +60,24 @@ export function EmptyCorrectionFileStep({ saved, onBatchCreated, onSaved, previe
       if (previewOnly) throw new Error("Penyimpanan dinonaktifkan dalam pratinjau alur.");
       if (restoredCompleted && saved) return { batch_id: saved.id, rows: saved.total_rows, valid_rows: saved.valid_rows, error_rows: saved.error_rows };
       if (!archive || sheetName === null || !preview.data?.rows.length) throw new Error("Pilih dokumen dan sheet terlebih dahulu.");
-      const uploaded = await uploadFilesApi.importSheet(archive.id, "idpel_kosong", sheetName, period);
+      const uploaded = await uploadFilesApi.importSheet(archive.id, kind, sheetName, period);
       onBatchCreated(uploaded.id);
-      const batch = await correctionApi.batch("idpel_kosong", uploaded.id);
+      const batch = await correctionApi.batch(kind, uploaded.id);
       if (batch.status === "completed") return { batch_id: batch.id, rows: batch.total_rows, valid_rows: batch.valid_rows, error_rows: batch.error_rows };
-      const mapping = guessMasterMapping(batch.headers, "idpel_kosong", batch.preview);
+      const mapping = guessMasterMapping(batch.headers, kind, batch.preview);
       return (await api.post<ImportResult>("/upload/confirm-mapping", { batch_id: uploaded.id, column_mapping: mapping })).data;
     },
     onSuccess: (result) => {
       void client.invalidateQueries({ queryKey: ["upload-files"] });
       onSaved(result, archive?.filename ?? saved?.filename ?? "Dokumen");
     },
-    onError: () => { void client.invalidateQueries({ queryKey: ["corrections", "idpel_kosong"] }); },
+    onError: () => { void client.invalidateQueries({ queryKey: ["corrections", kind] }); },
   });
   const busy = store.isPending || save.isPending;
   const resetDocument = () => { setPicked(null); setRestoreSaved(false); setSheetKey(null); save.reset(); store.reset(); };
   const chooseFile = (file?: File) => { if (!file || busy || previewOnly) return; resetDocument(); store.mutate(file); };
   const drop = (event: DragEvent<HTMLDivElement>) => { event.preventDefault(); setDragging(false); chooseFile(event.dataTransfer.files[0]); };
-  return <div className="space-y-5"><section aria-label="Pilih dokumen IDPEL Kosong" className="overflow-hidden rounded-lg border border-gray-200 bg-white">
+  return <div className="space-y-5"><section aria-label={`Pilih dokumen ${label}`} className="overflow-hidden rounded-lg border border-gray-200 bg-white">
     <div className="space-y-6 px-5 py-6 sm:px-7 sm:py-7">
       <div><h2 className="text-lg font-semibold">Pilih dokumen</h2><p className="mt-1 text-sm text-gray-600">Unggah berkas baru atau gunakan dokumen yang sudah tersimpan.</p></div>
       <fieldset className="grid gap-3 sm:grid-cols-2" disabled={busy}><legend className="sr-only">Sumber dokumen</legend>{([
@@ -85,7 +86,7 @@ export function EmptyCorrectionFileStep({ saved, onBatchCreated, onSaved, previe
       ] as const).map(({ key, title, description, Icon }) => <label key={key} className={`flex cursor-pointer items-start gap-3 rounded-md border p-4 has-focus-visible:ring-2 has-focus-visible:ring-gray-700 ${mode === key ? "border-gray-900 bg-gray-50" : "border-gray-200 bg-white hover:border-gray-400"} ${busy ? "cursor-wait opacity-60" : ""}`}><input type="radio" name="empty-document-source" value={key} checked={mode === key} onChange={() => { resetDocument(); setMode(key); }} className="mt-1 accent-gray-900" /><Icon size={20} className="mt-0.5 shrink-0" /><span><span className="block text-sm font-bold">{title}</span><span className="mt-1 block text-xs text-gray-600">{description}</span></span></label>)}</fieldset>
       {mode === "new" ? <div onDragOver={(event) => { event.preventDefault(); if (!busy) setDragging(true); }} onDragLeave={() => setDragging(false)} onDrop={drop} className={`flex flex-col items-center gap-3 rounded-md border border-dashed px-4 py-7 text-center ${dragging ? "border-gray-900 bg-gray-50" : "border-gray-300 bg-gray-50"}`}>
         <Upload size={28} className="text-gray-500" /><p className="text-sm font-semibold">Tarik berkas ke sini atau pilih dari perangkat</p><p className="text-xs text-gray-600">Excel (.xlsx) atau CSV (.csv) · Maksimal 500 MB</p>
-        <input ref={input} type="file" accept=".xlsx,.csv" aria-label="Berkas IDPEL Kosong" className="sr-only" disabled={busy || previewOnly} onChange={(event) => { chooseFile(event.target.files?.[0]); event.target.value = ""; }} />
+        <input ref={input} type="file" accept=".xlsx,.csv" aria-label={`Berkas ${label}`} className="sr-only" disabled={busy || previewOnly} onChange={(event) => { chooseFile(event.target.files?.[0]); event.target.value = ""; }} />
         <button type="button" disabled={busy || previewOnly} className={buttonClass.secondary} onClick={() => input.current?.click()}>{store.isPending ? <><LoaderCircle size={16} className="animate-spin" />Mengunggah dokumen…</> : "Pilih berkas"}</button>
       </div> : <div className="space-y-3"><SearchableSelect label="Dokumen tersimpan" value={archive ? String(archive.id) : ""} disabled={busy || history.isPending || history.isError} placeholder={history.isPending ? "Memuat dokumen…" : "Pilih dokumen atau ketik nama berkas…"} options={(history.data ?? []).map((item) => ({ value: String(item.id), label: `${item.filename} · ${size(item.size_bytes)}` }))} onChange={(id) => { const value = history.data?.find((item) => item.id === Number(id)); resetDocument(); setPicked(value ?? null); }} />{history.isSuccess && !history.data.length && <p className="text-sm text-gray-600">Belum ada dokumen tersimpan. Pilih Unggah berkas baru.</p>}{history.isError && <p role="alert" className="text-sm">Dokumen tersimpan belum dapat dimuat. <button type="button" className="font-bold underline" onClick={() => void history.refetch()}>Coba lagi</button></p>}</div>}
       {store.error && <p role="alert" className="text-sm text-red-700">{errorText(store.error)}</p>}

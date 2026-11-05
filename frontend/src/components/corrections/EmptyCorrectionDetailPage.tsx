@@ -1,11 +1,12 @@
+import { TablePagination } from "@/components/data/TablePagination";
 import { CorrectionPageHeader } from "./CorrectionPageHeader";
 import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { useSearchParams } from "react-router-dom";
 import { keepPreviousData, useQuery } from "@tanstack/react-query";
-import { ArrowDownNarrowWide, ArrowDownWideNarrow, ChevronLeft, ChevronRight, FileSpreadsheet, LoaderCircle, X } from "lucide-react";
+import { ArrowDownNarrowWide, ArrowDownWideNarrow, FileSpreadsheet, LoaderCircle, X } from "lucide-react";
 import { correctionApi, searchLabel, type CorrectionCandidate } from "@/lib/corrections";
-import { displayValue } from "@/lib/master";
+import { displayValue, masterFieldLabel, validationMessage, type CorrectionKind } from "@/lib/master";
 import { PDPJ_FIELDS } from "@/lib/pdpj";
 import { buttonClass } from "@/lib/button";
 import { emptySourceFields } from "@/lib/empty-correction-fields";
@@ -44,30 +45,39 @@ function CandidateSources({ candidate, onClose }: { candidate: CorrectionCandida
   </dialog>, document.body);
 }
 
-export function EmptyCorrectionDetailPage() {
+
+export function EmptyCorrectionDetailPage({ kind = "idpel_kosong" }: { kind?: CorrectionKind }) {
+  const notFound = kind === "idpel_tidak_ketemu";
   const [params] = useSearchParams();
   const recordId = Number(params.get("detail_record_id"));
   const processId = Number(params.get("process_id")) || undefined;
   const generation = Number(params.get("generation")) || undefined;
   const batchId = Number(params.get("batch_id")) || undefined;
+  const analysisId = Number(params.get("analysis_id")) || undefined;
   const [offset, setOffset] = useState(0);
   const [pageSize, setPageSize] = useState(10);
   const [sortOrder, setSortOrder] = useState<"nearest" | "farthest">("nearest");
   const [candidate, setCandidate] = useState<CorrectionCandidate | null>(null);
   const valid = Number.isSafeInteger(recordId) && recordId > 0;
-  const detail = useQuery({ queryKey: ["corrections", "idpel_kosong", "detail", recordId, processId, generation, offset, pageSize, sortOrder], queryFn: () => correctionApi.detail("idpel_kosong", recordId, { batch_id: batchId, process_id: processId, generation }, offset, undefined, pageSize, sortOrder), placeholderData: keepPreviousData, enabled: valid });
+  const detail = useQuery({ queryKey: ["corrections", kind, "detail", recordId, processId, generation, offset, pageSize, sortOrder, analysisId], queryFn: () => correctionApi.detail(kind, recordId, { batch_id: batchId, process_id: processId, generation, analysis_id: analysisId }, offset, undefined, pageSize, sortOrder), placeholderData: keepPreviousData, enabled: valid });
   const record = detail.data;
   const page = Math.floor(offset / pageSize) + 1;
-  const pages = Math.max(1, Math.ceil((record?.candidates_total ?? 0) / pageSize));
-  const visiblePages = Array.from(new Set([1, ...Array.from({ length: 3 }, (_, index) => Math.min(Math.max(page - 1, 2), Math.max(pages - 3, 2)) + index).filter((value) => value > 1 && value < pages), pages])).sort((a, b) => a - b);
   const original = Object.fromEntries(Object.entries(record?.raw_data ?? {}).map(([key, value]) => [key.toLowerCase().replace(/[^a-z0-9]/g, ""), value]));
+  const pdpjConflicts = notFound ? (record?.conflicts ?? []).filter((item) => item.code === "idpel_sama_pdpj") : [];
+  const sourceFieldKeys: Record<string, string> = { objectid: "objectid", noagenda: "agenda_ref", idpelanggan: "idpel", jenispelanggan: "jenis_pel", namapelanggan: "nama", alamatlengkap: "alamat", nokwhmeter: "meter_ref", daya: "daya", latitudey: "lat", longitudex: "lon" };
   return <div className="space-y-5 sm:space-y-6">
-    <CorrectionPageHeader title="Detail Data" />
-    {!valid ? <p role="alert">Data tidak ditemukan. Pilih data dari halaman IDPEL Kosong.</p> : detail.isPending ? <p role="status" className="flex items-center gap-2 text-sm"><LoaderCircle size={18} className="animate-spin" />Memuat detail data...</p> : detail.isError ? <p role="alert" className="text-sm text-red-700">Detail belum dapat dimuat. <button type="button" onClick={() => void detail.refetch()} className="font-semibold underline">Coba lagi</button></p> : record && <>
+    <CorrectionPageHeader title="Detail Data" kind={kind} />
+    {!valid ? <p role="alert">Data tidak ditemukan. Pilih data dari halaman kategori yang sesuai.</p> : detail.isPending ? <p role="status" className="flex items-center gap-2 text-sm"><LoaderCircle size={18} className="animate-spin" />Memuat detail data...</p> : detail.isError ? <p role="alert" className="text-sm text-red-700">Detail belum dapat dimuat. <button type="button" onClick={() => void detail.refetch()} className="font-semibold underline">Coba lagi</button></p> : record && <>
       <section aria-label="Data pelanggan" className="rounded-xl border border-ui-border bg-white p-5 sm:p-6">
-        <header className="mb-5 flex flex-wrap items-start justify-between gap-3 border-b border-ui-border pb-4"><div><h2 className="text-base font-semibold">Data Pelanggan</h2><p className="mt-1 break-words text-xs text-ui-muted">{record.filename} &#183; Sheet {displayValue(record.source_sheet)} &#183; Baris {record.row_number}</p></div><span className="rounded-md bg-ui-accent-soft px-3 py-1.5 text-xs font-semibold text-ui-accent-text">{searchLabel[record.search_status]}</span></header>
-        <dl className="grid grid-cols-1 gap-x-8 gap-y-4 sm:grid-cols-2 xl:grid-cols-3">{emptySourceFields.map((field) => <div key={field.key} className={`min-w-0 border-b border-ui-border pb-3 ${field.key === "alamatlengkap" ? "sm:col-span-2 xl:col-span-1" : ""}`}><dt className="text-xs font-semibold text-ui-muted">{field.label}</dt><dd className="mt-1 whitespace-pre-wrap break-words text-sm [overflow-wrap:anywhere]">{displayValue(original[field.key])}</dd></div>)}</dl>
+        <header className="mb-5 flex flex-wrap items-start justify-between gap-3 border-b border-ui-border pb-4"><div><h2 className="text-base font-semibold">Data Pelanggan</h2><p className="mt-1 break-words text-xs text-ui-muted">{record.filename} &#183; Sheet {displayValue(record.source_sheet)} &#183; Baris {record.row_number}</p></div><span className="rounded-md bg-ui-accent-soft px-3 py-1.5 text-xs font-semibold text-ui-accent-text">{pdpjConflicts.length ? "IDPEL Sudah Ada di PDPJ" : searchLabel[record.search_status]}</span></header>
+        <dl className="grid grid-cols-1 gap-x-8 gap-y-4 sm:grid-cols-2 xl:grid-cols-3">{emptySourceFields.map((field) => <div key={field.key} className={`min-w-0 border-b border-ui-border pb-3 ${field.key === "alamatlengkap" ? "sm:col-span-2 xl:col-span-1" : ""}`}><dt className="text-xs font-semibold text-ui-muted">{field.label}</dt><dd className="mt-1 whitespace-pre-wrap break-words text-sm [overflow-wrap:anywhere]">{displayValue(original[field.key] ?? (notFound ? record.fields[sourceFieldKeys[field.key]] : undefined))}</dd></div>)}</dl>
       </section>
+      {notFound && !!record.errors?.length && <section aria-label="Catatan data sumber" className="space-y-2 rounded-xl border border-amber-200 bg-amber-50 p-4"><h2 className="text-sm font-semibold text-amber-950">Catatan data sumber</h2><ul className="list-disc space-y-1 pl-4 text-xs text-amber-900">{record.errors.map((error, index) => <li key={index}>{masterFieldLabel(error.field)}: {validationMessage(error.code)}</li>)}</ul></section>}
+      {pdpjConflicts.length > 0 && <section aria-label="IDPEL Sudah Ada di PDPJ" className="space-y-4 rounded-xl border border-amber-200 bg-amber-50 p-5 sm:p-6">
+        <div><h2 className="text-base font-semibold text-amber-950">IDPEL Sudah Ada di PDPJ</h2><p className="mt-1 text-sm text-amber-900">IDPEL sumber cocok dengan data PDPJ pada pemeriksaan tersimpan. Baris ini tidak dicari kandidatnya.</p></div>
+        <div className="grid gap-3 lg:grid-cols-2">{pdpjConflicts.map((item, index) => <div key={`${item.pdpj_row_id}-${index}`} className="rounded-lg border border-amber-200 bg-white p-4"><h3 className="text-sm font-semibold">Data PDPJ terkait</h3><p className="mt-1 text-xs text-ui-muted">Baris {item.row_number}{item.pending_validation ? " (menunggu validasi)" : ""}</p><dl className="mt-3 grid gap-3 sm:grid-cols-2">{["idpel", "nama", "agenda_ref", "lat", "lon"].map((key) => <div key={key} className="min-w-0"><dt className="text-xs font-semibold text-ui-muted">{({ idpel: "IDPEL", nama: "Nama Pelanggan", agenda_ref: "Nomor Agenda", lat: "Koordinat Y", lon: "Koordinat X" } as Record<string, string>)[key]}</dt><dd className="mt-1 break-words text-sm">{displayValue(item.fields[key])}</dd></div>)}</dl></div>)}</div>
+      </section>}
+      {notFound && !pdpjConflicts.length && record.search_status === "pdpj_conflict" && <p className="rounded-lg border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900">Pemeriksaan tersimpan menemukan benturan nomor meter atau referensi survei dengan PDPJ. Benturan ini berbeda dari kesamaan IDPEL.</p>}
       <section aria-label="Daftar kandidat" className="space-y-4 rounded-xl border border-ui-border bg-white p-4 sm:p-6">
         <header className="flex items-center justify-between gap-3">
           <div><h2 className="text-base font-semibold">Kandidat ({record.candidates_total.toLocaleString("id-ID")})</h2>{record.radius_meters !== null && <p className="mt-1 text-xs text-ui-muted">Radius {record.radius_meters.toLocaleString("id-ID")} m</p>}</div>
@@ -80,33 +90,8 @@ export function EmptyCorrectionDetailPage() {
           </div>
           <span role="status" className="sr-only">{sortOrder === "nearest" ? "Kandidat diurutkan dari jarak terdekat" : "Kandidat diurutkan dari jarak terjauh"}</span>
         </header>
-        <div className="overflow-x-auto rounded-lg border border-ui-border"><table aria-busy={detail.isFetching} className="w-full min-w-[980px] text-left text-sm"><thead className="bg-ui-table-head text-xs text-ui-muted"><tr>{["No", "IDPEL", "Nama Pelanggan", "Nomor Agenda", "Koordinat X", "Koordinat Y", "Jarak", "Aksi"].map((label) => <th key={label} scope="col" className={`${cell} whitespace-nowrap font-semibold`}>{label}</th>)}</tr></thead><tbody>{detail.isPlaceholderData ? <tr><td colSpan={8} className="p-8 text-center text-sm text-ui-muted">Memuat kandidat...</td></tr> : record.candidates.length ? record.candidates.map((item, index) => <tr key={item.id} className="border-t border-ui-border hover:bg-slate-50"><td className={`${cell} w-14 tabular-nums text-ui-muted`}>{offset + index + 1}</td><td className={`${cell} whitespace-nowrap font-mono`}>{displayValue(item.fields.idpel)}</td><td className={`${cell} min-w-44 max-w-72 break-words font-medium`}>{displayValue(item.fields.nama)}</td><td className={`${cell} whitespace-nowrap font-mono tabular-nums`}>{displayValue(item.fields.agenda_ref)}</td><td className={`${cell} whitespace-nowrap font-mono tabular-nums`}>{displayValue(item.fields.lon)}</td><td className={`${cell} whitespace-nowrap font-mono tabular-nums`}>{displayValue(item.fields.lat)}</td><td className={`${cell} whitespace-nowrap tabular-nums`}>{item.distance_meters.toLocaleString("id-ID", { maximumFractionDigits: 2 })} m</td><td className={cell}><button type="button" className={buttonClass.secondary} aria-label={`Detail sumber kandidat ${item.fields.idpel}`} onClick={() => setCandidate(item)}>Detail</button></td></tr>) : <tr><td colSpan={8} className="p-8 text-center text-sm text-ui-muted">{record.search_status === "not_checked" ? "Data ini belum diproses untuk pencarian kandidat." : record.search_status === "incomplete_coordinates" || record.search_status === "invalid_data" ? "Periksa data dan koordinat sumber sebelum mencari kandidat." : "Tidak ada kandidat tersimpan untuk data ini."}</td></tr>}</tbody></table></div>
-        <footer aria-label="Navigasi halaman kandidat" className="flex flex-wrap items-center justify-between gap-x-5 gap-y-3 text-xs">
-          <div className="flex flex-wrap items-center gap-x-4 gap-y-3">
-            <label className="flex items-center gap-2 text-ui-muted">Tampilkan
-              <select aria-label="Kandidat per halaman" value={pageSize} disabled={detail.isFetching} onChange={(event) => { setPageSize(Number(event.target.value)); setOffset(0); }} className="min-h-9 rounded-md border border-ui-border bg-white py-1.5 pl-3 pr-9 text-sm font-medium text-neo-black disabled:opacity-50">{[5, 10, 25, 50].map((size) => <option key={size} value={size}>{size}</option>)}</select>
-              <span>per halaman</span>
-            </label>
-            <p aria-live="polite" className="text-ui-muted">{record.candidates_total ? offset + 1 : 0}&ndash;{Math.min(offset + pageSize, record.candidates_total)} dari <span className="font-semibold text-neo-black">{record.candidates_total.toLocaleString("id-ID")}</span> kandidat</p>
-          </div>
-          <div className="flex flex-wrap items-center gap-x-4 gap-y-3">
-          <form key={`${page}-${pageSize}-${sortOrder}`} aria-label="Buka halaman kandidat" onSubmit={(event) => {
-            event.preventDefault();
-            const requested = Number(new FormData(event.currentTarget).get("candidate_page"));
-            if (Number.isInteger(requested) && requested >= 1 && requested <= pages) setOffset((requested - 1) * pageSize);
-          }} className="flex items-center gap-2">
-            <label htmlFor="candidate-page-number" className="whitespace-nowrap text-ui-muted">Ke halaman</label>
-            <input id="candidate-page-number" name="candidate_page" aria-label="Nomor halaman kandidat" type="number" inputMode="numeric" min={1} max={pages} step={1} required defaultValue={page} disabled={detail.isFetching || record.candidates_total === 0} className="min-h-9 w-16 rounded-md border border-ui-border bg-white px-2 py-1.5 text-center text-sm tabular-nums disabled:opacity-50" />
-            <span className="whitespace-nowrap text-ui-muted">dari {pages.toLocaleString("id-ID")}</span>
-            <button type="submit" disabled={detail.isFetching || record.candidates_total === 0} className={buttonClass.secondary}>Buka</button>
-          </form>
-          <nav aria-label="Pilih halaman kandidat" className="flex flex-wrap items-center gap-1.5">
-            <button type="button" aria-label="Halaman kandidat sebelumnya" disabled={page <= 1 || detail.isFetching} onClick={() => setOffset(Math.max(0, offset - pageSize))} className={`${buttonClass.secondary} gap-1.5`}><ChevronLeft size={16} /><span className="hidden sm:inline">Sebelumnya</span></button>
-            {visiblePages.map((value, index) => <span key={value} className="flex items-center gap-1.5">{index > 0 && value - visiblePages[index - 1] > 1 && <span aria-hidden="true" className="px-1 text-ui-muted">...</span>}<button type="button" aria-label={`Halaman kandidat ${value}`} aria-current={value === page ? "page" : undefined} disabled={detail.isFetching || record.candidates_total === 0} onClick={() => setOffset((value - 1) * pageSize)} className={`flex min-h-9 min-w-9 items-center justify-center rounded-md border px-2.5 text-sm font-medium transition-colors disabled:opacity-50 ${value === page ? "border-ui-accent-text bg-ui-accent-soft text-ui-accent-text" : "border-ui-border bg-white hover:bg-slate-50"}`}>{value}</button></span>)}
-            <button type="button" aria-label="Halaman kandidat berikutnya" disabled={page >= pages || detail.isFetching} onClick={() => setOffset(offset + pageSize)} className={`${buttonClass.secondary} gap-1.5`}><span className="hidden sm:inline">Berikutnya</span><ChevronRight size={16} /></button>
-          </nav>
-          </div>
-        </footer>
+        <div className="overflow-x-auto rounded-lg border border-ui-border"><table aria-busy={detail.isFetching} className="w-full min-w-[980px] text-left text-sm"><thead className="bg-ui-table-head text-xs text-ui-muted"><tr>{["No", "IDPEL", "Nama Pelanggan", "Nomor Agenda", "Koordinat X", "Koordinat Y", "Jarak", "Aksi"].map((label) => <th key={label} scope="col" className={`${cell} whitespace-nowrap font-semibold`}>{label}</th>)}</tr></thead><tbody>{detail.isPlaceholderData ? <tr><td colSpan={8} className="p-8 text-center text-sm text-ui-muted">Memuat kandidat...</td></tr> : record.candidates.length ? record.candidates.map((item, index) => <tr key={item.id} className="border-t border-ui-border hover:bg-slate-50"><td className={`${cell} w-14 tabular-nums text-ui-muted`}>{offset + index + 1}</td><td className={`${cell} whitespace-nowrap font-mono`}>{displayValue(item.fields.idpel)}</td><td className={`${cell} min-w-44 max-w-72 break-words font-medium`}>{displayValue(item.fields.nama)}</td><td className={`${cell} whitespace-nowrap font-mono tabular-nums`}>{displayValue(item.fields.agenda_ref)}</td><td className={`${cell} whitespace-nowrap font-mono tabular-nums`}>{displayValue(item.fields.lon)}</td><td className={`${cell} whitespace-nowrap font-mono tabular-nums`}>{displayValue(item.fields.lat)}</td><td className={`${cell} whitespace-nowrap tabular-nums`}>{item.distance_meters.toLocaleString("id-ID", { maximumFractionDigits: 2 })} m</td><td className={cell}><button type="button" className={buttonClass.secondary} aria-label={`Detail sumber kandidat ${item.fields.idpel}`} onClick={() => setCandidate(item)}>Detail</button></td></tr>) : <tr><td colSpan={8} className="p-8 text-center text-sm text-ui-muted">{pdpjConflicts.length ? "IDPEL sudah ada di PDPJ sehingga pencarian kandidat tidak dijalankan." : record.search_status === "not_checked" ? "Data ini belum diproses untuk pencarian kandidat." : record.search_status === "incomplete_coordinates" || record.search_status === "invalid_data" ? "Periksa data dan koordinat sumber sebelum mencari kandidat." : "Tidak ada kandidat tersimpan untuk data ini."}</td></tr>}</tbody></table></div>
+        <TablePagination context="kandidat" page={page} pageSize={pageSize} total={record.candidates_total} loading={detail.isFetching} pageSizes={[5, 10, 25, 50]} unit="kandidat" sizeLabel="Kandidat per halaman" openLabel="Buka" onPageChange={(next) => setOffset((next - 1) * pageSize)} onPageSizeChange={(size) => { setPageSize(size); setOffset(0); }} />
       </section>
     </>}
     {candidate && <CandidateSources candidate={candidate} onClose={() => setCandidate(null)} />}

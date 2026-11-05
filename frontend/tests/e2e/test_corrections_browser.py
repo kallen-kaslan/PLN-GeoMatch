@@ -1,5 +1,7 @@
 """Categorized correction acceptance tests with stored candidates and real job completion."""
 
+import re
+
 import httpx
 from playwright.sync_api import Page, expect
 
@@ -48,6 +50,8 @@ def prepare(api_url: str, candidates: int = 7) -> int:
 def launch(page: Page) -> None:
     page.get_by_label("Petugas untuk riwayat", exact=True).fill("Petugas Browser")
     page.get_by_label("Radius pemeriksaan (meter)", exact=True).fill("10")
+    expect(page).to_have_url(re.compile(r"[?&]radius_meters=10(?:&|$)"))
+    expect(page.get_by_label("Radius pemeriksaan (meter)", exact=True)).to_have_value("10")
     page.get_by_role("button", name="Jalankan pemeriksaan", exact=True).click()
     dialog = page.get_by_role("dialog", name="Pemeriksaan koreksi selesai", exact=True)
     expect(dialog).to_be_visible(timeout=20000)
@@ -58,7 +62,7 @@ def test_not_found_import_conflicts_candidates_missing_coordinates_and_category_
     page: Page, servers: tuple[str, str]
 ) -> None:
     prepare(servers[1])
-    page.goto("/koreksi/idpel-tidak-ketemu")
+    page.goto("/koreksi/idpel-tidak-ketemu?workspace=1")
     page.get_by_role("button", name="Unggah data koreksi", exact=True).click()
     page.locator("input[type=file]").set_input_files(
         {
@@ -115,7 +119,7 @@ def test_not_found_import_conflicts_candidates_missing_coordinates_and_category_
     ).get_by_role("link", name="IDPEL Kosong", exact=True).click()
     cards = page.get_by_role("region", name="Ringkasan IDPEL Kosong", exact=True)
     expect(
-        cards.get_by_text("Total baris", exact=True)
+        cards.get_by_text("Total Data", exact=True)
         .locator("..")
         .get_by_text("0", exact=True)
     ).to_be_visible()

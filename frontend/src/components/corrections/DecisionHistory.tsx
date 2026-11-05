@@ -1,3 +1,4 @@
+import { TablePagination } from "@/components/data/TablePagination";
 import { useState } from "react";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { buttonClass } from "@/lib/button";
@@ -6,8 +7,8 @@ import { downloadSpreadsheet, localTime, resultsApi } from "@/lib/results";
 
 export function DecisionHistory({ kind, processId, recordId, generation, radius }: { kind: CorrectionKind; processId: number; recordId?: number; generation?: number; radius?: number }) {
   const [page, setPage] = useState(1);
-  const events = useQuery({ queryKey: ["correction-decisions", processId, recordId, generation, page], queryFn: ({ signal }) => resultsApi.history(kind, processId, recordId, (page - 1) * 20, signal, generation), refetchInterval: 5000 });
-  const pages = Math.max(1, Math.ceil((events.data?.total ?? 0) / 20));
+  const [pageSize, setPageSize] = useState(20);
+  const events = useQuery({ queryKey: ["correction-decisions", processId, recordId, generation, page, pageSize], queryFn: ({ signal }) => resultsApi.history(kind, processId, recordId, (page - 1) * pageSize, signal, generation, pageSize), refetchInterval: 5000 });
   const download = useMutation({
     mutationFn: () => resultsApi.downloadHistory(kind, processId, generation!, radius!, recordId),
     onSuccess: (file) => downloadSpreadsheet(file.blob, file.filename),
@@ -24,6 +25,6 @@ export function DecisionHistory({ kind, processId, recordId, generation, radius 
         <ul className="mt-2 space-y-1">{event.candidate.observations?.map((source, index) => <li key={index}>{source.filename} · {source.dataset_type.toUpperCase()} · Baris {source.row_number} · Periode {displayValue(source.fields.tglbaca)}</li>)}</ul>
       </div>
     </li>)}</ol> : <p className="text-sm">Belum ada pilihan kandidat yang disimpan.</p>}
-    <div className="flex flex-wrap items-center justify-between gap-2 text-xs"><span>Halaman {page} dari {pages}</span><div className="flex gap-2"><button type="button" className={buttonClass.secondary} disabled={page <= 1 || events.isFetching} onClick={() => setPage(page - 1)}>Riwayat sebelumnya</button><button type="button" className={buttonClass.secondary} disabled={page >= pages || events.isFetching} onClick={() => setPage(page + 1)}>Riwayat berikutnya</button></div></div>
+    <TablePagination context="riwayat pilihan" previousLabel="Riwayat sebelumnya" nextLabel="Riwayat berikutnya" page={page} pageSize={pageSize} total={events.data?.total} loading={events.isFetching} pageSizes={[5, 10, 20, 25, 50, 100]} onPageChange={setPage} onPageSizeChange={(size) => { setPageSize(size); setPage(1); }} />
   </section>;
 }
