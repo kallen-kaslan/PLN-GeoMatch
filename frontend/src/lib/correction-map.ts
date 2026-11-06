@@ -1,10 +1,15 @@
 import type { CorrectionCandidate, CorrectionRow } from "@/lib/corrections";
-import { displayValue } from "@/lib/master";
+
+export const MAP_COLORS = {
+  target: { fill: "#7f9fcd", stroke: "#5678a7" },
+  selected: { fill: "#e4a36d", stroke: "#b87943" },
+  candidate: { fill: "#83b58b", stroke: "#578b61" },
+} as const;
 
 type Position = [number, number];
 interface Layer {
   addTo: (map: Layer | LeafletMap) => Layer;
-  bindTooltip: (content: HTMLElement) => Layer;
+  bindTooltip: (content: HTMLElement, options?: object) => Layer;
   bindPopup: (content: HTMLElement) => Layer;
   on: (event: string, callback: () => void) => Layer;
   getElement?: () => HTMLElement | undefined;
@@ -13,7 +18,8 @@ interface Group extends Layer { clearLayers: () => void }
 interface LeafletMap {
   setView: (position: Position, zoom: number) => LeafletMap;
   fitBounds: (positions: Position[], options: object) => void;
-  invalidateSize: () => void;
+  panTo: (position: Position, options: object) => void;
+  invalidateSize: (options?: object) => void;
   remove: () => void;
   closePopup: () => void;
   stop: () => void;
@@ -26,7 +32,7 @@ interface Leaflet {
   circle: (position: Position, options: object) => Layer;
 }
 export interface MapScene {
-  rows: CorrectionRow[]; selected: number | null; candidates: CorrectionCandidate[];
+  scopeKey: string; rows: CorrectionRow[]; selected: number | null; candidates: CorrectionCandidate[];
   radius: number | null; onSelect: (id: number) => void; onCandidate: (id: number) => void;
 }
 export interface MapProvider { render: (scene: MapScene) => void; destroy: () => void }
@@ -39,14 +45,32 @@ export function coordinates(fields: CorrectionRow["fields"]): Position | null {
 
 function description(lines: string[]) {
   const content = document.createElement("div");
-  content.className = "space-y-1 text-xs";
+  content.className = "max-w-64 space-y-1 whitespace-normal text-xs leading-relaxed";
   for (const line of lines) {
     const paragraph = document.createElement("p");
+    paragraph.className = content.childElementCount === 0 ? "font-semibold text-slate-800" : "text-slate-600";
     paragraph.textContent = line;
     content.append(paragraph);
   }
   return content;
 }
+
+function textValue(value: unknown): string | null {
+  const text = String(value ?? "").trim();
+  return text && !["-", "\u2014", "null", "undefined", "nan"].includes(text.toLowerCase()) ? text : null;
+}
+
+function identity(fields: CorrectionRow["fields"], fallback = "Data Koreksi"): string[] {
+  const name = textValue(fields.nama);
+  const idpel = textValue(fields.idpel);
+  const identifiers = [idpel ? `IDPEL ${idpel}` : null].filter((line): line is string => line !== null);
+  return [name ?? identifiers.shift() ?? fallback, ...identifiers];
+}
+
+const objectLabel = (row: CorrectionRow) => `Objek ID: ${textValue(row.object_id) ?? "Tidak tersedia"}`;
+
+const tooltipOptions = { className: "geo-map-tooltip", direction: "top", offset: [0, -10], opacity: 1 };
+const distance = (meters: number) => `${meters.toLocaleString("id-ID", { maximumFractionDigits: 2 })} m`;
 
 /** Keep the existing Leaflet renderer behind a small provider boundary. */
 export function createCorrectionMap(element: HTMLElement): MapProvider | null {
@@ -58,13 +82,19 @@ export function createCorrectionMap(element: HTMLElement): MapProvider | null {
   }).addTo(map);
   const targets = leaflet.layerGroup(); targets.addTo(map);
   const candidates = leaflet.layerGroup(); candidates.addTo(map);
-  const observer = new ResizeObserver(() => map.invalidateSize()); observer.observe(element);
-  let previousView = "";
+  let fitVisibleView = () => {};
+  const observer = new ResizeObserver(() => { map.invalidateSize({ pan: false }); fitVisibleView(); }); observer.observe(element);
+  let previousScope: string | undefined;
+  let fitted = false;
+  let previousFocus: string | null = null;
   return {
     render(scene) {
       map.stop(); map.closePopup(); targets.clearLayers(); candidates.clearLayers();
       const groups = new Map<string, CorrectionRow[]>();
       for (const row of scene.rows) {
+        // While inspecting one record, hide every other correction target,
+        // including records that share exactly the same coordinates.
+        if (scene.selected !== null && row.id !== scene.selected) continue;
         const point = coordinates(row.fields);
         if (point) { const key = point.join(","); const group = groups.get(key) ?? []; group.push(row); groups.set(key, group); }
       }
@@ -72,18 +102,22 @@ export function createCorrectionMap(element: HTMLElement): MapProvider | null {
         const point = coordinates(rows[0].fields)!;
         const active = rows.some((row) => row.id === scene.selected);
         const marker = leaflet.circleMarker(point, {
-          radius: active ? 10 : 7, color: active ? "#1d4ed8" : scene.selected ? "#6b7280" : "#9a3412",
-          fillColor: active ? "#2563eb" : scene.selected ? "#9ca3af" : "#f97316", fillOpacity: active || !scene.selected ? 0.9 : 0.4, weight: 2,
+          className: active ? "geo-map-target geo-map-target-active" : "geo-map-target",
+          radius: active ? 8 : 4.5, color: active ? MAP_COLORS.selected.stroke : MAP_COLORS.target.stroke,
+          fillColor: active ? MAP_COLORS.selected.fill : MAP_COLORS.target.fill, fillOpacity: active ? 0.9 : 0.7, weight: active ? 2 : 1,
         }).addTo(targets);
-        marker.bindTooltip(description([...rows.slice(0, 5).map((row) => `Baris ${row.row_number} · ${displayValue(row.fields.idpel)} · ${displayValue(row.fields.nama)} · ${row.candidate_count} kandidat`), ...(rows.length > 5 ? [`${rows.length} target pada titik ini. Klik untuk memilih baris.`] : [])]));
+        marker.bindTooltip(description(rows.length === 1
+          ? [objectLabel(rows[0]), `Jumlah Kandidat: ${rows[0].candidate_count.toLocaleString("id-ID")}`]
+          : [`${rows.length.toLocaleString("id-ID")} data di lokasi ini`, ...rows.slice(0, 3).map((row) => `${objectLabel(row)} \u00b7 Jumlah Kandidat: ${row.candidate_count.toLocaleString("id-ID")}`), "Klik untuk memilih data."]), tooltipOptions);
         if (rows.length === 1) marker.on("click", () => scene.onSelect(rows[0].id));
         else {
-          const popup = description([`${rows.length} target pada koordinat yang sama. Pilih baris:`]);
+          const popup = description([`${rows.length} data di lokasi ini. Pilih data koreksi:`]);
           popup.classList.add("max-h-64", "overflow-y-auto");
           for (const row of rows) {
             const button = document.createElement("button");
-            button.className = "block w-full rounded border p-2 text-left text-xs hover:bg-amber-50";
-            button.textContent = `Pilih baris ${row.row_number} · ${displayValue(row.fields.nama)}`;
+            button.className = "block w-full rounded border p-2 text-left text-xs hover:bg-blue-50 focus-visible:outline-blue-600";
+            button.setAttribute("data-record-id", String(row.id));
+            button.append(description([objectLabel(row), ...identity(row.fields), [row.filename, row.source_sheet].filter(Boolean).join(" \u00b7 ")]));
             button.onclick = () => { map.closePopup(); scene.onSelect(row.id); };
             popup.append(button);
           }
@@ -98,32 +132,44 @@ export function createCorrectionMap(element: HTMLElement): MapProvider | null {
       }
       const selected = scene.rows.find((row) => row.id === scene.selected);
       const center = selected && coordinates(selected.fields);
-      if (center && scene.radius) leaflet.circle(center, { radius: scene.radius, color: "#2563eb", weight: 1, fillOpacity: 0.04, interactive: false }).addTo(targets);
+      if (center && scene.radius) leaflet.circle(center, { className: "geo-map-radius", radius: scene.radius, color: MAP_COLORS.selected.stroke, weight: 1, opacity: 0.65, fillOpacity: 0.045, interactive: false }).addTo(targets);
       // Group overlapping candidates so every candidate remains reachable on the map.
       const candidateGroups = new Map<string, CorrectionCandidate[]>();
-      for (const item of scene.candidates) {
+      for (const item of scene.selected !== null ? scene.candidates : []) {
         const point = coordinates(item.fields);
         if (point) { const key = point.join(","); const group = candidateGroups.get(key) ?? []; group.push(item); candidateGroups.set(key, group); }
       }
       for (const items of candidateGroups.values()) {
-        const marker = leaflet.circleMarker(coordinates(items[0].fields)!, { radius: 5, color: "#166534", fillColor: "#22c55e", fillOpacity: 0.85, weight: 2 }).addTo(candidates);
-        marker.bindTooltip(description(items.map((item) => `${displayValue(item.fields.idpel)} · ${item.distance_meters.toFixed(2)} m`)));
+        const marker = leaflet.circleMarker(coordinates(items[0].fields)!, { className: "geo-map-candidate", radius: 4, color: MAP_COLORS.candidate.stroke, fillColor: MAP_COLORS.candidate.fill, fillOpacity: 0.75, weight: 1.25 }).addTo(candidates);
+        marker.bindTooltip(description(items.length === 1
+          ? [...identity(items[0].fields, "Kandidat"), `Jarak ${distance(items[0].distance_meters)}`]
+          : [`${items.length.toLocaleString("id-ID")} kandidat di lokasi ini`, ...items.slice(0, 3).map((item) => identity(item.fields, "Kandidat").join(" \u00b7 ")), "Klik untuk melihat kandidat."]), tooltipOptions);
         const popup = description(["Lihat detail kandidat:"]);
         popup.classList.add("max-h-64", "overflow-y-auto");
         for (const item of items) {
           const button = document.createElement("button");
           button.className = "block w-full rounded border p-2 text-left text-xs hover:bg-green-50";
-          button.textContent = `Kandidat ${item.rank} · ${displayValue(item.fields.idpel)} · ${item.distance_meters.toFixed(2)} m`;
+          button.append(description([...identity(item.fields, "Kandidat"), `Jarak ${distance(item.distance_meters)}`]));
           button.onclick = () => scene.onCandidate(item.id); popup.append(button);
         }
         marker.bindPopup(popup);
       }
-      const viewKey = `${scene.rows.length}:${scene.selected}:${scene.radius}:${scene.candidates.map((item) => item.id).join(",")}`;
-      if (viewKey !== previousView) {
-        const positions = center ? [center, ...scene.candidates.map((item) => coordinates(item.fields)).filter((point): point is Position => point !== null)] : [...groups.values()].map((items) => coordinates(items[0].fields)!);
-        if (positions.length) map.fitBounds(positions, { padding: [35, 35], maxZoom: center ? 19 : 16, animate: false });
-        previousView = viewKey;
+      // Fit once per saved data scope. Selection pans without replacing user zoom;
+      // candidate requests, radius changes and clearing selection preserve the view.
+      if (previousScope !== scene.scopeKey) {
+        fitted = false; previousFocus = null; previousScope = scene.scopeKey;
       }
+      fitVisibleView = () => {
+        if (!fitted && groups.size && element.clientWidth > 0 && element.clientHeight > 0) {
+          map.fitBounds([...groups.values()].map((items) => coordinates(items[0].fields)!), { padding: [35, 35], maxZoom: 16, animate: false });
+          fitted = true;
+          if (center) map.panTo(center, { animate: false });
+        }
+      };
+      fitVisibleView();
+      const focus = center ? `${scene.selected}:${center.join(",")}` : null;
+      if (center && focus !== previousFocus) map.panTo(center, { animate: false });
+      previousFocus = focus;
     },
     destroy() { observer.disconnect(); map.stop(); map.remove(); },
   };

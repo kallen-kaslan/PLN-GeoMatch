@@ -280,6 +280,8 @@ def record_info(
         "batch_id": batch.id,
         "category": batch.dataset_type.value,
         "row_number": record.row_number,
+        "object_id": next((value for key, value in (record.data or {}).items()
+            if "".join(char for char in key.lower() if char.isalnum()) in ("objectid", "objekid")), None),
         "filename": batch.filename,
         "source_sheet": batch.source_sheet,
         "fields": fields,
@@ -660,7 +662,6 @@ def list_records(
         [
             record.id
             for record, batch, outcome in records
-            if outcome is None and cached_preview_fields(record, batch) is None
         ],
     )
     return {

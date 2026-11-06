@@ -1,25 +1,27 @@
 import { MetricCard, type MetricTone } from "@/components/data/MetricCard";
 import { LoaderCircle } from "lucide-react";
+import type { CorrectionKind } from "@/lib/master";
 import type { MapRadiusSummary as RadiusSummary } from "@/lib/corrections";
 
-export function MapRadiusSummary({ data, loading, failed, onRetry }: {
-  data: RadiusSummary | undefined; loading: boolean; failed: boolean; onRetry: () => void;
+export function MapRadiusSummary({ kind, data, loading, failed, onRetry, preview = false }: {
+  preview?: boolean; kind: CorrectionKind; data: RadiusSummary | undefined; loading: boolean; failed: boolean; onRetry: () => void;
 }) {
-  return <section aria-label="Ringkasan radius peta" aria-busy={loading} className="space-y-3 rounded-lg border border-ui-border bg-white p-4 sm:p-5">
-    <div className="flex items-center gap-2"><h2 className="text-sm font-semibold">Ringkasan hasil dalam radius</h2>{loading && <LoaderCircle size={16} className="animate-spin" />}</div>
-    {failed ? <p role="alert" className="text-sm text-red-700">Ringkasan radius belum dapat dimuat. <button className="underline" onClick={onRetry}>Coba lagi ringkasan radius</button></p> : !data ? <p role="status" className="text-sm">Memuat hitungan dari hasil koreksi tersimpan…</p> : <>
-      <p className="text-xs font-semibold">Radius {data.radius_meters.toLocaleString("id-ID")} m · Versi {data.generation} · Seluruh berkas</p>
+  const counts = data?.overview_counts;
+  const notFound = kind === "idpel_tidak_ketemu";
+  const cards: [string, number, MetricTone][] = data ? [
+    ["Total Data", data.total_rows, "primary"],
+    ["Belum Diproses", counts?.not_processed ?? data.not_checked + data.invalid_data + data.pdpj_conflicts, "neutral"],
+    ["Koordinat Bermasalah", counts?.coordinate_issues ?? data.incomplete_coordinates, "warning"],
+    ["Tanpa Kandidat", data.no_candidates, "warning"],
+    ["Kandidat Ditemukan", data.matched, "success"],
+    ...(notFound ? [["IDPEL Sudah Ada di PDPJ", counts?.idpel_in_pdpj ?? 0, "danger"] as [string, number, MetricTone]] : []),
+  ] : [];
+  return <section aria-label="Ringkasan radius peta" aria-busy={loading} className="space-y-3">
+    <div className="flex flex-wrap items-center justify-between gap-2 text-xs text-ui-muted"><h2 className="font-semibold text-neo-black">Ringkasan Hasil</h2>{loading ? <span role="status" className="flex items-center gap-2"><LoaderCircle size={14} className="animate-spin" />Memperbarui hasil...</span> : data && <span>{preview ? "Pratinjau radius" : "Radius aktif"} {data.radius_meters.toLocaleString("id-ID")} m</span>}</div>
+    {failed ? <p role="alert" className="text-sm text-red-700">Ringkasan radius belum dapat dimuat. <button className="underline" onClick={onRetry}>Coba lagi ringkasan radius</button></p> : !data ? <p role="status" className="rounded-lg border border-ui-border bg-white p-4 text-sm">Memuat ringkasan hasil...</p> : <>
       {data.partial && <p role="status" className="text-xs text-amber-900">Hasil sementara: {data.saved_rows.toLocaleString("id-ID")} dari {data.total_rows.toLocaleString("id-ID")} baris tersimpan. Baris belum diperiksa tidak dihitung sebagai tanpa kandidat.</p>}
-      <dl className="geo-metrics geo-metrics-8">
-        {[
-          ["Total baris", data.total_rows, "primary"], ["Baris tersimpan", data.saved_rows, "neutral"],
-          ["Baris dengan kandidat", data.matched, "success"], ["Baris tanpa kandidat", data.no_candidates, "warning"],
-          ["Belum diperiksa", data.not_checked, "neutral"], ["Benturan PDPJ", data.pdpj_conflicts, "danger"],
-          ["Data bermasalah", data.invalid_data, "danger"], ["Koordinat belum lengkap", data.incomplete_coordinates, "warning"],
-        ].map(([label, value, tone]) => <MetricCard key={String(label)} label={String(label)} value={Number(value)} definition compact tone={tone === "primary" || Number(value) > 0 ? tone as MetricTone : "neutral"} />)}
-      </dl>
-      <p className="text-xs">Jumlah kandidat: {data.candidate_total.toLocaleString("id-ID")}. Satu baris dapat mempunyai lebih dari satu kandidat.</p>
-      {(data.baseline.generation !== data.generation || data.baseline.radius_meters !== data.radius_meters) && <p aria-label="Perbandingan hasil radius" className="rounded-lg border border-blue-700 bg-blue-50 p-3 text-xs text-blue-950">Acuan tersimpan versi {data.baseline.generation}, radius {data.baseline.radius_meters} m: {data.baseline.no_candidates.toLocaleString("id-ID")} baris tanpa kandidat dan {data.baseline.matched.toLocaleString("id-ID")} baris dengan kandidat. Pada hasil radius {data.radius_meters} m, {data.newly_matched.toLocaleString("id-ID")} baris yang sebelumnya tanpa kandidat kini mendapat kandidat.{data.partial && " Perbandingan masih sementara sampai seluruh baris selesai diperiksa."}</p>}
+      <dl className={`grid grid-cols-1 gap-3 sm:grid-cols-2 ${notFound ? "lg:grid-cols-3" : "xl:grid-cols-5"}`}>{cards.map(([label, value, tone]) => <MetricCard key={label} label={label} value={value} definition compact tone={tone === "primary" || value > 0 ? tone : "neutral"} />)}</dl>
+      <p className="text-xs text-ui-muted">Jumlah kandidat: {data.candidate_total.toLocaleString("id-ID")}. Satu data dapat memiliki lebih dari satu kandidat.</p>
     </>}
   </section>;
 }
