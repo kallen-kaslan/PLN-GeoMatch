@@ -18,6 +18,7 @@ export const identityLabel: Record<string, string> = { not_checked: "Belum diper
 export const conflictLabel: Record<string, string> = { idpel_sama_pdpj: "IDPEL sama dengan PDPJ", meter_sama_pdpj: "Nomor meter sama dengan PDPJ", agenda_sama_pdpj: "Nomor agenda sama dengan PDPJ", survey_sama_pdpj: "Referensi survei sama dengan PDPJ" };
 export interface ReadyPdpj { review_id: number; batch_id: number; filename: string; completed_by: string; completed_at: string; master_batch_ids: number[]; source_review_id: number | null; publication: PdpjPublication | null }
 export interface CorrectionProcessing {
+  radius_analysis_id?: number;
   state: "running" | "paused" | "failed" | "ready"; stage: "preparing" | "matching" | "validating" | "publishing" | "done";
   revision: number; total_rows: number; processed_rows: number; validated_rows: number; matched_rows: number;
   last_source_id: number; last_row_number: number | null; last_validated_source_id: number;
@@ -74,10 +75,12 @@ export interface MapRadiusSummary {
   process_id: number; generation: number; revision: number; radius_meters: number; stored_radius_meters: number; partial: boolean;
   total_rows: number; saved_rows: number; not_checked: number; matched: number; no_candidates: number;
   pdpj_conflicts: number; invalid_data: number; incomplete_coordinates: number; candidate_total: number;
+  overview_counts?: Partial<Record<OverviewStatus, number>>;
   candidate_counts: Record<string, number>; newly_matched: number;
   baseline: { generation: number; radius_meters: number; matched: number; no_candidates: number; saved_rows: number };
 }
 export interface CorrectionRow {
+  object_id?: string | number | null;
   id: number; batch_id: number; category: CorrectionKind; row_number: number; filename: string; source_sheet: string | null;
   fields: Fields; identity_status: string; search_status: SearchStatus; candidate_count: number;
   errors: { field: string; code: string }[];

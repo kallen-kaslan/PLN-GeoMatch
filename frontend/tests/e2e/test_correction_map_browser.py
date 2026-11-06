@@ -1,3 +1,5 @@
+from workspace_controls import sign_in_map, apply_map_radius
+
 """Real map interactions, stored-radius reuse, choices, and responsive fallback."""
 
 from workspace_controls import open_radius_controls
@@ -19,12 +21,12 @@ def setup_map(
 ) -> tuple[int, int]:
     review = prepare(api_url, candidates=12)
     content = (
-        "IDPEL,NAMA,LAT,LON\n"
+        "IDPEL,NAMA,LAT,LON,OBJECT_ID,NOAGENDA\n"
         + "".join(
-            f"{'' if kind == 'idpel_kosong' else 700 + number},Target {number},{-6.2 if stacked else -6.2 - (number - 1) * 0.0005},106.8\n"
+            f"{'' if kind == 'idpel_kosong' else 700 + number},Target {number},{-6.2 if stacked else -6.2 - (number - 1) * 0.0005},106.8,{number:04},AGENDA-{number}\n"
             for number in range(1, count + 1)
         )
-        + f"{'' if kind == 'idpel_kosong' else 999},Tanpa koordinat,,\n"
+        + f"{'' if kind == 'idpel_kosong' else 999},Tanpa koordinat,,,,\n"
     )
     batch = upload(api_url, kind, content)
     response = httpx.post(
@@ -63,7 +65,7 @@ def test_map_all_points_hover_selection_and_candidate_pagination(
     page.get_by_role("heading", name="Peta Koreksi", exact=True).hover()
     expect(tooltip).not_to_be_visible()
     point.click()
-    page.get_by_role("button", name="Pilih baris 128 · Target 127", exact=True).click()
+    page.get_by_role("button", name=re.compile(r"^Pilih baris 128.*Target 127$")).click()
     expect(
         page.get_by_role("region", name="Detail target terpilih", exact=True)
     ).to_contain_text("Target 127")
@@ -109,7 +111,7 @@ def test_choose_replace_radius_expansion_history_and_category_isolation(
 ) -> None:
     batch, process = setup_map(page, servers[1], kind="idpel_tidak_ketemu", count=2)
     page.get_by_role("button", name="Pilih target baris 2", exact=True).click()
-    page.get_by_label("Petugas peta", exact=True).fill("Petugas Browser")
+    sign_in_map(page, "Petugas Browser")
     candidates = page.get_by_role("region", name="Kandidat target peta", exact=True)
     expect(candidates).to_contain_text("12 kandidat tersimpan", timeout=20000)
     candidates.get_by_role("button", name="Pilih kandidat 1", exact=True).click()
@@ -135,7 +137,7 @@ def test_choose_replace_radius_expansion_history_and_category_isolation(
         page.get_by_role("region", name="Progres pemeriksaan koreksi")
     ).to_have_count(0)
     expect(detail).to_contain_text("Pilihan aktif: 003")
-    page.get_by_label("Radius peta (meter)", exact=True).fill("1")
+    apply_map_radius(page, "1")
     expect(candidates).to_contain_text("12 kandidat tersimpan", timeout=15000)
     assert (
         len(
@@ -226,8 +228,8 @@ def test_clear_target_keeps_saved_decision_filters_and_table_page(
     page.get_by_label("Filter hasil peta", exact=True).select_option("matched")
     expect(page).to_have_url(re.compile(r"[?&]status=matched(?:&|$)"))
     radius = page.get_by_label("Radius peta (meter)", exact=True)
-    radius.fill("1")
-    expect(page.get_by_role("region", name="Ringkasan radius peta", exact=True)).to_contain_text("Radius 1 m")
+    apply_map_radius(page, "1")
+    expect(page.get_by_role("region", name="Ringkasan radius peta", exact=True)).to_contain_text("Radius aktif 1 m")
     expect(page.get_by_label("Filter hasil peta", exact=True)).to_have_value("matched")
     jump = page.get_by_label("Nomor halaman peta", exact=True)
     jump.fill("2")
@@ -235,7 +237,7 @@ def test_clear_target_keeps_saved_decision_filters_and_table_page(
     page.get_by_role("button", name="Pilih target baris 27", exact=True).click()
     candidates = page.get_by_role("region", name="Kandidat target peta", exact=True)
     expect(candidates).to_contain_text("12 kandidat tersimpan")
-    page.get_by_label("Petugas peta", exact=True).fill("Petugas Uji Pelepasan")
+    sign_in_map(page, "Petugas Uji Pelepasan")
     candidates.get_by_role("button", name="Pilih kandidat 1", exact=True).click()
     detail = page.get_by_role("region", name="Detail target terpilih", exact=True)
     expect(detail).to_contain_text("Pilihan aktif: 002")
@@ -320,9 +322,9 @@ def test_map_preview_page_input_sizes_filters_and_mobile(
     page.get_by_label("Filter hasil peta", exact=True).select_option("all")
     jump.fill("4")
     jump.press("Enter")
-    page.get_by_label("Radius peta (meter)", exact=True).fill("1")
+    apply_map_radius(page, "1")
     expect(jump).to_have_value("1")
-    expect(footer).to_contain_text("Menampilkan 1–25")
+    expect(footer).to_contain_text("1\u201325")
     page.set_viewport_size({"width": 390, "height": 844})
     page.get_by_role("tab", name="Daftar", exact=True).click()
     expect(jump).to_be_visible()

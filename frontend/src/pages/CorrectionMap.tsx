@@ -1,25 +1,25 @@
+import { MapRadiusControls } from "@/components/corrections/MapRadiusControls";
+import { radiusAnalysisApiFor } from "@/lib/radius-analysis";
 import { TablePagination } from "@/components/data/TablePagination";
 import { SearchFeedback } from "@/components/data/SearchFeedback";
 import { useDebouncedSearch } from "@/hooks/useDebouncedSearch";
 import { CandidateCoordinateSource } from "@/components/corrections/CandidateCoordinateSource";
 import { buttonClass } from "@/lib/button";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { Link, useSearchParams, type SetURLSearchParams } from "react-router-dom";
 import { LoaderCircle, X } from "lucide-react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { CorrectionMap } from "@/components/corrections/CorrectionMap";
-import { CorrectionProgress } from "@/components/corrections/CorrectionProgress";
 import { PreviewPagination } from "@/components/data/PreviewPagination";
 import { MapRadiusSummary } from "@/components/corrections/MapRadiusSummary";
 import { coordinates } from "@/lib/correction-map";
-import { CORRECTION_TYPES, correctionApi, mergeCheckProgress, searchLabel, type CorrectionCandidate, type CorrectionCheck, type CorrectionRun } from "@/lib/corrections";
+import { CORRECTION_TYPES, correctionApi, mergeCheckProgress, searchLabel, type CorrectionCandidate, type CorrectionCheck } from "@/lib/corrections";
 import { displayValue, type CorrectionKind } from "@/lib/master";
 import { PDPJ_FIELDS } from "@/lib/pdpj";
 import type { ApiError } from "@/lib/api";
 import { useAppStore } from "@/store/app";
 import { usePdpjUpdate } from "@/hooks/usePdpjUpdate";
 import { useMapRadiusSummary } from "@/hooks/useMapRadiusSummary";
-import { downloadSpreadsheet, resultsApi } from "@/lib/results";
 
 const control = "min-w-0 rounded-lg border border-ui-border bg-white px-3 py-2 text-sm disabled:opacity-50";
 const button = buttonClass.secondary;
@@ -43,16 +43,10 @@ function MapWorkspace({ kind, batchParam, processParam, generationParam, params,
 }) {
   const client = useQueryClient();
   const user = useAppStore((state) => state.user);
-  const [actor, setActor] = useState(() => {
-    try { return sessionStorage.getItem(`pln_geomatch_correction_actor_${kind}`) ?? user?.username ?? ""; }
-    catch { return user?.username ?? ""; }
-  });
+  const actor = user?.username?.trim() ?? "";
   const [reason, setReason] = useState("");
   const selected = Number(params.get("record_id")) || null;
   const radiusChoice = params.get("radius_meters");
-  const expansionChoice = params.get("expansion_radius_meters") ?? "";
-  const [filterMessage, setFilterMessage] = useState("");
-  const [autoRunId, setAutoRunId] = useState<number | null>(null);
   const updateView = useCallback((values: Record<string, string | null>) => {
     // Preserve edits already written to the URL while the router is still
     // committing the previous navigation to the rendered controls.
@@ -63,10 +57,6 @@ function MapWorkspace({ kind, batchParam, processParam, generationParam, params,
     }
     changeParams(next, { replace: true });
   }, [changeParams]);
-  useEffect(() => {
-    try { sessionStorage.setItem(`pln_geomatch_correction_actor_${kind}`, actor); }
-    catch { /* Keep editing available when browser storage is disabled. */ }
-  }, [kind, actor]);
   const [search, setSearch] = useState("");
   const searchQuery = useDebouncedSearch(search);
   const [page, setPage] = useState(1);
@@ -74,21 +64,14 @@ function MapWorkspace({ kind, batchParam, processParam, generationParam, params,
   const [candidatePage, setCandidatePage] = useState(1);
   const [candidatePageSize, setCandidatePageSize] = useState(10);
   const [notice, setNotice] = useState("");
-  const [contextOpen, setContextOpen] = useState(false);
   const viewParam = params.get("map_view");
   const mobileView = viewParam === "targets" || viewParam === "detail" ? viewParam : "map";
-  const viewMounted = useRef(false);
-  const returnFocusToTargets = useRef(false);
-  useEffect(() => {
-    if (!viewMounted.current) { viewMounted.current = true; return; }
-    if (window.matchMedia("(max-width: 1279px)").matches) document.getElementById("map-workspace")?.scrollIntoView({ block: "start", behavior: "auto" });
-  }, [mobileView]);
   const [focusedCandidate, setFocusedCandidate] = useState<number | null>(null);
   const descriptor = CORRECTION_TYPES.find((item) => item.key === kind)!;
   const batches = useQuery({ queryKey: ["correction-batches", kind], queryFn: () => correctionApi.batches(kind) });
   const batch = batchParam ?? batches.data?.find((item) => item.status === "completed")?.id;
   const checks = useQuery({ queryKey: ["corrections", kind, "checks", batch], queryFn: ({ signal }) => correctionApi.checks(kind, batch!, signal), enabled: Boolean(batch) });
-  const process = processParam ?? checks.data?.[0]?.process_id;
+  const process = processParam ?? checks.data?.find((item) => item.runs.some((run) => run.status === "completed"))?.process_id ?? checks.data?.[0]?.process_id;
   const checkKey = ["corrections", kind, "check", process];
   const check = useQuery({ queryKey: checkKey, queryFn: async ({ signal }) => {
     const response = await correctionApi.check(kind, process!, signal);
@@ -103,22 +86,32 @@ function MapWorkspace({ kind, batchParam, processParam, generationParam, params,
   }, [scopeReady, batch, process, batchParam, processParam, updateView]);
   const pdpjUpdate = usePdpjUpdate(kind, check.data);
   const latestGeneration = check.data?.latest_run.generation;
-  const radiusExpansion = Boolean(check.data?.runs.some((item) => item.status === "completed" && item.generation < check.data!.latest_run.generation && item.radius_meters < check.data!.latest_run.radius_meters));
-  const expanding = !!check.data?.current_generation && check.data.latest_run.generation > check.data.current_generation;
-  const generation = generationParam ?? latestGeneration;
+  const defaultGeneration = check.data?.runs.filter((item) => item.status === "completed").sort((a, b) => b.generation - a.generation)[0]?.generation ?? latestGeneration;
+  const generation = generationParam ?? defaultGeneration;
   const run = check.data?.runs.find((item) => item.generation === generation && (item.status === "completed" || item.processing));
   const partial = !!run?.processing && run.status !== "completed";
   const scope = { batch_id: batch, process_id: process, generation };
   const rows = useQuery({ queryKey: ["correction-map-rows", kind, process, scope], queryFn: ({ signal }) => correctionApi.allRows(kind, scope, signal), enabled: Boolean(scopeReady && run && batch) });
-  const requestedRadius = Number(radiusChoice ?? run?.radius_meters ?? check.data?.latest_run.radius_meters ?? 100);
-  const exceedsStoredRadius = !!run && Number.isFinite(requestedRadius) && requestedRadius > run.radius_meters;
-  const radius = exceedsStoredRadius ? run!.radius_meters : requestedRadius;
-  const expansionRadius = Number(expansionChoice);
-  const latestRadius = check.data?.latest_run.radius_meters;
-  const validExpansion = latestRadius !== undefined && Number.isFinite(expansionRadius) && expansionRadius > latestRadius && expansionRadius <= 100000;
+  const analysisId = run?.processing?.radius_analysis_id;
+  const analysis = useQuery({ queryKey: ["correction-map-analysis", kind, analysisId], queryFn: ({ signal }) => radiusAnalysisApiFor(kind).get(analysisId!, undefined, signal), enabled: scopeReady && !!analysisId, staleTime: 60_000 });
+  const recommendation = analysis.data?.recommended_radius_meters;
+  const recommendedRadius = analysis.data?.state === "ready" && analysis.data.batch_id === batch && analysis.data.pdpj_review_id === check.data?.pdpj_review_id && recommendation != null && recommendation > 0 && recommendation <= (run?.radius_meters ?? 0) ? recommendation : null;
+  const radiusLimit = recommendedRadius ?? run?.radius_meters ?? 100;
+  const requestedRadius = Number(radiusChoice ?? radiusLimit);
+  const radius = Number.isFinite(requestedRadius) && requestedRadius > 0 ? Math.min(requestedRadius, radiusLimit) : radiusLimit;
   const validRadius = Number.isFinite(radius) && radius > 0 && radius <= 100000;
   const displayRadius = validRadius && run ? Math.min(radius, run.radius_meters) : null;
   const radiusSummary = useMapRadiusSummary(kind, process, run, displayRadius, scopeReady);
+  const [preview, setPreview] = useState<{ run: number; applied: number; value: string } | null>(null);
+  const previewValue = preview?.run === run?.id && preview?.applied === radius ? preview.value : String(radius);
+  const previewValid = previewValue.trim() !== "" && Number.isFinite(Number(previewValue)) && Number(previewValue) > 0 && Number(previewValue) <= radiusLimit;
+  const previewRadius = previewValid ? Number(previewValue) : radius;
+  const settledPreview = useDebouncedSearch(String(previewRadius), 200);
+  const previewSettled = Number(settledPreview) === previewRadius;
+  const previewSummary = useMapRadiusSummary(kind, process, run, previewRadius !== radius && previewSettled ? previewRadius : displayRadius, scopeReady);
+  const previewChanged = previewRadius !== radius;
+  const summaryForCards = previewChanged ? (previewSettled ? previewSummary.data : undefined) : radiusSummary.data;
+
   const mapRows = useMemo(() => radiusSummary.data ? (rows.data ?? []).map((row) => {
     if (!["matched", "no_candidates"].includes(row.search_status)) return row;
     const count = radiusSummary.data.candidate_counts[row.id] ?? 0;
@@ -131,54 +124,35 @@ function MapWorkspace({ kind, batchParam, processParam, generationParam, params,
   const blockedBySearch = busy && !check.data?.latest_run.processing;
   const completedView = run?.status === "completed";
   const readSearchBlocked = blockedBySearch && !completedView;
-  const radiusFilterLocked = !completedView && (blockedBySearch || (busy && expanding));
-  const expansionBlocked = busy || partial;
-  const historical = Boolean(generationParam && check.data && generation !== latestGeneration);
+  const radiusFilterLocked = !completedView && (blockedBySearch || run?.processing?.state === "running");
+  const historical = Boolean(check.data && generation !== latestGeneration);
   const targetLoading = restoring || rows.isPending || (!!run && validRadius && radiusSummary.isPending);
   const searchableTarget = Boolean(active && coordinates(active.fields) && ["matched", "no_candidates"].includes(active.search_status));
   const requested = selected && validRadius && (!active || searchableTarget) ? { id: selected, radius } : null;
   const candidateQuery = useQuery({ queryKey: ["correction-map-candidates", kind, process, generation, requested], queryFn: ({ signal }) => correctionApi.mapCandidates(kind, requested!.id, scope, requested!.radius, signal), enabled: Boolean(scopeReady && searchableTarget && run && requested && requested.radius <= run.radius_meters && !readSearchBlocked) });
   const candidates = useMemo(() => requested?.id === selected && requested?.radius === radius ? candidateQuery.data ?? [] : [], [requested?.id, requested?.radius, selected, radius, candidateQuery.data]);
-  const waitingForExpansion = Boolean(run?.id === check.data?.latest_run.id && expanding && busy && check.data?.latest_run.processing?.state === "running" && (check.data.latest_run.activity?.active || autoRunId === check.data.latest_run.id));
   const waitingForTarget = Boolean(requested && partial && !active && !targetLoading);
-  const processStarted = useCallback(() => setNotice(""), []);
   const choiceKey = ["correction-choice", kind, process, selected, generation];
   const choice = useQuery({ queryKey: choiceKey, queryFn: () => correctionApi.choice(kind, process!, selected!, generation), enabled: Boolean(process && selected && active) });
-  const download = useMutation({ mutationFn: () => resultsApi.download(kind, process!, run!.generation, run!.radius_meters, "", "all"), onSuccess: (file) => downloadSpreadsheet(file.blob, file.filename) });
-  const expand = useMutation({
-    mutationFn: () => {
-      if (!validExpansion || historical || expansionBlocked || !actor.trim()) throw new Error("Isi radius perluasan yang lebih besar dari radius terbaru dan nama petugas.");
-      return correctionApi.retry(kind, process!, { latest_run_id: check.data!.latest_run.id, radius_meters: expansionRadius, actor: actor.trim(), request_key: crypto.randomUUID(), incremental: true });
-    },
-    onSuccess: (result) => { client.setQueryData(checkKey, result); setAutoRunId(result.latest_run.id); updateView({ generation: null, radius_meters: String(result.latest_run.radius_meters), expansion_radius_meters: null }); setFilterMessage(""); setPage(1); setCandidatePage(1); setNotice("Perluasan radius dimulai untuk seluruh berkas. Panel proses menampilkan progres dan durasi; pilihan sebelumnya tetap tersimpan."); },
-    onError: () => { void client.invalidateQueries({ queryKey: checkKey }); },
-  });
   const choose = useMutation({
-    mutationFn: (candidate: number | null) => correctionApi.choose(kind, process!, selected!, { generation: generation!, expected_revision: choice.data!.revision, candidate_id: candidate, actor: actor.trim(), reason: reason.trim(), request_key: crypto.randomUUID() }),
+    mutationFn: (candidate: number | null) => {
+      if (!actor) throw new Error("Masuk ke akun untuk menyimpan pilihan kandidat.");
+      return correctionApi.choose(kind, process!, selected!, { generation: generation!, expected_revision: choice.data!.revision, candidate_id: candidate, actor, reason: reason.trim(), request_key: crypto.randomUUID() });
+    },
     onSuccess: (result) => { client.setQueryData(choiceKey, result); setReason(""); setNotice(result.current?.candidate_id ? "Pilihan kandidat tersimpan." : "Pilihan dibatalkan. Riwayat tetap tersimpan."); void client.invalidateQueries({ queryKey: ["process-history"] }); void client.invalidateQueries({ queryKey: ["correction-results", process] }); void client.invalidateQueries({ queryKey: ["correction-decisions", process] }); },
     onError: () => { void client.invalidateQueries({ queryKey: choiceKey }); void client.invalidateQueries({ queryKey: checkKey }); },
   });
   const select = useCallback((id: number) => {
-    if (choose.isPending || expand.isPending) return;
+    if (choose.isPending) return;
     updateView({ record_id: String(id), map_view: "map" });
     setCandidatePage(1); setReason(""); setNotice(""); setFocusedCandidate(null);
-    document.getElementById("map-workspace")?.scrollIntoView({ block: "start", behavior: "auto" });
-  }, [choose.isPending, expand.isPending, updateView]);
+  }, [choose.isPending, updateView]);
   const clearTarget = () => {
-    if (choose.isPending || expand.isPending) return;
-    returnFocusToTargets.current = true;
-    updateView({ record_id: null, map_view: "targets" });
+    if (choose.isPending) return;
+    updateView({ record_id: null, map_view: "map" });
+    requestAnimationFrame(() => document.getElementById("map-canvas")?.focus({ preventScroll: true }));
     setCandidatePage(1); setReason(""); setNotice(""); setFocusedCandidate(null);
   };
-  useEffect(() => {
-    if (selected !== null || !returnFocusToTargets.current) return;
-    returnFocusToTargets.current = false;
-    const heading = document.getElementById("map-target-list-title");
-    const dock = heading?.closest("details");
-    if (dock instanceof HTMLDetailsElement) dock.open = true;
-    heading?.scrollIntoView({ block: "start", behavior: "auto" });
-    heading?.focus({ preventScroll: true });
-  }, [selected, mobileView]);
   const candidateFocus = useCallback((id: number) => { updateView({ map_view: "detail" }); const index = candidates.findIndex((item) => item.id === id); if (index >= 0) { setCandidatePage(Math.floor(index / candidatePageSize) + 1); setFocusedCandidate(id); } }, [updateView, candidates, candidatePageSize]);
   useEffect(() => { if (focusedCandidate !== null) { const element = document.getElementById(`candidate-${focusedCandidate}`); element?.scrollIntoView({ behavior: window.matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth", block: "center" }); element?.focus({ preventScroll: true }); } }, [focusedCandidate, candidatePage]);
   const searchableRows = useMemo(() => statusRows.map((row) => ({ row, values: Object.values(row.fields).map((value) => String(value ?? "").toLowerCase()) })), [statusRows]);
@@ -191,67 +165,30 @@ function MapWorkspace({ kind, batchParam, processParam, generationParam, params,
   const candidatePages = Math.max(1, Math.ceil(candidates.length / candidatePageSize));
   const activeCandidatePage = Math.min(candidatePage, candidatePages);
   const visibleCandidates = candidates.slice((activeCandidatePage - 1) * candidatePageSize, activeCandidatePage * candidatePageSize);
-  const canChoose = Boolean(scopeReady && !historical && !blockedBySearch && !expand.isPending && !choose.isPending && choice.data && !choice.isFetching && actor.trim() && (!choice.data.current || reason.trim()));
+  const canChoose = Boolean(scopeReady && !historical && !blockedBySearch && !choose.isPending && choice.data && !choice.isFetching && actor.trim() && (!choice.data.current || reason.trim()));
   const selectedChoice = choice.data?.current?.candidate;
   const dataError = batches.error || checks.error || check.error || rows.error;
   const noCoordinates = mapRows.filter((row) => !coordinates(row.fields)).length;
   return <div className="space-y-4">
     {pdpjUpdate.update && <aside aria-label="Pembaruan versi PDPJ" className="space-y-2 rounded-lg border border-amber-700 bg-amber-50 p-4 text-sm text-amber-950"><p>Hasil PDPJ yang lebih baru tersedia. Peta ini tetap memakai versi PDPJ #{check.data?.pdpj_review_id} yang dipilih saat pemeriksaan dimulai.</p>{pdpjUpdate.pending && <p role="status">Memeriksa benturan pilihan dengan PDPJ terbaru...</p>}{pdpjUpdate.error && <p role="alert">Benturan PDPJ terbaru belum dapat diperiksa. <button type="button" className="underline" onClick={pdpjUpdate.retry}>Coba lagi</button></p>}{pdpjUpdate.update.conflicts.length > 0 && <p role="alert" className="font-semibold">{pdpjUpdate.update.conflicts.length.toLocaleString("id-ID")} keputusan berbenturan dengan PDPJ terbaru dan perlu ditinjau ulang.</p>}<Link to={`/koreksi/${descriptor.slug}?batch_id=${batch}&process_id=${process}`} className="font-semibold underline">Tinjau versi PDPJ dan hasil koreksi</Link></aside>}
-    <header><p className="text-xs font-semibold uppercase text-ui-muted">Rekonsiliasi pelanggan</p><h1 className="mt-1 text-2xl font-semibold">Peta Koreksi</h1><p className="mt-2 text-sm">Pilih target dari tabel atau titik. Peta dan kandidat dalam radius tersimpan ditampilkan otomatis, lalu pilih kandidat yang sesuai.</p></header>
-    <section className="geo-context space-y-4 sm:p-5" aria-label="Filter peta koreksi">
+    <header><h1 className="text-lg font-semibold">Peta Koreksi</h1></header>
+    <section className="space-y-3 rounded-lg border border-ui-border bg-white p-4 sm:p-5" aria-label="Filter peta koreksi">
       {restoring && <p role="status" className="flex items-center gap-2 text-sm"><LoaderCircle size={16} className="animate-spin" />Memulihkan pemeriksaan dan status proses dari server…</p>}
-      <button type="button" aria-expanded={contextOpen} aria-controls="map-dataset-context" onClick={() => setContextOpen(!contextOpen)} className="flex w-full items-center justify-between text-left text-sm font-medium xl:hidden"><span>{descriptor.label} {run ? ` / Versi ${run.generation} / ${run.radius_meters} m` : ""}</span><span className="text-xs text-ui-muted">{contextOpen ? "Tutup konteks" : "Ubah konteks"}</span></button><div id="map-dataset-context" className={contextOpen ? "block" : "hidden xl:block"}><fieldset disabled={restoring} className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
-        <label className="flex flex-col gap-1 text-xs font-semibold">Kategori<select disabled={choose.isPending || expand.isPending} aria-label="Kategori peta" value={kind} onChange={(event) => changeParams({ category: event.target.value })} className={control}>{CORRECTION_TYPES.map((item) => <option key={item.key} value={item.key}>{item.label}</option>)}</select></label>
-        <label className="flex flex-col gap-1 text-xs font-semibold">Berkas<select disabled={choose.isPending || expand.isPending} aria-label="Berkas peta" value={batch ?? ""} onChange={(event) => changeParams({ category: kind, batch_id: event.target.value })} className={control}><option value="" disabled>Pilih berkas</option>{batches.data?.filter((item) => item.status === "completed").map((item) => <option key={item.id} value={item.id}>#{item.id} · {item.filename}</option>)}</select></label>
-        <label className="flex flex-col gap-1 text-xs font-semibold">Pemeriksaan<select disabled={choose.isPending || expand.isPending} aria-label="Pemeriksaan peta" value={process ?? ""} onChange={(event) => changeParams({ category: kind, batch_id: String(batch), process_id: event.target.value })} className={control}><option value="" disabled>Pilih pemeriksaan</option>{checks.data?.map((item) => <option key={item.process_id} value={item.process_id}>#{item.process_id} · PDPJ #{item.pdpj_review_id}</option>)}</select></label>
-        <label className="flex flex-col gap-1 text-xs font-semibold">Versi radius pemeriksaan<select aria-label="Versi radius pemeriksaan" disabled={!check.data || choose.isPending || expand.isPending || download.isPending} value={generation ?? ""} onChange={(event) => {
-          const picked = check.data!.runs.find((item) => item.generation === Number(event.target.value));
-          if (!picked) return;
-          setPage(1); setCandidatePage(1); setReason(""); setNotice(""); setFilterMessage("");
-          updateView({ generation: picked.generation === latestGeneration ? null : String(picked.generation), radius_meters: String(picked.radius_meters), expansion_radius_meters: null });
-        }} className={control}><option value="" disabled>Pilih versi radius</option>{check.data?.runs.map((item) => <option key={item.id} value={item.generation} disabled={item.status !== "completed" && !item.processing}>{item.radius_meters.toLocaleString("id-ID")} m · Versi {item.generation} · {item.status === "completed" ? "Selesai" : item.processing?.state === "paused" ? "Dijeda" : item.status === "failed" ? "Terhenti" : "Belum selesai"}{item.generation === latestGeneration ? " · Terbaru" : ""}</option>)}</select></label>
+      <fieldset disabled={restoring} className="grid gap-3 sm:grid-cols-2">
+        <label className="flex flex-col gap-1 text-xs font-semibold">Kategori<select disabled={choose.isPending} aria-label="Kategori peta" value={kind} onChange={(event) => changeParams({ category: event.target.value })} className={control}>{CORRECTION_TYPES.map((item) => <option key={item.key} value={item.key}>{item.label}</option>)}</select></label>
+        <label className="flex flex-col gap-1 text-xs font-semibold">Berkas<select disabled={choose.isPending} aria-label="Berkas peta" value={batch ?? ""} onChange={(event) => changeParams({ category: kind, batch_id: event.target.value })} className={control}><option value="" disabled>Pilih berkas</option>{batches.data?.filter((item) => item.status === "completed").map((item) => <option key={item.id} value={item.id}>#{item.id} · {item.filename}</option>)}</select></label>
       </fieldset>
-      </div>
-      <Link className="inline-block text-xs font-semibold underline" to={`/koreksi/${descriptor.slug}${batch ? `?batch_id=${batch}${process ? `&process_id=${process}` : ""}` : ""}`}>Buka data dan riwayat pemeriksaan</Link>
-      {process && <div className="flex flex-wrap gap-4 text-xs font-semibold"><Link to={`/result?category=${kind}&process_id=${process}${generation ? `&generation=${generation}` : ""}`} className="underline">Lihat Hasil Koreksi</Link><Link to={`/history?process_id=${process}${generation ? `&generation=${generation}` : ""}`} className="underline">Lihat Riwayat Proses</Link><button type="button" className="underline disabled:opacity-50" disabled={!run || download.isPending || !scopeReady} onClick={() => download.mutate()}>{download.isPending ? "Menyiapkan XLSX…" : `Unduh hasil radius ${run?.radius_meters ?? ""} m XLSX`}</button></div>}
-      <details className="text-xs"><summary>Cakupan ekspor</summary>      {run && <p className="text-xs">Ekspor seluruh hasil pemeriksaan versi {run.generation}, radius tersimpan {run.radius_meters} m. Format kolom tetap polos; radius dan versi dicantumkan pada file.</p>}</details>
-      {download.isError && <p role="alert" className="text-sm text-red-700">{message(download.error)}</p>}
       {dataError && <p role="alert" className="text-sm text-red-700">{message(dataError)}</p>}
       {!process && !checks.isPending && <p className="text-sm">Belum ada pemeriksaan. Selesaikan pemeriksaan pada Data Koreksi untuk menampilkan peta.</p>}
       {check.data && batch && check.data.batch_id !== batch && <p role="alert" className="text-red-700">Pemeriksaan tidak sesuai dengan berkas terpilih.</p>}
-      {historical && <p role="status" className="text-sm text-amber-900">Anda melihat versi historis {generation}. Pilihan mengikuti riwayat hingga versi ini dan tidak dapat diubah. <button className="underline" onClick={() => updateView({ generation: null, radius_meters: String(check.data!.latest_run.radius_meters) })}>Buka versi terbaru</button></p>}
+      {historical && <p className="text-xs text-ui-muted">Hasil terdahulu hanya dapat dilihat.</p>}
       {partial && <p role="status" className="text-sm">{run.processing!.processed_rows.toLocaleString("id-ID")} dari {run.processing!.total_rows.toLocaleString("id-ID")} baris sudah tersimpan dan tersedia untuk koreksi di peta. Pilihan kandidat langsung disimpan. Pemeriksaan sisa baris dapat dilanjutkan melalui Data Koreksi tanpa mengubah pilihan yang sudah tersimpan.</p>}
-      {radiusExpansion && busy && !check.data?.latest_run.processing && <LegacySearchProgress run={check.data!.latest_run} />}
       {check.data?.latest_run.status === "failed" && <p role="alert" className="text-sm text-red-700">Pencarian terakhir terhenti. Hasil yang sudah tersimpan tetap tersedia. Lanjutkan pemeriksaan melalui Data Koreksi.</p>}
     </section>
-    {scopeReady && check.data?.latest_run.processing && check.data.latest_run.status !== "completed" && <CorrectionProgress key={check.data.latest_run.id} kind={kind} check={check.data} autoStart={autoRunId === check.data.latest_run.id} onStarted={processStarted} showDetails={radiusExpansion} />}
-    {scopeReady && run && validRadius && <MapRadiusSummary data={radiusSummary.data} loading={radiusSummary.isFetching} failed={radiusSummary.isError} onRetry={() => void radiusSummary.refetch()} />}
-<section className="geo-panel space-y-3 p-4" aria-label="Kontrol radius">
-      <fieldset disabled={!scopeReady} className="grid grid-cols-2 items-end gap-3 xl:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_auto]">
-        <label className="flex flex-col gap-1 text-xs font-semibold">Filter radius (meter)<input aria-label="Radius peta (meter)" type="number" min="0.01" max={run?.radius_meters ?? 100000} step="any" value={exceedsStoredRadius ? String(radius) : radiusChoice ?? (restoring ? "" : run?.radius_meters ?? check.data?.latest_run.radius_meters ?? 100)} onChange={(event) => {
-          const value = Number(event.target.value);
-          const exceeds = !!run && Number.isFinite(value) && value > run.radius_meters;
-          setFilterMessage(exceeds ? `Filter radius maksimal ${run!.radius_meters} m. Gunakan Radius perluasan untuk pemeriksaan yang lebih besar.` : "");
-          setPage(1); setCandidatePage(1); updateView({ radius_meters: exceeds ? String(run!.radius_meters) : event.target.value });
-        }} disabled={radiusFilterLocked || expand.isPending || choose.isPending} className={control} /></label>          <label className="flex flex-col gap-1 text-xs font-semibold">Petugas<input aria-label="Petugas peta" disabled={choose.isPending} value={actor} maxLength={80} onChange={(event) => setActor(event.target.value)} className={control} /></label>
-        <button type="button" disabled={choose.isPending || !validRadius || readSearchBlocked || expand.isPending || !run} onClick={() => void radiusSummary.refetch()} className={`${button} col-span-2 self-end xl:col-span-1`}>Perbarui ringkasan radius</button>
-
-      </fieldset>
-      {(filterMessage || exceedsStoredRadius) && <p role="alert" className="text-xs text-amber-900">{filterMessage || `Filter radius dibatasi maksimal ${run?.radius_meters} m sesuai versi tersimpan.`}</p>}
-      {!validRadius && <p role="alert" className="text-xs text-red-700">Filter radius harus lebih dari 0 dan maksimal {run?.radius_meters ?? 100000} meter.</p>}
-      <p className="text-xs">{run ? `Filter maksimal ${run.radius_meters} m pada versi ini dan hanya membaca kandidat tersimpan.` : "Selesaikan pemeriksaan terlebih dahulu."} {!active ? " Pilih target untuk menampilkan peta dan kandidat secara otomatis." : " Kandidat diperbarui otomatis mengikuti target dan radius terpilih."}</p>
-      <details className="space-y-2 border-t border-ui-border pt-3" aria-label="Perluasan radius seluruh berkas"><summary className="text-sm font-medium">Perluasan radius seluruh berkas</summary>
-        <p className="text-xs text-ui-muted">Radius lebih besar menjalankan pemeriksaan baru untuk seluruh berkas dan menyimpan versi baru.{historical ? " Buka versi terbaru untuk menjalankan perluasan." : partial ? " Selesaikan pemeriksaan aktif terlebih dahulu." : ""}</p>
-        <fieldset disabled={!scopeReady} className="grid gap-3 sm:grid-cols-[minmax(160px,1fr)_auto]">
-          <label className="flex flex-col gap-1 text-xs font-semibold">Radius perluasan (meter)<input aria-label="Radius perluasan (meter)" type="number" min={latestRadius ?? 0} max="100000" step="any" value={expansionChoice} placeholder={latestRadius === undefined ? "Radius baru" : `Lebih dari ${latestRadius} m`} onChange={(event) => updateView({ expansion_radius_meters: event.target.value })} disabled={historical || expansionBlocked || expand.isPending || choose.isPending} className={control} /></label>
-
-          <button type="button" aria-busy={expand.isPending || waitingForExpansion} disabled={choose.isPending || expand.isPending || !validExpansion || !run || historical || expansionBlocked || !actor.trim()} onClick={() => { setNotice(""); expand.mutate(); }} className={`${buttonClass.primary} self-end`}>{expand.isPending || waitingForExpansion ? <><LoaderCircle size={16} className="animate-spin" />Memproses pencarian…</> : "Perluas pemeriksaan dan tampilkan kandidat"}</button>
-        </fieldset>
-        {expansionChoice !== "" && !validExpansion && <p role="alert" className="text-xs text-red-700">Radius perluasan harus lebih dari {latestRadius} m dan paling besar 100.000 m.</p>}
-      </details>
-      {(expand.error || choose.error) && <p role="alert" className="text-sm text-red-700">{message(expand.error || choose.error)}</p>}
-      {notice && <p role="status" className="border border-green-700 bg-green-50 p-3 text-sm">{notice}</p>}
-</section>
+    {scopeReady && run && <MapRadiusControls key={`${run.id}-${radius}-${radiusLimit}`} radius={radius} maximum={radiusLimit} recommended={recommendedRadius} disabled={radiusFilterLocked || choose.isPending || (!!analysisId && analysis.isPending)} loading={radiusSummary.isFetching} onPreview={(value) => { if (run) setPreview({ run: run.id, applied: radius, value }); }} onApply={(value) => { setPage(1); setCandidatePage(1); setFocusedCandidate(null); updateView({ radius_meters: String(value) }); }} />}
+    {scopeReady && run && validRadius && <MapRadiusSummary kind={kind} preview={previewChanged} data={summaryForCards} loading={previewChanged ? !previewSettled || previewSummary.isFetching : radiusSummary.isFetching} failed={previewChanged ? previewSummary.isError : radiusSummary.isError} onRetry={() => void (previewChanged ? previewSummary.refetch() : radiusSummary.refetch())} />}
+    {choose.error && <p role="alert" className="text-sm text-red-700">{message(choose.error)}</p>}
+    {notice && <p role="status" className="rounded-lg border border-green-700 bg-green-50 p-3 text-sm">{notice}</p>}
     <div role="tablist" aria-label="Tampilan ruang kerja peta" onKeyDown={(event) => {
       const tabs = Array.from(event.currentTarget.querySelectorAll<HTMLButtonElement>('[role="tab"]'));
       const index = tabs.indexOf(document.activeElement as HTMLButtonElement);
@@ -259,16 +196,14 @@ function MapWorkspace({ kind, batchParam, processParam, generationParam, params,
       if (next !== null) { event.preventDefault(); tabs[next]?.click(); tabs[next]?.focus({ preventScroll: true }); }
     }} className="sticky top-0 z-20 flex gap-1 rounded-lg border border-ui-border bg-white p-1 xl:hidden">{([['map', 'Peta'], ['targets', 'Daftar'], ['detail', 'Detail']] as const).map(([value, label]) => <button key={value} type="button" role="tab" tabIndex={mobileView === value ? 0 : -1} aria-selected={mobileView === value} onClick={() => updateView({ map_view: value })} className={`flex-1 rounded-md px-3 py-2 text-sm ${mobileView === value ? 'bg-ui-accent-soft font-semibold text-ui-accent-text' : 'text-ui-muted'}`}>{label}</button>)}</div>
     <div id="map-workspace" className="geo-map-layout scroll-mt-16">
-      {selected !== null && <div role="group" aria-label="Target yang dipilih" className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-ui-context-border bg-ui-context px-3 py-2 xl:col-span-2">
-        <p className="text-sm font-medium">{active ? `Target baris ${active.row_number}` : "Target terpilih"}</p>
-        <button type="button" onClick={clearTarget} disabled={choose.isPending || expand.isPending} aria-describedby="clear-map-target-note" className={button}><X size={15} />Lepas pilihan target</button>
-        <span id="clear-map-target-note" className="sr-only">Mengosongkan sorotan target dan tampilan kandidat. Keputusan kandidat yang sudah tersimpan tetap dipertahankan.</span>
-      </div>}
       <div className="geo-map-main">
         <div className={mobileView === "map" ? "block" : "hidden xl:block"}>    <section className={panel} aria-label="Pemetaan koreksi">
+      <div className="flex min-h-10 items-center justify-between gap-3" role="group" aria-label="Pilihan peta">
+        <p className="text-xs font-medium text-ui-muted">Radius peta aktif: {radius.toLocaleString("id-ID")} m</p>
+        {selected !== null && <button type="button" onClick={clearTarget} disabled={choose.isPending} className="inline-flex h-9 shrink-0 items-center gap-1.5 rounded-lg border border-ui-border px-2.5 text-xs font-medium text-ui-accent-text hover:bg-ui-accent-soft focus-visible:outline-2 focus-visible:outline-ui-primary"><X size={14} />Lepas pilihan target</button>}
+      </div>
       <p className="text-sm font-semibold">{rows.isFetching || (run && validRadius && radiusSummary.isPending) ? "Memuat seluruh target…" : `${mapRows.length} baris · ${mapRows.length - noCoordinates} bertitik · ${noCoordinates} tanpa koordinat`} · {descriptor.label}</p>
-      {run && displayRadius !== null && <p className="text-xs">Tabel dan titik memakai hasil versi {run.generation}, radius {displayRadius} m.{partial && " Hanya baris versi terbaru yang sudah tersimpan yang ditampilkan."}</p>}
-      <CorrectionMap rows={statusRows} selected={selected} candidates={candidates} radius={requested?.id === selected && requested.radius === radius ? radius : null} onSelect={select} onCandidate={candidateFocus} />
+      <CorrectionMap scopeKey={`${kind}-${process}-${generation}`} rows={statusRows} selected={selected} candidates={candidates} radius={requested?.id === selected && requested.radius === radius ? radius : null} onSelect={select} onCandidate={candidateFocus} />
     </section>
 </div>
         <div className={mobileView === "targets" ? "block" : "hidden xl:block"}><details open className="geo-map-dock"><summary className="font-medium">Daftar target · {descriptor.label}</summary>    <section className="geo-dock-body" aria-label="Tabel target peta">
@@ -290,7 +225,8 @@ function MapWorkspace({ kind, batchParam, processParam, generationParam, params,
       {active.search_status === "invalid_data" && <p className="text-sm text-amber-900">Data target perlu diperbaiki sebelum kandidat dapat ditampilkan. Tinjau rincian pada Data Koreksi.</p>}
       {active.warnings.length > 0 && <p className="text-sm text-amber-900">Koordinat sama dengan baris PDPJ; periksa bukti identitas dan detail sumber sebelum memilih.</p>}
       {choice.isError && <p role="alert" className="text-sm text-red-700">{message(choice.error)}</p>}
-      {choice.data?.current?.candidate_id && <div className="space-y-2 border border-green-700 bg-green-50 p-3 text-sm"><p className="font-semibold">Pilihan aktif: {displayValue(selectedChoice?.fields?.idpel)} · {selectedChoice?.distance_meters?.toFixed(2)} m</p><p>Dipilih oleh {choice.data.current.actor} · Versi pencarian {choice.data.current.generation}. Pilihan ini tetap disimpan ketika radius berubah.</p><details><summary className="cursor-pointer font-semibold">Detail pilihan aktif</summary><Fields fields={selectedChoice?.fields ?? {}} /></details><button disabled={!canChoose} className={button} onClick={() => choose.mutate(null)}>Batalkan pilihan</button></div>}
+      {choice.data?.current?.candidate_id && <div className="space-y-2 border border-green-700 bg-green-50 p-3 text-sm"><p className="font-semibold">Pilihan aktif: {displayValue(selectedChoice?.fields?.idpel)} · {selectedChoice?.distance_meters?.toFixed(2)} m</p><p>Dipilih oleh {choice.data.current.actor}. Pilihan ini tetap disimpan ketika radius berubah.</p><details><summary className="cursor-pointer font-semibold">Detail pilihan aktif</summary><Fields fields={selectedChoice?.fields ?? {}} /></details><button disabled={!canChoose} className={button} onClick={() => choose.mutate(null)}>Batalkan pilihan</button></div>}
+      {!actor && <p className="text-xs text-ui-muted">Masuk ke akun untuk menyimpan pilihan kandidat. Riwayat akan memakai nama akun yang masuk.</p>}
       <label className="flex flex-col gap-1 text-xs font-semibold">Alasan perubahan pilihan<textarea aria-label="Alasan perubahan pilihan" disabled={choose.isPending} placeholder="Wajib untuk mengganti atau membatalkan pilihan" maxLength={1000} value={reason} onChange={(event) => setReason(event.target.value)} className={control} /></label>
       {choice.data && choice.data.history.length > 0 && <details><summary className="cursor-pointer text-xs font-semibold">Riwayat pilihan ({choice.data.history.length})</summary><ol className="mt-3 space-y-3">{choice.data.history.map((event) => <li key={event.id} className="border p-3 text-xs"><p>Revisi {event.revision} · {event.actor} · {new Date(event.created_at + "Z").toLocaleString("id-ID")}</p><p>{event.candidate_id ? `IDPEL ${displayValue(event.candidate.fields?.idpel)} · ${event.candidate.distance_meters?.toFixed(2)} m` : "Pilihan dibatalkan"} · Versi {event.generation}</p><p>{event.reason}</p></li>)}</ol></details>}
     </section>}
@@ -308,13 +244,6 @@ function MapWorkspace({ kind, batchParam, processParam, generationParam, params,
       </aside>
     </div>
   </div>;
-}
-
-function LegacySearchProgress({ run }: { run: CorrectionRun }) {
-  const [now, setNow] = useState(Date.now);
-  useEffect(() => { const timer = window.setInterval(() => setNow(Date.now()), 1000); return () => window.clearInterval(timer); }, []);
-  const seconds = Math.max(0, Math.floor((now - Date.parse(run.created_at.endsWith("Z") || /[+-]\d\d:\d\d$/.test(run.created_at) ? run.created_at : `${run.created_at}Z`)) / 1000));
-  return <div role="status" aria-label="Progres pencarian sebelumnya" aria-busy="true" className="space-y-2 rounded-lg border border-amber-700 bg-amber-50 p-3 text-sm"><p className="flex items-center gap-2 font-semibold"><LoaderCircle size={16} className="animate-spin" />{run.status === "queued" ? "Menunggu antrean pencarian" : "Pencarian sedang diproses"} · Radius {run.radius_meters} m</p><p>Waktu sejak permintaan: {Math.floor(seconds / 60)} menit {seconds % 60} detik. Pekerjaan ini belum menyediakan progres per baris; estimasi selesai belum tersedia. Hasil sebelumnya tetap terlihat sampai versi baru selesai.</p></div>;
 }
 
 function Fields({ fields }: { fields: CorrectionCandidate["fields"] }) {

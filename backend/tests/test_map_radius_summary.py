@@ -55,6 +55,7 @@ def test_radius_summary_filters_saved_candidates_and_compares_incremental_expans
         event.remove(db_session.get_bind(), "before_cursor_execute", capture)
     assert response.status_code == 200
     original = response.json()
+    assert sum(original["overview_counts"].values()) == original["total_rows"]
     assert original["total_rows"] == original["saved_rows"] == 6
     assert original["matched"] == 1 + additional_matched and original["no_candidates"] == 2
     assert original["candidate_total"] == 8 * (1 + additional_matched) and len(original["candidate_counts"]) == 1 + additional_matched

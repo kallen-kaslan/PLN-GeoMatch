@@ -3,7 +3,7 @@
 from typing import Any
 
 from fastapi import HTTPException
-from sqlalchemy import func
+from sqlalchemy import String, and_, case, cast, func, or_
 from sqlalchemy.orm import Session
 
 from app.models.correction import CorrectionTarget
@@ -89,6 +89,23 @@ def radius_summary(
         .scalar()
         or 0
     )
+    # Match the category overview's mutually exclusive statuses, while candidate
+    # presence is recalculated from persisted evidence at the applied radius.
+    identity_conflict = and_(
+        CorrectionTarget.search_status == "pdpj_conflict",
+        cast(CorrectionTarget.conflicts, String).contains('"idpel_sama_pdpj"'),
+    ) if kind == "idpel_tidak_ketemu" else False
+    overview_status = case(
+        (identity_conflict, "idpel_in_pdpj"),
+        (or_(CorrectionTarget.fields["lat"].as_string().is_(None), CorrectionTarget.fields["lon"].as_string().is_(None)), "coordinate_issues"),
+        (CorrectionTarget.search_status.in_(["matched", "no_candidates"]), "searched"),
+        else_="not_processed",
+    )
+    overview_query = db.query(overview_status, func.count(CorrectionTarget.id)).filter(CorrectionTarget.run_id == run.id)
+    if cursor is not None:
+        overview_query = overview_query.filter(CorrectionTarget.source_record_id <= cursor)
+    overview_counts = dict(overview_query.group_by(overview_status).all())
+    overview_counts.pop("searched", None)
     batch = db.get(UploadBatch, process.target_batch_id)
     assert batch is not None
     total = batch.total_rows or (
@@ -98,7 +115,11 @@ def radius_summary(
     )
     saved = sum(counts.values())
     eligible = counts.get("matched", 0) + counts.get("no_candidates", 0)
+    overview_counts["not_processed"] = overview_counts.get("not_processed", 0) + max(0, total - saved)
+    overview_counts["candidates_found"] = len(by_target)
+    overview_counts["no_candidates"] = eligible - len(by_target)
     return {
+        "overview_counts": overview_counts,
         "process_id": process.id,
         "generation": run.generation,
         "revision": (run.processing or {}).get("revision", 0),

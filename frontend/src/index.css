@@ -184,3 +184,22 @@ select:not([multiple])[size="1"] {
     background-image: none;
   }
 }
+
+/* Compact map labels; customer text is inserted as plain DOM text. */
+.leaflet-tooltip.geo-map-tooltip {
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  padding: 10px 12px;
+  background: #fff;
+  box-shadow: 0 3px 12px rgb(15 23 42 / 10%);
+  /* Leaflet positions tooltips absolutely. Give them a real width so the
+     browser cannot shrink their text into a single vertical column. */
+  box-sizing: border-box;
+  width: 224px;
+  max-width: calc(100vw - 64px);
+  white-space: normal;
+  word-break: normal;
+  overflow-wrap: break-word;
+  font-size: 12px;
+  line-height: 1.5;
+}
