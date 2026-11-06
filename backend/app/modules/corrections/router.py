@@ -18,6 +18,7 @@ from app.models.matching import (
 from app.models.pdpj import PdpjReview
 from app.models.upload import BatchStatus, DatasetType, SourceRecord, UploadBatch
 from app.modules.auth.security import CurrentActor
+from app.modules.corrections.advanced_search import router as advanced_search_router
 from app.modules.corrections.automatic import router as automatic_router
 from app.modules.corrections.decisions import router as decisions_router
 from app.modules.corrections.map_summary import radius_summary
@@ -29,6 +30,9 @@ from app.modules.corrections.radius_filter import (
     validate_radius,
 )
 from app.modules.corrections.results import router as results_router
+from app.modules.corrections.review_groups import router as review_groups_router
+from app.modules.corrections.unpaired_search import router as unpaired_search_router
+from app.modules.corrections.selection_state import candidate_usage
 from app.modules.corrections.service import (
     CorrectionKind,
     check_process,
@@ -735,6 +739,7 @@ def record_detail(
     skip: int = Query(0, ge=0),
     limit: int = Query(25, ge=1, le=100),
     radius_meters: float | None = Query(None, gt=0, le=100000, allow_inf_nan=False),
+    include_usage: bool = False,
 ) -> dict[str, Any]:
     """Read candidate snapshots only; inspecting a row must not reload the master."""
     record = db.get(SourceRecord, record_id)
@@ -762,6 +767,14 @@ def record_detail(
         validate_radius(run, radius_meters)
         candidates = candidates.filter(MatchCandidate.distance_meters <= radius_meters)
     total_candidates = candidates.count()
+    page = candidates.order_by(MatchCandidate.rank).offset(skip).limit(limit).all()
+    usage = (
+        candidate_usage(
+            db, process_id, [candidate.candidate_idpel for candidate, _ in page]
+        )
+        if include_usage and process_id is not None
+        else {}
+    )
     return {
         **(
             filtered_info(record_info(record, batch, outcome), total_candidates)
@@ -782,15 +795,20 @@ def record_detail(
                 "fields": evidence.fields,
                 "observations": evidence.observations,
                 "is_accepted": candidate.is_accepted,
+                **(
+                    {"used_by": usage.get(candidate.candidate_idpel, [])}
+                    if include_usage
+                    else {}
+                ),
             }
-            for candidate, evidence in candidates.order_by(MatchCandidate.rank)
-            .offset(skip)
-            .limit(limit)
-            .all()
+            for candidate, evidence in page
         ],
     }
 
 
 router.include_router(decisions_router)
 router.include_router(automatic_router)
+router.include_router(review_groups_router)
+router.include_router(unpaired_search_router)
+router.include_router(advanced_search_router)
 router.include_router(results_router)

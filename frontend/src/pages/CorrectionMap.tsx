@@ -47,6 +47,7 @@ function MapWorkspace({ kind, batchParam, processParam, generationParam, params,
   const selected = Number(params.get("record_id")) || null;
   const radiusChoice = params.get("radius_meters");
   const expansionChoice = params.get("expansion_radius_meters") ?? "";
+  const [expansionOpen, setExpansionOpen] = useState(expansionChoice !== "");
   const [filterMessage, setFilterMessage] = useState("");
   const [autoRunId, setAutoRunId] = useState<number | null>(null);
   const updateView = useCallback((values: Record<string, string | null>) => {
@@ -130,6 +131,17 @@ function MapWorkspace({ kind, batchParam, processParam, generationParam, params,
   const requested = selected && validRadius && (!active || searchableTarget) ? { id: selected, radius } : null;
   const candidateQuery = useQuery({ queryKey: ["correction-map-candidates", kind, process, generation, requested], queryFn: ({ signal }) => correctionApi.mapCandidates(kind, requested!.id, scope, requested!.radius, signal), enabled: Boolean(scopeReady && searchableTarget && run && requested && requested.radius <= run.radius_meters && !readSearchBlocked) });
   const candidates = useMemo(() => requested?.id === selected && requested?.radius === radius ? candidateQuery.data ?? [] : [], [requested?.id, requested?.radius, selected, radius, candidateQuery.data]);
+  const suggestedIdpel = params.get("suggested_idpel");
+  const suggestionId = (Number(params.get("suggested_candidate_id")) || null) ?? candidates.find((candidate) => String(candidate.fields.idpel) === suggestedIdpel)?.id ?? null;
+  const suggestedCandidate = candidates.find((candidate) => candidate.id === suggestionId);
+  const focusedSuggestion = useRef("");
+  useEffect(() => {
+    const index = candidates.findIndex((candidate) => candidate.id === suggestionId);
+    const key = `${selected}-${generation}-${suggestionId}`;
+    if (index >= 0 && suggestionId && focusedSuggestion.current !== key) {
+      focusedSuggestion.current = key; setFocusedCandidate(suggestionId); setCandidatePage(Math.floor(index / 10) + 1);
+    }
+  }, [candidates, suggestionId, selected, generation]);
   const waitingForExpansion = Boolean(run?.id === check.data?.latest_run.id && expanding && busy && check.data?.latest_run.processing?.state === "running" && (check.data.latest_run.activity?.active || autoRunId === check.data.latest_run.id));
   const waitingForTarget = Boolean(requested && partial && !active && !targetLoading);
   const processStarted = useCallback(() => setNotice(""), []);
@@ -182,7 +194,7 @@ function MapWorkspace({ kind, batchParam, processParam, generationParam, params,
   const candidatePages = Math.max(1, Math.ceil(candidates.length / 10));
   const activeCandidatePage = Math.min(candidatePage, candidatePages);
   const visibleCandidates = candidates.slice((activeCandidatePage - 1) * 10, activeCandidatePage * 10);
-  const canChoose = Boolean(scopeReady && !historical && !blockedBySearch && !expand.isPending && !choose.isPending && choice.data && !choice.isFetching && actor.trim() && (!choice.data.current || reason.trim()));
+  const canChoose = Boolean(scopeReady && !historical && !blockedBySearch && !expand.isPending && !choose.isPending && choice.data && !choice.isFetching && actor.trim() && (!(choice.data.current || suggestedCandidate || suggestedIdpel) || reason.trim()));
   const selectedChoice = choice.data?.current?.candidate;
   const dataError = batches.error || checks.error || check.error || rows.error;
   const noCoordinates = mapRows.filter((row) => !coordinates(row.fields)).length;
@@ -231,7 +243,7 @@ function MapWorkspace({ kind, batchParam, processParam, generationParam, params,
       {(filterMessage || exceedsStoredRadius) && <p role="alert" className="text-xs text-amber-900">{filterMessage || `Filter radius dibatasi maksimal ${run?.radius_meters} m sesuai versi tersimpan.`}</p>}
       {!validRadius && <p role="alert" className="text-xs text-red-700">Filter radius harus lebih dari 0 dan maksimal {run?.radius_meters ?? 100000} meter.</p>}
       <p className="text-xs">{run ? `Filter maksimal ${run.radius_meters} m pada versi ini dan hanya membaca kandidat tersimpan.` : "Selesaikan pemeriksaan terlebih dahulu."} {!active ? " Pilih target untuk menampilkan peta dan kandidat secara otomatis." : " Kandidat diperbarui otomatis mengikuti target dan radius terpilih."}</p>
-      <details className="space-y-2 border-t border-ui-border pt-3" aria-label="Perluasan radius seluruh berkas"><summary className="text-sm font-medium">Perluasan radius seluruh berkas</summary>
+      <details open={expansionOpen} onToggle={(event) => setExpansionOpen(event.currentTarget.open)} className="space-y-2 border-t border-ui-border pt-3" aria-label="Perluasan radius seluruh berkas"><summary className="text-sm font-medium">Perluasan radius seluruh berkas</summary>
         <p className="text-xs text-ui-muted">Radius lebih besar menjalankan pemeriksaan baru untuk seluruh berkas dan menyimpan versi baru.{historical ? " Buka versi terbaru untuk menjalankan perluasan." : partial ? " Selesaikan pemeriksaan aktif terlebih dahulu." : ""}</p>
         <fieldset disabled={!scopeReady} className="grid gap-3 sm:grid-cols-[minmax(160px,1fr)_auto]">
           <label className="flex flex-col gap-1 text-xs font-semibold">Radius perluasan (meter)<input aria-label="Radius perluasan (meter)" type="number" min={latestRadius ?? 0} max="100000" step="any" value={expansionChoice} placeholder={latestRadius === undefined ? "Radius baru" : `Lebih dari ${latestRadius} m`} onChange={(event) => updateView({ expansion_radius_meters: event.target.value })} disabled={historical || expansionBlocked || expand.isPending || choose.isPending} className={control} /></label>
@@ -282,6 +294,9 @@ function MapWorkspace({ kind, batchParam, processParam, generationParam, params,
       {active.warnings.length > 0 && <p className="text-sm text-amber-900">Koordinat sama dengan baris PDPJ; periksa bukti identitas dan detail sumber sebelum memilih.</p>}
       {choice.isError && <p role="alert" className="text-sm text-red-700">{message(choice.error)}</p>}
       {choice.data?.current?.candidate_id && <div className="space-y-2 border border-green-700 bg-green-50 p-3 text-sm"><p className="font-semibold">Pilihan aktif: {displayValue(selectedChoice?.fields?.idpel)} · {selectedChoice?.distance_meters?.toFixed(2)} m</p><p>Dipilih oleh {choice.data.current.actor} · Versi pencarian {choice.data.current.generation}. Pilihan ini tetap disimpan ketika radius berubah.</p><details><summary className="cursor-pointer font-semibold">Detail pilihan aktif</summary><Fields fields={selectedChoice?.fields ?? {}} /></details><button disabled={!canChoose} className={button} onClick={() => choose.mutate(null)}>Batalkan pilihan</button></div>}
+      {suggestedCandidate && choice.data?.current?.candidate_id !== suggestedCandidate.id && <p role="status" className="rounded-lg bg-amber-50 p-3 text-sm text-amber-950">Usulan IDPEL {displayValue(suggestedCandidate.fields.idpel)} untuk target ini masih perlu verifikasi identitas. Isi dasar verifikasi pada alasan perubahan sebelum memilih kandidat.</p>}
+      {suggestedIdpel && !suggestedCandidate && !candidateQuery.isFetching && <p role="status" className="rounded-lg bg-amber-50 p-3 text-sm text-amber-950">Usulan lanjutan IDPEL {suggestedIdpel} belum tersedia pada kandidat dalam radius ini. Tinjau perluasan pemeriksaan dan verifikasi identitas sebelum menyimpan pilihan.</p>}
+      {(suggestedCandidate || suggestedIdpel) && <Link to={`/koreksi/pemilihan-otomatis?category=${kind}&batch_id=${batch}&process_id=${process}&generation=${generation}&radius_meters=${displayRadius}&tie_strategy=suggest`} className="inline-block text-xs font-semibold underline">Kembali ke usulan pasangan</Link>}
       <label className="flex flex-col gap-1 text-xs font-semibold">Alasan perubahan pilihan<textarea aria-label="Alasan perubahan pilihan" disabled={choose.isPending} placeholder="Wajib untuk mengganti atau membatalkan pilihan" maxLength={1000} value={reason} onChange={(event) => setReason(event.target.value)} className={control} /></label>
       {choice.data && choice.data.history.length > 0 && <details><summary className="cursor-pointer text-xs font-semibold">Riwayat pilihan ({choice.data.history.length})</summary><ol className="mt-3 space-y-3">{choice.data.history.map((event) => <li key={event.id} className="border p-3 text-xs"><p>Revisi {event.revision} · {event.actor} · {new Date(event.created_at + "Z").toLocaleString("id-ID")}</p><p>{event.candidate_id ? `IDPEL ${displayValue(event.candidate.fields?.idpel)} · ${event.candidate.distance_meters?.toFixed(2)} m` : "Pilihan dibatalkan"} · Versi {event.generation}</p><p>{event.reason}</p></li>)}</ol></details>}
     </section>}

@@ -4,7 +4,7 @@ import hashlib
 import json
 from collections import Counter
 from itertools import groupby
-from typing import Annotated, Any
+from typing import Annotated, Any, Literal
 
 from app.database import get_db
 from app.models.correction import CorrectionCandidateEvidence, CorrectionTarget
@@ -16,11 +16,20 @@ from app.models.matching import (
     ReconciliationProcess,
     ReviewStatus,
 )
-from app.models.upload import SourceRecord
+from app.models.upload import SourceRecord, UploadBatch
 from app.modules.auth.security import CurrentActor
 from app.modules.corrections.automatic_candidates import candidate_frontier
+from app.modules.corrections.export_data import result_columns
 from app.modules.corrections.selection_state import current_choices, identity_owners
 from app.modules.corrections.service import CorrectionKind, check_process, selected_run
+from app.modules.corrections.spreadsheet import (
+    CANDIDATE_DISTANCE_HEADER,
+    DISTANCE_NUMBER_FORMAT,
+    RESULT_HEADERS,
+    RESULT_WIDTHS,
+    Spreadsheet,
+)
+from app.modules.corrections.tie_suggestions import propose_ties
 from app.modules.pdpj.service import lock_review_session
 from app.modules.upload.storage import database_write_error
 from fastapi import APIRouter, Depends, HTTPException
@@ -37,11 +46,17 @@ class PreviewRequest(BaseModel):
     model_config = ConfigDict(extra="forbid", allow_inf_nan=False)
     generation: int = Field(ge=1)
     radius_meters: float = Field(gt=0, le=100000)
+    tie_strategy: Literal["review", "suggest"] = "review"
 
 
 class ApplyRequest(PreviewRequest):
     fingerprint: str = Field(pattern=r"^[a-f0-9]{64}$")
     request_key: str = Field(min_length=8, max_length=64, pattern=r"^[A-Za-z0-9_-]+$")
+
+
+class SuggestionExportRequest(PreviewRequest):
+    tie_strategy: Literal["suggest"] = "suggest"
+    fingerprint: str = Field(pattern=r"^[a-f0-9]{64}$")
 
 
 def writable_run(
@@ -87,6 +102,24 @@ def build_plan(
     db: Session, kind: CorrectionKind, process_id: int, req: PreviewRequest
 ) -> dict[str, Any]:
     _, run = writable_run(db, kind, process_id, req)
+    if req.tie_strategy == "suggest":
+        base = build_plan(
+            db, kind, process_id, req.model_copy(update={"tie_strategy": "review"})
+        )
+        plan = propose_ties(db, run, req.radius_meters, base)
+        plan["fingerprint"] = hashlib.sha256(
+            json.dumps(
+                [
+                    base["fingerprint"],
+                    "suggest",
+                    sorted(plan["_suggestions"].items()),
+                    plan["unpaired"],
+                ],
+                separators=(",", ":"),
+                sort_keys=True,
+            ).encode()
+        ).hexdigest()
+        return plan
     version = decision_version(db, process_id)
     # Include cancellations: an explicit operator decision is never silently undone.
     protected = {
@@ -173,6 +206,7 @@ def build_plan(
         ).encode()
     ).hexdigest()
     return {
+        "tie_strategy": "review",
         "generation": run.generation,
         "radius_meters": req.radius_meters,
         "total_targets": len(outcomes),
@@ -197,6 +231,81 @@ def preview_selection(
     kind: CorrectionKind, process_id: int, req: PreviewRequest, db: DbSession
 ) -> dict[str, Any]:
     return public_plan(build_plan(db, kind, process_id, req))
+
+
+@router.post("/{kind}/checks/{process_id}/automatic/suggestions/export")
+def export_suggestions(
+    kind: CorrectionKind, process_id: int, req: SuggestionExportRequest, db: DbSession
+):
+    plan = build_plan(db, kind, process_id, req)
+    if plan["fingerprint"] != req.fingerprint:
+        raise HTTPException(
+            409,
+            "Usulan atau pilihan tersimpan berubah. Muat ulang pratinjau sebelum mengunduh.",
+        )
+    process, run = writable_run(db, kind, process_id, req)
+    batch = db.get(UploadBatch, process.target_batch_id)
+    assert batch is not None
+    book = Spreadsheet()
+    sheet = book.sheet(
+        "Usulan Jarak Sama",
+        [*RESULT_HEADERS, "Status Usulan", "Baris Target"],
+        [*RESULT_WIDTHS, 28, 18],
+        number_formats={CANDIDATE_DISTANCE_HEADER: DISTANCE_NUMBER_FORMAT},
+    )
+    candidates = [item["candidate_id"] for item in plan["suggestions"]]
+    for offset in range(0, len(candidates), 200):
+        rows = (
+            db.query(
+                MatchCandidate,
+                CorrectionCandidateEvidence,
+                CorrectionTarget,
+                SourceRecord,
+            )
+            .join(
+                CorrectionCandidateEvidence,
+                CorrectionCandidateEvidence.candidate_id == MatchCandidate.id,
+            )
+            .join(
+                CorrectionTarget,
+                (CorrectionTarget.run_id == run.id)
+                & (
+                    CorrectionTarget.source_record_id == MatchCandidate.target_record_id
+                ),
+            )
+            .join(SourceRecord, SourceRecord.id == MatchCandidate.target_record_id)
+            .filter(MatchCandidate.id.in_(candidates[offset : offset + 200]))
+            .order_by(SourceRecord.id)
+            .all()
+        )
+        if len(rows) != len(candidates[offset : offset + 200]):
+            raise HTTPException(
+                409, "Bukti usulan belum lengkap. Unduhan belum dapat dibuat."
+            )
+        for candidate, evidence, target, source in rows:
+            snapshot = {
+                "fields": evidence.fields,
+                "observations": evidence.observations,
+                "distance_meters": candidate.distance_meters,
+            }
+            book.append(
+                sheet,
+                [
+                    *result_columns(
+                        source,
+                        batch,
+                        target.fields,
+                        snapshot,
+                        radius_meters=req.radius_meters,
+                    ),
+                    "Perlu verifikasi",
+                    source.row_number,
+                ],
+            )
+    radius = f"{req.radius_meters:g}".replace(".", "_")
+    return book.response(
+        f"usulan_jarak_sama_{kind.value}_{process_id}_radius_{radius}m_v{run.generation}.xlsx"
+    )
 
 
 def operation_prefix(request_key: str) -> str:
@@ -237,7 +346,12 @@ def replay(
 
 
 def automatic_reason(req: ApplyRequest) -> str:
-    return f"Pilihan otomatis jarak terdekat; satu IDPEL satu target; radius {req.radius_meters:g} m; pratinjau {req.fingerprint}"
+    mode = (
+        " mode usulan jarak sama; hanya pilihan tanpa ambiguitas disimpan;"
+        if req.tie_strategy == "suggest"
+        else ""
+    )
+    return f"Pilihan otomatis jarak terdekat;{mode} satu IDPEL satu target; radius {req.radius_meters:g} m; pratinjau {req.fingerprint}"
 
 
 @router.post("/{kind}/checks/{process_id}/automatic/apply")

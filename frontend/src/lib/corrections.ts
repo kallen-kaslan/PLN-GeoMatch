@@ -1,4 +1,5 @@
 import type { SearchPage } from "@/lib/search";
+import type { SearchIndexState } from "@/lib/search";
 import { api } from "@/lib/api";
 import type { CorrectionKind, MasterBatch, MasterBatchPreview } from "@/lib/master";
 import type { Fields, PdpjPublication } from "@/lib/pdpj";
@@ -61,7 +62,8 @@ export interface CorrectionRow {
   conflicts: { code: string; value: string; pdpj_row_id: number | null; row_number: number; fields: Fields; pending_validation?: boolean }[];
   warnings: { code: string; pdpj_rows: number[] }[];
 }
-export interface CorrectionCandidate { id: number; rank: number; distance_meters: number; fields: Fields; is_accepted: number;
+export interface ChoiceOwner { record_id: number; row_number: number }
+export interface CorrectionCandidate { id: number; rank: number; distance_meters: number; fields: Fields; is_accepted: number; used_by?: ChoiceOwner[];
   observations: { batch_id: number; filename: string; dataset_type: string; row_number: number; source_sheet: string | null; fields: Fields }[] }
 export interface CorrectionDetail extends CorrectionRow { raw_data: Record<string, unknown>; column_mapping: Record<string, string>; generation: number | null; radius_meters: number | null; filter_radius_meters?: number | null; candidates_total: number; candidates: CorrectionCandidate[] }
 export interface CheckRequest { batch_id: number; pdpj_review_id: number; radius_meters: number; actor: string; request_key: string; incremental?: boolean }
@@ -73,10 +75,58 @@ export interface AutomaticPreview {
   generation: number; radius_meters: number; total_targets: number; protected_count: number;
   selected_count: number; fallback_count: number; review_count: number; review_reasons: Record<string, number>;
   review: { record_id: number; row_number: number; reason: string }[]; fingerprint: string;
+  tie_strategy?: "review" | "suggest";
+  suggestion_count?: number;
+  suggestions?: { record_id: number; row_number: number; candidate_id: number; idpel: string; distance_meters: number; needs_verification: true }[];
+  unpaired_count?: number; unpaired?: AutomaticPreview["review"]; unpaired_reasons?: Record<string, number>;
 }
-export interface AutomaticRequest { generation: number; radius_meters: number }
+export interface AutomaticRequest { generation: number; radius_meters: number; tie_strategy?: "review" | "suggest" }
+export interface AutomaticReviewGroup {
+  id: string; target_count: number; candidate_count: number; reason_counts: Record<string, number>;
+  targets: AutomaticPreview["review"];
+  coordinates: { lat: number; lon: number }[];
+  candidates: { idpel: string; lat: number; lon: number; used_by: ChoiceOwner[]; proposed_for: ChoiceOwner | null }[];
+}
+export interface AutomaticReviewGroups { fingerprint: string; group_count: number; target_count: number; groups: AutomaticReviewGroup[] }
+export type AdvancedSearchField = "idpel" | "meter" | "nama" | "gardu";
+export interface AdvancedCandidate {
+  idpel: string; fields: Fields; distance_meters: number | null; reasons: string[]; target_meter_matches: boolean;
+  matched_sources: CorrectionCandidate["observations"];
+  coordinate_source: CorrectionCandidate["observations"][number] | null;
+  candidate: CorrectionCandidate | null;
+  action: "choose" | "missing_coordinates" | "expand_search" | "change_filter" | "rerun_search" | "fix_target";
+  suggested_radius_meters: number | null;
+}
+export interface AdvancedSearchResults { items: AdvancedCandidate[]; has_more: boolean; skip: number; next_skip?: number | null; stored_radius_meters?: number; search_index?: SearchIndexState }
+export interface UnpairedSearchResults {
+  fingerprint: string; search_radius_meters: number; stored_radius_meters: number;
+  searched_count: number; found_count: number; unpaired_count: number; reason_counts: Record<string, number>;
+  items: { record_id: number; row_number: number; reason: string; available_count: number; candidate: {
+    idpel: string; distance_meters: number; fields: Fields; needs_verification: true;
+    source: { batch_id: number; filename: string; source_sheet: string | null; row_number: number; dataset_type: string; pinned_source: boolean };
+    action: "expand_search" | "change_filter" | "rerun_search"; suggested_radius_meters: number | null;
+  } | null }[];
+}
 
 export const correctionApi = {
+  downloadUnpaired: async (kind: CorrectionKind, process: number, body: AutomaticRequest & { fingerprint: string; search_radius_meters: number }) => {
+    const response = await api.post<Blob>(`/corrections/${kind}/checks/${process}/automatic/unpaired-search/export`, body, { responseType: "blob" });
+    const filename = /filename="([^"\\/]+)"/.exec(String(response.headers["content-disposition"] ?? ""))?.[1] ?? `usulan_lanjutan_${process}.xlsx`;
+    return { blob: response.data, filename };
+  },
+  searchUnpaired: async (kind: CorrectionKind, process: number, body: AutomaticRequest & { fingerprint: string; search_radius_meters: number }, signal?: AbortSignal) =>
+    (await api.post<UnpairedSearchResults>(`/corrections/${kind}/checks/${process}/automatic/unpaired-search`, body, { signal })).data,
+  downloadSuggestions: async (kind: CorrectionKind, process: number, body: AutomaticRequest & { fingerprint: string }) => {
+    const response = await api.post<Blob>(`/corrections/${kind}/checks/${process}/automatic/suggestions/export`, body, { responseType: "blob" });
+    const filename = /filename="([^"\\/]+)"/.exec(String(response.headers["content-disposition"] ?? ""))?.[1] ?? `usulan_jarak_sama_${process}.xlsx`;
+    return { blob: response.data, filename };
+  },
+  advancedCandidates: async (kind: CorrectionKind, process: number, record: number, params: { generation: number; radius_meters: number; field: AdvancedSearchField; q: string; skip: number }, signal?: AbortSignal) =>
+    (await api.get<AdvancedSearchResults>(`/corrections/${kind}/checks/${process}/records/${record}/advanced-candidates`, { params, signal })).data,
+  reviewGroups: async (kind: CorrectionKind, process: number, body: AutomaticRequest & { fingerprint: string }, signal?: AbortSignal) =>
+    (await api.post<AutomaticReviewGroups>(`/corrections/${kind}/checks/${process}/automatic/review-groups`, body, { signal })).data,
+  reviewDetail: async (kind: CorrectionKind, process: number, record: number, generation: number, radius_meters: number, skip: number, signal?: AbortSignal) =>
+    (await api.get<CorrectionDetail>(`/corrections/${kind}/records/${record}`, { params: { process_id: process, generation, radius_meters, skip, limit: 10, include_usage: true }, signal })).data,
   automaticPreview: async (kind: CorrectionKind, process: number, body: AutomaticRequest, signal?: AbortSignal) =>
     (await api.post<AutomaticPreview>(`/corrections/${kind}/checks/${process}/automatic/preview`, body, { signal })).data,
   automaticApply: async (kind: CorrectionKind, process: number, body: AutomaticRequest & { fingerprint: string; request_key: string }) =>
