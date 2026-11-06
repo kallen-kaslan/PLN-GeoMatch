@@ -12,6 +12,7 @@ from app.models.matching import (
     ReviewStatus,
 )
 from app.modules.auth.security import CurrentActor
+from app.modules.corrections.selection_state import identity_owners
 from app.modules.corrections.service import CorrectionKind, check_process, selected_run
 from app.modules.pdpj.service import lock_review_session
 from fastapi import APIRouter, Depends, HTTPException, Query
@@ -206,6 +207,13 @@ def choose_candidate(
                 409, "Baris ini belum memenuhi syarat pemilihan kandidat"
             )
         candidate, evidence = result
+        owners = identity_owners(db, process_id).get(candidate.candidate_idpel, [])
+        if any(owner != record_id for owner in owners):
+            raise HTTPException(
+                409,
+                "IDPEL sudah dipilih untuk target lain pada pemeriksaan ini. "
+                "Batalkan pilihan target tersebut atau pilih IDPEL lain.",
+            )
         snapshot = {
             "id": candidate.id,
             "rank": candidate.rank,

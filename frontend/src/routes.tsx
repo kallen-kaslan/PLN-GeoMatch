@@ -15,6 +15,7 @@ import MasterPage from "@/pages/Master";
 import PdpjPage from "@/pages/Pdpj";
 import CorrectionsPage from "@/pages/Corrections";
 import CorrectionMapPage from "@/pages/CorrectionMap";
+import AutomaticCorrectionsPage from "@/pages/AutomaticCorrections";
 
 export const routeTree: RouteObject[] = [
   { path: "/login", Component: LoginPage },
@@ -24,6 +25,7 @@ export const routeTree: RouteObject[] = [
     children: [
       { index: true, Component: DashboardPage },
       { path: "upload", Component: UploadPage },
+      { path: "koreksi/pemilihan-otomatis", Component: AutomaticCorrectionsPage },
       { path: "koreksi/:category", Component: CorrectionsPage },
       { path: "koreksi", Component: CorrectionsPage },
       { path: "pdpj", Component: PdpjPage },

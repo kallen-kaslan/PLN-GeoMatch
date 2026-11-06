@@ -12,6 +12,7 @@ const menu: Item[] = [
   { to: "/pdpj", label: "Data PDPJ", icon: FileCheck2 },
   { to: "/koreksi", label: "Data Koreksi", icon: FolderUp, children: [
     { to: "/koreksi/idpel-tidak-ketemu", label: "IDPEL Tidak Ketemu" }, { to: "/koreksi/idpel-kosong", label: "IDPEL Kosong" },
+    { to: "/koreksi/pemilihan-otomatis", label: "Pemilihan Otomatis" },
   ] },
   { to: "/peta-koreksi", label: "Peta Koreksi", icon: Map, group: "Pemeriksaan" },
   { to: "/process", label: "Input Manual & Matching", icon: SlidersHorizontal },

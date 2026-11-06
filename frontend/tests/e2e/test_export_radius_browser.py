@@ -80,8 +80,10 @@ def test_map_and_results_export_original_objectid_filtered_radius_and_real_dista
         assert [row["objectid"] for row in exported] == identities
         assert all(row["radius_pemeriksaan_meter"] == radius for row in exported)
         for row, distance in zip(exported, distances):
-            assert row["jarak_kandidat_meter"] == pytest.approx(distance)
+            assert row["Jarak Kandidat (m)"] == pytest.approx(distance)
         assert book.active["A2"].data_type == "s"
+        assert book.active["L2"].number_format == '0.00" m"'
+        assert book.active["L2"].data_type == "n"
         book.close()
 
     page.goto(f"/peta-koreksi?category={kind}&batch_id={batch}&process_id={process}")

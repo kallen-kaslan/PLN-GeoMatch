@@ -22,7 +22,7 @@ export default function Navbar() {
   };
   const dropdown = useRef<HTMLDivElement>(null);
   const trigger = useRef<HTMLButtonElement>(null);
-  const page = location.pathname.startsWith("/master") ? "Data Master" : location.pathname.startsWith("/pdpj") ? "Data PDPJ" : location.pathname.startsWith("/koreksi") ? "Data Koreksi" : location.pathname.startsWith("/peta-koreksi") ? "Peta Koreksi" : location.pathname.startsWith("/result") ? "Hasil Rekonsiliasi" : location.pathname.startsWith("/history") ? "Riwayat Proses" : location.pathname.startsWith("/admin") ? "Manajemen Pengguna" : location.pathname.startsWith("/process") ? "Input Manual & Matching" : location.pathname.startsWith("/candidates") ? "Review Kandidat" : "Dashboard";
+  const page = location.pathname.startsWith("/master") ? "Data Master" : location.pathname.startsWith("/pdpj") ? "Data PDPJ" : location.pathname === "/koreksi/pemilihan-otomatis" ? "Data Koreksi / Pemilihan Otomatis" : location.pathname.startsWith("/koreksi") ? "Data Koreksi" : location.pathname.startsWith("/peta-koreksi") ? "Peta Koreksi" : location.pathname.startsWith("/result") ? "Hasil Rekonsiliasi" : location.pathname.startsWith("/history") ? "Riwayat Proses" : location.pathname.startsWith("/admin") ? "Manajemen Pengguna" : location.pathname.startsWith("/process") ? "Input Manual & Matching" : location.pathname.startsWith("/candidates") ? "Review Kandidat" : "Dashboard";
   useEffect(() => {
     const outside = (event: MouseEvent) => { if (dropdown.current && !dropdown.current.contains(event.target as Node)) setOpen(false); };
     const escape = (event: KeyboardEvent) => { if (event.key === "Escape" && open) { setOpen(false); trigger.current?.focus(); } };

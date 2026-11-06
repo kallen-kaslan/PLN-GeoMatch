@@ -78,7 +78,9 @@ def test_export_keeps_original_objectid_and_applies_filter_radius_to_saved_choic
         assert book["Hasil Koreksi"]["A2"].data_type == "s"
         assert result[0]["idpelanggan"] == "002"
         assert result[0]["radius_pemeriksaan_meter"] == 50
-        assert result[0]["jarak_kandidat_meter"] == pytest.approx(saved_distances[0])
+        assert result[0]["Jarak Kandidat (m)"] == pytest.approx(saved_distances[0])
+        assert book["Hasil Koreksi"]["L2"].data_type == "n"
+        assert book["Hasil Koreksi"]["L2"].number_format == '0.00" m"'
         book.close()
     filtered = client.get(base + "/results", params={"radius_meters": 50}).json()
     assert filtered["total"] == 1 and filtered["summary"]["chosen_count"] == 2
@@ -87,7 +89,8 @@ def test_export_keeps_original_objectid_and_applies_filter_radius_to_saved_choic
     full = sheet_rows(book, "Hasil Koreksi")
     assert [row["objectid"] for row in full] == ["000017", "000018"]
     assert all(row["radius_pemeriksaan_meter"] == 250 for row in full)
-    assert full[1]["jarak_kandidat_meter"] == pytest.approx(saved_distances[1])
+    assert full[1]["Jarak Kandidat (m)"] == pytest.approx(saved_distances[1])
+    assert book["Hasil Koreksi"]["L3"].number_format == '0.00" m"'
     book.close()
     # Filtering is read-only: decisions and their original evidence remain intact.
     assert db_session.query(CorrectionDecision).count() == 2
@@ -98,6 +101,8 @@ def test_export_keeps_original_objectid_and_applies_filter_radius_to_saved_choic
         row["radius_pemeriksaan_meter"] == 250
         for row in sheet_rows(book, "Riwayat Pilihan")
     )
+    assert book["Riwayat Pilihan"]["L2"].number_format == '0.00" m"'
+    assert book["Riwayat Pilihan"]["L2"].data_type == "n"
     book.close()
     for invalid in (0, -1, 251, "nan", "inf"):
         assert (
@@ -275,14 +280,14 @@ def test_partial_choice_appears_in_results_history_and_xlsx_without_changing_sou
             "x_akhir",
             "y_akhir",
             "radius_pemeriksaan_meter",
-            "jarak_kandidat_meter",
+            "Jarak Kandidat (m)",
         ]
         exported = sheet_rows(book, "Hasil Koreksi")
         assert len(exported) == 1
         row = exported[0]
         assert row["objectid"] is None
         assert row["radius_pemeriksaan_meter"] == 10
-        assert row["jarak_kandidat_meter"] == pytest.approx(
+        assert row["Jarak Kandidat (m)"] == pytest.approx(
             selected["current"]["candidate"]["distance_meters"]
         )
         assert row["idpelanggan"] == "002"
@@ -379,7 +384,7 @@ def test_replacement_cancellation_filters_and_history_are_not_counted_as_extra_c
     assert history[0]["status"] == "Pilihan dibatalkan"
     assert history[0]["x_akhir"] is None
     assert history[0]["y_akhir"] is None
-    assert history[0]["jarak_kandidat_meter"] is None
+    assert history[0]["Jarak Kandidat (m)"] is None
     assert history[0]["sumber file (sheet)"] is None
     book.close()
 

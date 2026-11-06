@@ -18,10 +18,16 @@ from app.models.matching import (
 from app.models.pdpj import PdpjReview
 from app.models.upload import BatchStatus, DatasetType, SourceRecord, UploadBatch
 from app.modules.auth.security import CurrentActor
+from app.modules.corrections.automatic import router as automatic_router
 from app.modules.corrections.decisions import router as decisions_router
 from app.modules.corrections.map_summary import radius_summary
 from app.modules.corrections.pdpj_updates import pdpj_update_info
 from app.modules.corrections.progress import advance_progress, control_progress
+from app.modules.corrections.radius_filter import (
+    filtered_info,
+    has_candidate_in_radius,
+    validate_radius,
+)
 from app.modules.corrections.results import router as results_router
 from app.modules.corrections.service import (
     CorrectionKind,
@@ -388,7 +394,9 @@ def list_checks(
 
 
 @router.post("/{kind}/checks")
-def start_check(kind: CorrectionKind, req: StartCheck, db: DbSession, actor: CurrentActor) -> dict[str, Any]:
+def start_check(
+    kind: CorrectionKind, req: StartCheck, db: DbSession, actor: CurrentActor
+) -> dict[str, Any]:
     """Check category ownership and completed PDPJ before submitting real work."""
     process, run, fresh = create_check(
         db,
@@ -431,7 +439,11 @@ def get_pdpj_update(
 
 @router.post("/{kind}/checks/{process_id}/retry")
 def rerun_check(
-    kind: CorrectionKind, process_id: int, req: RetryCheck, db: DbSession, actor: CurrentActor
+    kind: CorrectionKind,
+    process_id: int,
+    req: RetryCheck,
+    db: DbSession,
+    actor: CurrentActor,
 ) -> dict[str, Any]:
     """Retain earlier candidates and row outcomes when changing radius or retrying failure."""
     process, run, fresh = retry_check(
@@ -525,15 +537,26 @@ def summary(
     batch_id: int | None = Query(None, gt=0),
     process_id: int | None = Query(None, gt=0),
     generation: int | None = Query(None, ge=1),
+    radius_meters: float | None = Query(None, gt=0, le=100000, allow_inf_nan=False),
 ) -> dict[str, Any]:
     """Count unique source rows over the whole scope, independent of table pagination."""
     query, run = record_scope(db, kind, batch_id, process_id, generation)
+    validate_radius(run, radius_meters)
     total = query.count()
     counts = dict(
         query.with_entities(CorrectionTarget.search_status, func.count(SourceRecord.id))
         .group_by(CorrectionTarget.search_status)
         .all()
     )
+    if radius_meters is not None and run is not None:
+        matched = query.filter(
+            CorrectionTarget.search_status == "matched",
+            has_candidate_in_radius(db, run, radius_meters),
+        ).count()
+        counts["no_candidates"] = (
+            counts.get("no_candidates", 0) + counts.get("matched", 0) - matched
+        )
+        counts["matched"] = matched
     incomplete = query.filter(
         or_(
             SourceRecord.normalized_data["lat"].as_float().is_(None),
@@ -568,6 +591,7 @@ def list_records(
     batch_id: int | None = Query(None, gt=0),
     process_id: int | None = Query(None, gt=0),
     generation: int | None = Query(None, ge=1),
+    radius_meters: float | None = Query(None, gt=0, le=100000, allow_inf_nan=False),
     q: str = Query("", max_length=120),
     status: RecordFilter = "all",
     saved_only: bool = False,
@@ -576,6 +600,7 @@ def list_records(
 ) -> dict[str, Any]:
     """Filter rows, rather than candidate records, so no-result targets remain visible."""
     query, run = record_scope(db, kind, batch_id, process_id, generation)
+    validate_radius(run, radius_meters)
     payload_query = query
     if saved_only:
         query = query.filter(CorrectionTarget.id.is_not(None))
@@ -622,6 +647,20 @@ def list_records(
                 SourceRecord.normalized_data["lon"].as_float().is_(None),
             )
         )
+    elif (
+        status in {"matched", "no_candidates"}
+        and radius_meters is not None
+        and run is not None
+    ):
+        found = has_candidate_in_radius(db, run, radius_meters)
+        query = query.filter(
+            and_(CorrectionTarget.search_status == "matched", found)
+            if status == "matched"
+            else or_(
+                CorrectionTarget.search_status == "no_candidates",
+                and_(CorrectionTarget.search_status == "matched", ~found),
+            )
+        )
     elif status != "all":
         query = query.filter(CorrectionTarget.search_status == status)
     selected_batch = batch_id
@@ -660,10 +699,28 @@ def list_records(
             if outcome is None and cached_preview_fields(record, batch) is None
         ],
     )
+    candidate_counts = {}
+    if radius_meters is not None and run is not None and identities:
+        candidate_counts = dict(
+            db.query(MatchCandidate.target_record_id, func.count(MatchCandidate.id))
+            .filter(
+                MatchCandidate.process_id == run.process_id,
+                MatchCandidate.generation == run.generation,
+                MatchCandidate.target_record_id.in_(identities),
+                MatchCandidate.distance_meters <= radius_meters,
+            )
+            .group_by(MatchCandidate.target_record_id)
+            .all()
+        )
     return {
         "total": total,
         "items": [
-            record_info(record, batch, outcome) for record, batch, outcome in records
+            filtered_info(
+                record_info(record, batch, outcome), candidate_counts.get(record.id, 0)
+            )
+            if radius_meters is not None
+            else record_info(record, batch, outcome)
+            for record, batch, outcome in records
         ],
     }
 
@@ -702,18 +759,21 @@ def record_detail(
         )
     )
     if radius_meters is not None:
-        if run is None or radius_meters > run.radius_meters:
-            raise HTTPException(
-                409, "Perluas pemeriksaan terlebih dahulu untuk radius ini"
-            )
+        validate_radius(run, radius_meters)
         candidates = candidates.filter(MatchCandidate.distance_meters <= radius_meters)
+    total_candidates = candidates.count()
     return {
-        **record_info(record, batch, outcome),
+        **(
+            filtered_info(record_info(record, batch, outcome), total_candidates)
+            if radius_meters is not None
+            else record_info(record, batch, outcome)
+        ),
         "raw_data": record.data,
         "column_mapping": batch.column_mapping or {},
         "generation": run.generation if run else None,
         "radius_meters": run.radius_meters if run else None,
-        "candidates_total": candidates.count(),
+        "filter_radius_meters": radius_meters,
+        "candidates_total": total_candidates,
         "candidates": [
             {
                 "id": candidate.id,
@@ -732,4 +792,5 @@ def record_detail(
 
 
 router.include_router(decisions_router)
+router.include_router(automatic_router)
 router.include_router(results_router)

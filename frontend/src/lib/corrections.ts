@@ -45,7 +45,7 @@ export function mergeCheckProgress(previous: CorrectionCheck | undefined, next: 
     current_generation: latest.status === "completed" ? latest.generation : Math.max(previous.current_generation, next.current_generation),
     runs: next.runs.map((run) => run.id === latest.id ? latest : run) };
 }
-export interface CorrectionScope { batch_id?: number; process_id?: number; generation?: number }
+export interface CorrectionScope { batch_id?: number; process_id?: number; generation?: number; radius_meters?: number }
 export interface CorrectionSummary { total_rows: number; not_checked: number; pdpj_conflicts: number; matched: number; no_candidates: number; invalid_data: number; incomplete_coordinates: number; identity_found: number; identity_not_found: number; eligible_searched: number; generation: number | null }
 export interface MapRadiusSummary {
   process_id: number; generation: number; revision: number; radius_meters: number; stored_radius_meters: number; partial: boolean;
@@ -63,14 +63,24 @@ export interface CorrectionRow {
 }
 export interface CorrectionCandidate { id: number; rank: number; distance_meters: number; fields: Fields; is_accepted: number;
   observations: { batch_id: number; filename: string; dataset_type: string; row_number: number; source_sheet: string | null; fields: Fields }[] }
-export interface CorrectionDetail extends CorrectionRow { raw_data: Record<string, unknown>; column_mapping: Record<string, string>; generation: number | null; radius_meters: number | null; candidates_total: number; candidates: CorrectionCandidate[] }
+export interface CorrectionDetail extends CorrectionRow { raw_data: Record<string, unknown>; column_mapping: Record<string, string>; generation: number | null; radius_meters: number | null; filter_radius_meters?: number | null; candidates_total: number; candidates: CorrectionCandidate[] }
 export interface CheckRequest { batch_id: number; pdpj_review_id: number; radius_meters: number; actor: string; request_key: string; incremental?: boolean }
 export interface RetryRequest { latest_run_id: number; radius_meters: number; actor: string; request_key: string; incremental?: boolean }
 export interface CorrectionDecision { id: number; revision: number; generation: number; candidate_id: number | null; candidate: Partial<CorrectionCandidate>; target_fields: Fields; actor: string; reason: string; created_at: string }
 export interface CorrectionChoice { revision: number; current: CorrectionDecision | null; history: CorrectionDecision[] }
 export interface ChoiceRequest { generation: number; expected_revision: number; candidate_id: number | null; actor: string; reason: string; request_key: string }
+export interface AutomaticPreview {
+  generation: number; radius_meters: number; total_targets: number; protected_count: number;
+  selected_count: number; fallback_count: number; review_count: number; review_reasons: Record<string, number>;
+  review: { record_id: number; row_number: number; reason: string }[]; fingerprint: string;
+}
+export interface AutomaticRequest { generation: number; radius_meters: number }
 
 export const correctionApi = {
+  automaticPreview: async (kind: CorrectionKind, process: number, body: AutomaticRequest, signal?: AbortSignal) =>
+    (await api.post<AutomaticPreview>(`/corrections/${kind}/checks/${process}/automatic/preview`, body, { signal })).data,
+  automaticApply: async (kind: CorrectionKind, process: number, body: AutomaticRequest & { fingerprint: string; request_key: string }) =>
+    (await api.post<{ selected_count: number; already_applied: boolean }>(`/corrections/${kind}/checks/${process}/automatic/apply`, body)).data,
   readyPdpj: async () => (await api.get<ReadyPdpj[]>("/corrections/ready-pdpj")).data,
   batches: async (kind: CorrectionKind) => (await api.get<MasterBatch[]>(`/corrections/${kind}/batches`)).data,
   batch: async (kind: CorrectionKind, id: number) => (await api.get<MasterBatchPreview>(`/corrections/${kind}/batches/${id}`)).data,
@@ -86,7 +96,7 @@ export const correctionApi = {
   summary: async (kind: CorrectionKind, scope: CorrectionScope) => (await api.get<CorrectionSummary>(`/corrections/${kind}/summary`, { params: scope })).data,
   mapSummary: async (kind: CorrectionKind, process_id: number, generation: number, radius_meters: number, signal: AbortSignal) => (await api.get<MapRadiusSummary>(`/corrections/${kind}/map-summary`, { params: { process_id, generation, radius_meters }, signal })).data,
   rows: async (kind: CorrectionKind, params: CorrectionScope & { q: string; status: CorrectionFilter; skip: number; limit: number }, signal?: AbortSignal) => (await api.get<SearchPage<CorrectionRow>>(`/corrections/${kind}/records`, { params, signal })).data,
-  detail: async (kind: CorrectionKind, id: number, scope: CorrectionScope, skip: number, radius_meters?: number) => (await api.get<CorrectionDetail>(`/corrections/${kind}/records/${id}`, { params: { ...scope, skip, limit: 10, radius_meters } })).data,
+  detail: async (kind: CorrectionKind, id: number, scope: CorrectionScope, skip: number, radius_meters?: number) => (await api.get<CorrectionDetail>(`/corrections/${kind}/records/${id}`, { params: { ...scope, skip, limit: 10, radius_meters: radius_meters ?? scope.radius_meters } })).data,
   allRows: async (kind: CorrectionKind, scope: CorrectionScope, signal: AbortSignal) => {
     const items: CorrectionRow[] = [];
     let total = 0;

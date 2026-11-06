@@ -22,6 +22,8 @@ from app.modules.corrections.export_data import (
 )
 from app.modules.corrections.service import CorrectionKind, check_process
 from app.modules.corrections.spreadsheet import (
+    CANDIDATE_DISTANCE_HEADER,
+    DISTANCE_NUMBER_FORMAT,
     RESULT_HEADERS,
     RESULT_WIDTHS,
     Spreadsheet,
@@ -374,8 +376,8 @@ def export_info(
             "Radius filter ekspor hasil. Pada riwayat, radius pemeriksaan saat pilihan disimpan.",
         ],
         [
-            "jarak_kandidat_meter",
-            "Jarak aktual target ke kandidat pilihan dalam meter; kosong tanpa pilihan aktif.",
+            CANDIDATE_DISTANCE_HEADER,
+            "Jarak aktual dalam meter, ditampilkan dua angka desimal dan satuan m. Nilai angka asli tetap disimpan; kosong tanpa pilihan aktif.",
         ],
         [
             "noagenda",
@@ -502,7 +504,12 @@ def export_results(
     batch = db.get(UploadBatch, process.target_batch_id)
     assert batch is not None
     book = Spreadsheet()
-    main = book.sheet("Hasil Koreksi", RESULT_HEADERS, RESULT_WIDTHS)
+    main = book.sheet(
+        "Hasil Koreksi",
+        RESULT_HEADERS,
+        RESULT_WIDTHS,
+        number_formats={CANDIDATE_DISTANCE_HEADER: DISTANCE_NUMBER_FORMAT},
+    )
     for source, outcome, decision in (
         result_query(db, process, run, q, status, radius)
         .options(undefer(SourceRecord.data))
@@ -565,6 +572,7 @@ def download_history(
             "radius_pilihan_meter",
         ],
         [*RESULT_WIDTHS, 18, 22, 24, 18, 18, 28, 30, 60, 22],
+        number_formats={CANDIDATE_DISTANCE_HEADER: DISTANCE_NUMBER_FORMAT},
     )
     evidence = evidence_sheet(book)
     for decision, source in query.order_by(

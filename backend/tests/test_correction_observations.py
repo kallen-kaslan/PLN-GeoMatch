@@ -216,7 +216,7 @@ def test_new_observation_search_preserves_previously_approved_coordinate(
     exported = list(book["Hasil Koreksi"].values)
     saved = dict(zip(exported[0], exported[1]))
     assert saved["y_akhir"] == "-6.2002"
-    assert saved["jarak_kandidat_meter"] == chosen["distance_meters"]
+    assert saved["Jarak Kandidat (m)"] == chosen["distance_meters"]
 
 
 def test_legacy_checkpoint_resumes_old_policy_and_explicit_retry_starts_from_zero(
