@@ -66,20 +66,19 @@ lembar informasi.
 
 ## Susunan XLSX
 
-Sheet utama **Hasil Koreksi** memuat kolom berikut secara berurutan:
+Ekspor hasil hanya berisi sheet **Hasil Koreksi**, dengan kolom berikut secara berurutan:
 
 | Kolom | Isi |
 | --- | --- |
 | `noagenda` | Nomor agenda target asli sesuai mapping; tidak diganti nomor meter |
 | `idpelanggan` | IDPEL kandidat yang disetujui; kosong untuk baris tanpa pilihan aktif |
-| `verif` | Nilai verif target asli; tidak diubah menjadi status persetujuan |
 | `jenispelanggan` | Jenis pelanggan kandidat; memakai nilai target jika tidak tersedia |
 | `latitudey` | Latitude target sebelum koreksi |
 | `longitudex` | Longitude target sebelum koreksi |
 | `sumber file (sheet)` | Nama berkas dan sheet observasi dengan koordinat kandidat pilihan |
 | `sel (baris ke berapa)` | Nomor baris asli pada sheet master tersebut, termasuk baris header |
-| `x_acc` | Longitude (bujur/X) kandidat yang disetujui |
-| `y_acc` | Latitude (lintang/Y) kandidat yang disetujui |
+| `x_akhir` | Longitude (bujur/X) kandidat yang disetujui |
+| `y_akhir` | Latitude (lintang/Y) kandidat yang disetujui |
 
 Jika beberapa observasi memiliki koordinat yang sama, sumber utama kandidat
 dipakai bila identitas barisnya tersedia dan koordinatnya cocok. Jika koordinat
@@ -88,18 +87,14 @@ yang cocok dicantumkan, dipisahkan baris baru. Sumber dengan koordinat berbeda
 tidak ditampilkan sebagai sumber koordinat yang disetujui. Sumber yang tidak
 tercatat dibiarkan kosong, tidak ditebak dari master saat ini.
 
-Sheet **Data Target** menyimpan IDPEL awal, atribut, koordinat, nama file/sheet,
-dan baris target. **Observasi Sumber** memuat seluruh bukti kandidat dengan
-penanda `koordinat_dipakai`. **Keputusan Aktif** menyertakan status, versi,
-revisi, petugas, waktu UTC, alasan, dan jarak. **Informasi** menjelaskan kolom
-serta cakupan filter/pencarian, radius, versi, dan status pemeriksaan. Lembar
-**Pemeriksaan Radius** memuat status pencocokan dan jumlah kandidat setiap
-target yang diekspor pada radius versi terpilih. **Keputusan Aktif** juga
-mencantumkan `radius_pilihan_meter`, karena pilihan yang dipertahankan dapat
-berasal dari radius sebelumnya. Ekspor riwayat menggunakan sheet
-**Riwayat Pilihan**: sepuluh kolom utama ditambah baris target, IDPEL awal,
-status, versi, revisi, petugas, waktu UTC, alasan, dan radius saat pilihan
-disimpan pada setiap kejadian.
+Ekspor hasil mengikuti filter dan versi pemeriksaan yang dipilih. Nama file
+mencantumkan radius dan versi pemeriksaan.
+
+Ekspor riwayat memakai sheet **Riwayat Pilihan**: sembilan kolom utama ditambah
+baris target, IDPEL awal, status, versi, revisi, petugas, waktu UTC, alasan, dan
+radius saat pilihan disimpan pada setiap kejadian. Sheet **Observasi Sumber**
+memuat bukti kandidat dengan penanda `koordinat_dipakai`, dan **Informasi**
+menjelaskan kolom serta cakupan ekspor riwayat.
 
 IDPEL, nomor agenda, dan koordinat ditulis sebagai teks XLSX agar nol di depan
 dan digit desimal tetap utuh tanpa pembulatan tambahan. Teks seperti `=SUM(...)`

@@ -24,7 +24,7 @@ def test_radius_expansion_progress_refresh_pause_resume_and_retained_choices(
         (activity_files / name).unlink(missing_ok=True)
     _, process = setup_map(page, servers[1], kind=kind, count=205)
     page.get_by_role("button", name="Pilih target baris 2", exact=True).click()
-    page.get_by_label("Petugas peta", exact=True).fill("Petugas Perluasan")
+    expect(page.get_by_label("Petugas peta", exact=True)).to_have_value("test-admin")
 
     candidates = page.get_by_role("region", name="Kandidat target peta", exact=True)
     expect(candidates).to_contain_text("12 kandidat tersimpan")
@@ -83,7 +83,7 @@ def test_radius_expansion_progress_refresh_pause_resume_and_retained_choices(
         )
         expect(page.get_by_label("Radius peta (meter)", exact=True)).to_be_disabled()
         expect(page.get_by_label("Petugas peta", exact=True)).to_have_value(
-            "Petugas Perluasan"
+            "test-admin"
         )
         expect(detail).to_have_count(0)
         expect(latest_summary).to_contain_text("Radius 150 m · Versi 2")

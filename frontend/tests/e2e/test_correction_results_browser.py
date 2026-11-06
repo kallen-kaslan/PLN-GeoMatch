@@ -30,7 +30,7 @@ def test_partial_results_export_history_resume_replace_and_cancel(
     httpx.post(base + "/pause", json={"run_id": run["id"]}).raise_for_status()
     page.goto(f"/peta-koreksi?category={kind}&batch_id={batch}&process_id={process}")
     page.get_by_role("button", name="Pilih target baris 2", exact=True).click()
-    page.get_by_label("Petugas peta", exact=True).fill("Petugas Hasil")
+    expect(page.get_by_label("Petugas peta", exact=True)).to_have_value("test-admin")
 
     candidates = page.get_by_role("region", name="Kandidat target peta", exact=True)
     candidates.get_by_role("button", name="Pilih kandidat 1", exact=True).click()
@@ -40,7 +40,7 @@ def test_partial_results_export_history_resume_replace_and_cancel(
     expect(page.get_by_text("Hasil sebagian: 2 dari 5 baris", exact=False)).to_be_visible()
     results = page.get_by_role("region", name="Daftar hasil koreksi", exact=True)
     expect(results).to_contain_text("002")
-    expect(results).to_contain_text("Petugas Hasil")
+    expect(results).to_contain_text("test-admin")
     expect(results.get_by_role("row")).to_have_count(2)
     with page.expect_download() as download:
         page.get_by_role("button", name="Ekspor hasil XLSX", exact=True).click()
@@ -48,13 +48,17 @@ def test_partial_results_export_history_resume_replace_and_cancel(
     destination = tmp_path / "result.xlsx"
     download.value.save_as(destination)
     book = load_workbook(destination)
+    assert book.sheetnames == ["Hasil Koreksi"]
     rows = list(book["Hasil Koreksi"].values)
     assert len(rows) == 2
     exported = dict(zip(rows[0], rows[1]))
+    assert "verif" not in exported
+    assert "x_acc" not in exported and "y_acc" not in exported
+    assert len(rows[0]) == 9
     assert exported["idpelanggan"] == "002"
     assert exported["latitudey"] == "-6.2"
-    assert exported["x_acc"] == "106.8"
-    assert exported["y_acc"] == "-6.2"
+    assert exported["x_akhir"] == "106.8"
+    assert exported["y_akhir"] == "-6.2"
     assert "dil.csv" in exported["sumber file (sheet)"]
     assert book["Hasil Koreksi"].freeze_panes is None
     assert book["Hasil Koreksi"]["A1"].fill.patternType is None
@@ -62,7 +66,22 @@ def test_partial_results_export_history_resume_replace_and_cancel(
     book.close()
     page.reload()
     expect(results).to_contain_text("002")
-    page.get_by_role("button", name="Riwayat hasil baris 2", exact=True).click()
+    expect(results.locator("details")).to_have_count(0)
+    detail_button = page.get_by_role("button", name="Detail hasil baris 2", exact=True)
+    detail_button.click()
+    detail = page.get_by_role("dialog", name="Panel detail hasil koreksi", exact=True)
+    expect(detail).to_contain_text("Perbandingan target dan kandidat")
+    expect(detail).to_contain_text("dil.csv")
+    expect(detail.get_by_role("region", name="Riwayat keputusan koreksi", exact=True)).to_contain_text("Revisi 1")
+    expect(detail.locator("details")).to_have_count(0)
+    detail.get_by_role("heading", name="Detail hasil · Baris 2", exact=True).click()
+    expect(detail).to_be_visible()
+    page.mouse.click(20, 200)
+    expect(detail).to_have_count(0)
+    expect(detail_button).to_be_focused()
+    detail_button.click()
+    page.keyboard.press("Escape")
+    expect(detail).to_have_count(0)
     audit = page.get_by_role("region", name="Riwayat keputusan koreksi", exact=True)
     expect(audit).to_contain_text("Revisi 1")
     page.get_by_role("link", name="Buka Riwayat Proses", exact=True).click()
@@ -74,6 +93,7 @@ def test_partial_results_export_history_resume_replace_and_cancel(
         page.get_by_role("button", name=f"Unduh hasil XLSX proses {process}", exact=True).last.click()
     download.value.save_as(tmp_path / "history-results.xlsx")
     book = load_workbook(tmp_path / "history-results.xlsx")
+    assert book.sheetnames == ["Hasil Koreksi"]
     assert book["Hasil Koreksi"]["B2"].value == "002"
     book.close()
     with page.expect_download() as download:
@@ -97,7 +117,7 @@ def test_partial_results_export_history_resume_replace_and_cancel(
     expect(results).to_contain_text("002")
     page.get_by_role("link", name="Buka Peta Koreksi", exact=True).click()
     page.get_by_role("button", name="Pilih target baris 2", exact=True).click()
-    page.get_by_label("Petugas peta", exact=True).fill("Petugas Hasil")
+    expect(page.get_by_label("Petugas peta", exact=True)).to_have_value("test-admin")
 
     page.get_by_label("Alasan perubahan pilihan", exact=True).fill("Meter kandidat kedua lebih sesuai")
     candidates.get_by_role("button", name="Pilih kandidat 2", exact=True).click()
@@ -110,7 +130,7 @@ def test_partial_results_export_history_resume_replace_and_cancel(
     expect(audit).to_contain_text("Kandidat dipilih: 003")
     page.get_by_role("link", name="Buka Peta Koreksi", exact=True).click()
     page.get_by_role("button", name="Pilih target baris 2", exact=True).click()
-    page.get_by_label("Petugas peta", exact=True).fill("Petugas Hasil")
+    expect(page.get_by_label("Petugas peta", exact=True)).to_have_value("test-admin")
     page.get_by_label("Alasan perubahan pilihan", exact=True).fill("Perlu verifikasi lapangan")
     page.get_by_role("button", name="Batalkan pilihan", exact=True).click()
     expect(page.get_by_text("Pilihan dibatalkan. Riwayat tetap tersimpan.", exact=True)).to_be_visible()
@@ -131,8 +151,8 @@ def test_partial_results_export_history_resume_replace_and_cancel(
     assert [event["revisi_pilihan"] for event in events] == [3, 2, 1]
     assert events[0]["idpelanggan"] is None
     assert events[0]["status"] == "Pilihan dibatalkan"
-    assert events[0]["x_acc"] is None and events[0]["y_acc"] is None
-    assert events[1]["x_acc"] == "106.8" and events[1]["y_acc"] == "-6.2"
+    assert events[0]["x_akhir"] is None and events[0]["y_akhir"] is None
+    assert events[1]["x_akhir"] == "106.8" and events[1]["y_akhir"] == "-6.2"
     assert events[1]["idpelanggan"] == "003"
     assert events[2]["idpelanggan"] == "002"
     book.close()

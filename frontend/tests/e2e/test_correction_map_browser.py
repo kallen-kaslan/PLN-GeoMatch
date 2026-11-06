@@ -109,7 +109,7 @@ def test_choose_replace_radius_expansion_history_and_category_isolation(
 ) -> None:
     batch, process = setup_map(page, servers[1], kind="idpel_tidak_ketemu", count=2)
     page.get_by_role("button", name="Pilih target baris 2", exact=True).click()
-    page.get_by_label("Petugas peta", exact=True).fill("Petugas Browser")
+    expect(page.get_by_label("Petugas peta", exact=True)).to_have_value("test-admin")
     candidates = page.get_by_role("region", name="Kandidat target peta", exact=True)
     expect(candidates).to_contain_text("12 kandidat tersimpan", timeout=20000)
     candidates.get_by_role("button", name="Pilih kandidat 1", exact=True).click()
@@ -235,7 +235,7 @@ def test_clear_target_keeps_saved_decision_filters_and_table_page(
     page.get_by_role("button", name="Pilih target baris 27", exact=True).click()
     candidates = page.get_by_role("region", name="Kandidat target peta", exact=True)
     expect(candidates).to_contain_text("12 kandidat tersimpan")
-    page.get_by_label("Petugas peta", exact=True).fill("Petugas Uji Pelepasan")
+    expect(page.get_by_label("Petugas peta", exact=True)).to_have_value("test-admin")
     candidates.get_by_role("button", name="Pilih kandidat 1", exact=True).click()
     detail = page.get_by_role("region", name="Detail target terpilih", exact=True)
     expect(detail).to_contain_text("Pilihan aktif: 002")

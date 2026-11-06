@@ -4,11 +4,10 @@ from collections.abc import Callable
 from datetime import UTC, datetime
 from typing import cast
 
-from sqlalchemy import Table, select
-from sqlalchemy.engine import Connection
-
 from app.models.schema_state import SchemaState
 from app.performance import logger, timed
+from sqlalchemy import Table, select
+from sqlalchemy.engine import Connection
 
 
 @timed("startup.schema_stage")
@@ -37,11 +36,13 @@ def apply_once(
 
 
 def prepare_database(connection: Connection) -> None:
+    from app.auth_schema import upgrade_auth
     from app.coordinate_schema import repair_xy_coordinates
     from app.correction_map_schema import upgrade_correction_map
     from app.correction_observation_schema import upgrade_correction_observations
     from app.correction_progress_schema import upgrade_correction_progress
     from app.correction_schema import upgrade_corrections
+    from app.master_filter_schema import upgrade_master_filters
     from app.master_preparation_schema import upgrade_master_preparation
     from app.master_schema import upgrade_master_catalog
     from app.master_summary_schema import upgrade_master_summary
@@ -49,11 +50,13 @@ def prepare_database(connection: Connection) -> None:
     from app.pdpj_publication_schema import upgrade_pdpj_publications
     from app.pdpj_results_schema import upgrade_pdpj_results
     from app.pdpj_schema import upgrade_pdpj_validation
+    from app.pdpj_summary_schema import upgrade_pdpj_summary
     from app.performance_schema import upgrade_performance
     from app.schema_compatibility import upgrade_foundations
     from app.upload_file_schema import upgrade_upload_files
 
     cast(Table, SchemaState.__table__).create(connection, checkfirst=True)
+    apply_once(connection, "authentication", "c14e85b62a09", upgrade_auth)
     apply_once(
         connection, "foundations", "e5fa92c30b71-indexed-fk-v1", upgrade_foundations
     )
@@ -83,3 +86,5 @@ def prepare_database(connection: Connection) -> None:
     )
     apply_once(connection, "upload_files", "c8d72fe610ab", upgrade_upload_files)
     repair_xy_coordinates(connection)
+    apply_once(connection, "master_filters", "a8d13f04c621", upgrade_master_filters)
+    apply_once(connection, "pdpj_summary", "b9c63f2a710e", upgrade_pdpj_summary)

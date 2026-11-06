@@ -3,17 +3,22 @@
 import enum
 from typing import Annotated, Any
 
+from app.database import get_db
+from app.models.upload import (
+    BatchStatus,
+    DatasetType,
+    SourceRecord,
+    UploadBatch,
+    source_coordinates_missing,
+)
+from app.modules.master.summary import master_summary
+from app.modules.upload.normalization import extract_standard_fields
+from app.modules.upload.pagination import load_original_cells, source_page_ids
+from app.search_index import pending_search, prepare_search, search_candidates
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy import or_
 from sqlalchemy.orm import Query as ORMQuery
 from sqlalchemy.orm import Session, load_only
-
-from app.auth import require_viewer
-from app.database import get_db
-from app.models.upload import BatchStatus, DatasetType, SourceRecord, UploadBatch
-from app.modules.master.summary import master_summary
-from app.modules.upload.normalization import extract_standard_fields
-from app.modules.upload.pagination import load_original_cells, source_page_ids
 
 DbSession = Annotated[Session, Depends(get_db)]
 router = APIRouter(prefix="/master", tags=["Data Master"])
@@ -61,10 +66,7 @@ def catalogue_query(db: Session, kind: MasterKind, batch_id: int | None) -> ORMQ
 
 def incomplete_location() -> Any:
     """A single missing coordinate makes the location incomplete."""
-    return or_(
-        SourceRecord.normalized_data["lat"].as_float().is_(None),
-        SourceRecord.normalized_data["lon"].as_float().is_(None),
-    )
+    return source_coordinates_missing().is_(True)
 
 
 def batch_info(batch: UploadBatch) -> dict[str, Any]:
@@ -103,7 +105,7 @@ def record_info(record: SourceRecord, batch: UploadBatch) -> dict[str, Any]:
     }
 
 
-@router.get("/{kind}/batches", dependencies=[require_viewer])
+@router.get("/{kind}/batches")
 def list_master_batches(kind: MasterKind, db: DbSession) -> list[dict[str, Any]]:
     """List uploaded files, including those awaiting mapping so import can resume."""
     return [
@@ -115,7 +117,7 @@ def list_master_batches(kind: MasterKind, db: DbSession) -> list[dict[str, Any]]
     ]
 
 
-@router.get("/{kind}/batches/{batch_id}", dependencies=[require_viewer])
+@router.get("/{kind}/batches/{batch_id}")
 def get_master_batch(kind: MasterKind, batch_id: int, db: DbSession) -> dict[str, Any]:
     """Return saved headers and preview rows for a resumable column-mapping form."""
     batch = source_batch(db, kind, batch_id)
@@ -135,7 +137,7 @@ def get_master_batch(kind: MasterKind, batch_id: int, db: DbSession) -> dict[str
     }
 
 
-@router.get("/{kind}/summary", dependencies=[require_viewer])
+@router.get("/{kind}/summary")
 def get_master_summary(
     kind: MasterKind,
     db: DbSession,
@@ -148,7 +150,7 @@ def get_master_summary(
     return master_summary(db, DatasetType(kind.value), batch_id, details)
 
 
-@router.get("/{kind}/records", dependencies=[require_viewer])
+@router.get("/{kind}/records")
 def list_master_records(
     kind: MasterKind,
     db: DbSession,
@@ -161,6 +163,10 @@ def list_master_records(
     """Paginate source observations without collapsing repeated IDPEL or periods."""
     query = catalogue_query(db, kind, batch_id)
     if q.strip():
+        state = prepare_search(db, ("source",))
+        if state and not state["ready"]:
+            return {**pending_search(state), "skip": skip, "limit": limit}
+        query = query.filter(search_candidates(db, (("source", SourceRecord.id),), q))
         escaped = (
             q.strip().replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
         )
@@ -198,6 +204,21 @@ def list_master_records(
     if batch_id is not None:
         selected_batches = selected_batches.filter(UploadBatch.id == batch_id)
     batches = {batch.id: batch for batch in selected_batches.all()}
+    known_totals = {}
+    if not q.strip():
+        for batch in batches.values():
+            if status == RecordStatus.ALL:
+                known_totals[batch.id] = batch.total_rows
+            elif (
+                batch.total_rows
+                and batch.valid_rows is not None
+                and batch.error_rows is not None
+                and batch.valid_rows + batch.error_rows == batch.total_rows
+            ):
+                if status == RecordStatus.VALID:
+                    known_totals[batch.id] = batch.valid_rows
+                elif status == RecordStatus.INVALID:
+                    known_totals[batch.id] = batch.error_rows
     total, identities = source_page_ids(
         db,
         query,
@@ -205,7 +226,9 @@ def list_master_records(
         skip,
         limit,
         unfiltered=not q.strip() and status == RecordStatus.ALL,
-        known_totals={value: batch.total_rows for value, batch in batches.items()},
+        known_totals=known_totals,
+        use_filtered_totals=not q.strip()
+        and status in (RecordStatus.VALID, RecordStatus.INVALID),
     )
     records = (
         db.query(SourceRecord)
@@ -236,7 +259,7 @@ def list_master_records(
     }
 
 
-@router.get("/{kind}/records/{record_id}", dependencies=[require_viewer])
+@router.get("/{kind}/records/{record_id}")
 def get_master_record(
     kind: MasterKind, record_id: int, db: DbSession
 ) -> dict[str, Any]:

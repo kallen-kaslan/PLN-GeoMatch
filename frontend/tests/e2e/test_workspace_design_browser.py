@@ -45,7 +45,7 @@ def test_desktop_map_and_candidate_inspector_share_the_work_area(
     page.set_viewport_size({"width": 1440, "height": 900})
     setup_map(page, servers[1], count=2, stacked=False)
     page.get_by_role("button", name="Pilih target baris 2", exact=True).click()
-    page.get_by_label("Petugas peta", exact=True).fill("Petugas Desain")
+    expect(page.get_by_label("Petugas peta", exact=True)).to_have_value("test-admin")
 
     candidates = page.get_by_role("region", name="Kandidat target peta", exact=True)
     expect(candidates.get_by_role("article")).to_have_count(10)

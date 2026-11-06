@@ -135,7 +135,7 @@ def test_search_all_sources_then_deduplicate_and_export_selected_observation(
     exported = list(book.worksheets[0].values)
     assert exported[1][1] == "002"
     assert exported[1][-2:] == ("106.8", "-6.2001")
-    assert "dil.csv" in exported[1][6]
+    assert "dil.csv" in dict(zip(exported[0], exported[1]))["sumber file (sheet)"]
 
 
 def test_policy_migration_preserves_existing_runs_and_is_idempotent() -> None:

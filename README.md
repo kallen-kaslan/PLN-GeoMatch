@@ -62,6 +62,18 @@ cd frontend
 npm install
 ```
 
+### 6. Buat administrator pertama
+
+Dengan virtual environment backend aktif, jalankan dari direktori `backend`:
+
+```bash
+python -m app.modules.auth.bootstrap --username admin
+```
+
+Masukkan dan konfirmasi passphrase 15–128 karakter saat diminta. Tidak ada akun
+atau password bawaan dan tidak ada registrasi publik. Setelah login, admin
+menambahkan akun melalui **Manajemen Pengguna**. Lihat [panduan autentikasi](docs/authentication.md).
+
 ## Menjalankan Aplikasi
 
 ### Development Mode
@@ -71,7 +83,7 @@ npm install
 cd backend
 source venv/bin/activate  # Linux/Mac
 # atau venv\Scripts\activate  # Windows
-uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
+uvicorn app.main:app --reload --host 127.0.0.1 --port 8000
 ```
 
 **Terminal 2 - Frontend:**
@@ -130,6 +142,9 @@ REDIS_URL=redis://localhost:6379/0
 ```
 
 ## Fitur
+
+Cara kerja pencarian, persiapan indeks data lama, dan batas pengukurannya dijelaskan
+pada [panduan pencarian data](docs/pencarian-data.md).
 
 - Upload data pelanggan dan koordinat
 - Pencocokan otomatis berdasarkan radius

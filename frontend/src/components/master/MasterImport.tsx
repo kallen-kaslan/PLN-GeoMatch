@@ -1,118 +1,18 @@
-import { useEffect, useRef, useState, type ChangeEvent } from "react";
+import { useRef, useState, type ChangeEvent } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import Papa from "papaparse";
-import * as XLSX from "xlsx";
 import { AlertCircle, ArrowRight, FileSpreadsheet, LoaderCircle, Upload, X } from "lucide-react";
 import { api, type ApiError } from "@/lib/api";
-import { uploadFilesApi, type UploadFileHistory } from "@/lib/upload-files";
-import { MASTER_TYPES, displayValue, guessMasterMapping, hasSourceHeaders, masterFields, normalizeSourceHeaders, type ImportResult, type MasterBatchPreview, type SourceKind } from "@/lib/master";
+import { uploadFilesApi, progressHeaders, type UploadFileHistory } from "@/lib/upload-files";
+import { MASTER_TYPES, displayValue, guessMasterMapping, masterFields, type ImportResult, type MasterBatchPreview, type SourceKind } from "@/lib/master";
+
+import { useUploadProgress } from "@/hooks/useUploadProgress";
+import { ImportProgress } from "@/components/master/ImportProgress";
+import { readMasterPreview } from "@/lib/master-preview";
 
 const inputClass = "w-full rounded-lg border border-ui-border bg-white px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-neo-accent disabled:opacity-60";
 const MAX_UPLOAD_BYTES = 500 * 1024 * 1024;
 type ImportPreview = { headers: string[]; rows: Record<string, unknown>[]; headerRow?: number };
 const readError = (error: unknown) => error instanceof Error ? error.message : (error as ApiError)?.message ?? "Berkas tidak dapat dibaca.";
-
-async function previewExcelSheet(book: XLSX.WorkBook, name: string, file: File, archivedPreview?: () => Promise<ImportPreview>): Promise<ImportPreview> {
-  try { return sheetPreview(book, name); } catch {
-    if (archivedPreview) return archivedPreview();
-    // Incorrect sheet dimensions can hide all cells from the bounded browser
-    // preview. The server streams the actual cells and never saves this preview.
-    const body = new FormData();
-    body.append("file", file);
-    body.append("sheet_name", name);
-    return (await api.post<ImportPreview>("/upload/preview", body, { headers: { "Content-Type": "multipart/form-data" } })).data;
-  }
-}
-
-async function detectCsvEncoding(file: File): Promise<string> {
-  const marker = new Uint8Array(await file.slice(0, 4).arrayBuffer());
-  if ((marker[0] === 0xff && marker[1] === 0xfe && marker[2] === 0 && marker[3] === 0) ||
-      (marker[0] === 0 && marker[1] === 0 && marker[2] === 0xfe && marker[3] === 0xff)) {
-    throw new Error("CSV UTF-32 belum didukung. Simpan ulang sebagai CSV UTF-8.");
-  }
-  if (marker[0] === 0xff && marker[1] === 0xfe) return "utf-16le";
-  if (marker[0] === 0xfe && marker[1] === 0xff) return "utf-16be";
-  if (marker[0] === 0xef && marker[1] === 0xbb && marker[2] === 0xbf) return "utf-8";
-  const decoder = new TextDecoder("utf-8", { fatal: true });
-  const stream = file.stream().getReader();
-  try {
-    while (true) {
-      const { done, value } = await stream.read();
-      if (done) break;
-      decoder.decode(value, { stream: true });
-    }
-    decoder.decode();
-    return "utf-8";
-  } catch (error) {
-    if (error instanceof TypeError) return "windows-1252";
-    throw error;
-  } finally {
-    await stream.cancel();
-    stream.releaseLock();
-  }
-}
-
-async function readCsv(file: File): Promise<{ headers: string[]; rows: Record<string, unknown>[] }> {
-  const encoding = await detectCsvEncoding(file);
-  return new Promise((resolve, reject) => {
-    Papa.parse<string[]>(file, {
-      header: false, preview: 6, skipEmptyLines: false, chunkSize: 64 * 1024, encoding,
-      complete: (result) => {
-        try {
-          const headers = normalizeSourceHeaders(result.data[0] ?? []);
-          resolve({ headers, rows: result.data.slice(1, 6).map((row) => Object.fromEntries(headers.map((header, index) => [header, row[index] ?? ""]))) });
-        } catch (error) { reject(error); }
-      },
-      error: () => reject(new Error("Berkas CSV tidak dapat dibaca.")),
-    });
-  });
-}
-
-function sheetPreview(workbook: XLSX.WorkBook, sheet: string) {
-  const worksheet = workbook.Sheets[sheet];
-  // !ref from external exporters can be incorrect. Use the cells actually read
-  // for both the header and preview bounds, including columns beyond !ref.
-  const range = { s: { r: 0, c: 0 }, e: { r: 0, c: 0 } };
-  let headerStart: number | undefined;
-  for (const address of Object.keys(worksheet)) {
-    if (address.startsWith("!") || !hasSourceHeaders([worksheet[address]?.v])) continue;
-    const cell = XLSX.utils.decode_cell(address);
-    range.e.r = Math.max(range.e.r, cell.r);
-    range.e.c = Math.max(range.e.c, cell.c);
-    if (headerStart === undefined || cell.r < headerStart) headerStart = cell.r;
-  }
-  if (headerStart === undefined) {
-    throw new Error(`Sheet "${sheet}" kosong atau tidak memiliki nama kolom. Pilih sheet yang berisi tabel data.`);
-  }
-  range.s.c = 0;
-  range.s.r = headerStart;
-  range.e.r = Math.min(range.e.r, headerStart + 5);
-  const rows = XLSX.utils.sheet_to_json<unknown[]>(worksheet, { header: 1, defval: "", raw: false, range, blankrows: true });
-  const headers = normalizeSourceHeaders(rows[0] ?? []);
-  return { headers, headerRow: headerStart + 1, rows: rows.slice(1, 6).map((row) => Object.fromEntries(headers.map((header, index) => [header, row[index] ?? ""]))) };
-}
-
-function readExcelPreview(content: ArrayBuffer): XLSX.WorkBook {
-  let rowLimit = 64;
-  while (true) {
-    const book = XLSX.read(content, { type: "array", sheetRows: rowLimit });
-    let nextLimit = rowLimit;
-    for (const name of book.SheetNames) {
-      const fullRef = book.Sheets[name]["!fullref"];
-      if (!fullRef) continue;
-      const fullRange = XLSX.utils.decode_range(fullRef);
-      let neededRows: number;
-      try {
-        neededRows = sheetPreview(book, name).headerRow + 5;
-      } catch {
-        neededRows = Math.max(rowLimit * 2, fullRange.s.r + 6);
-      }
-      nextLimit = Math.max(nextLimit, Math.min(neededRows, fullRange.e.r + 1));
-    }
-    if (nextLimit <= rowLimit) return book;
-    rowLimit = nextLimit;
-  }
-}
 
 export function MasterImport({ kind, saved, onSaved, onCancel }: {
   kind: SourceKind; saved?: MasterBatchPreview; onSaved: (result: ImportResult, filename: string) => void; onCancel: () => void;
@@ -128,24 +28,20 @@ export function MasterImport({ kind, saved, onSaved, onCancel }: {
   const [mapping, setMapping] = useState<Record<string, string>>(saved?.column_mapping && Object.keys(saved.column_mapping).length ? saved.column_mapping : guessMasterMapping(saved?.headers ?? [], kind, saved?.preview));
   const [period, setPeriod] = useState(saved?.period ?? "");
   const [sheet, setSheet] = useState(saved?.source_sheet ?? "");
-  const [workbook, setWorkbook] = useState<XLSX.WorkBook | null>(null);
   const [reading, setReading] = useState(false);
   const [parseError, setParseError] = useState<string | null>(null);
   const [uploadId, setUploadId] = useState<number | null>(saved?.id ?? null);
   const [archiveId, setArchiveId] = useState<number | null>(null);
   const queryClient = useQueryClient();
+  const progress = useUploadProgress();
   const history = useQuery({ queryKey: ["upload-files"], queryFn: uploadFilesApi.list });
-  const storeFile = useMutation({ mutationFn: uploadFilesApi.store });
   const loadPreview = useMutation({ mutationFn: ({ id, name }: { id: number; name: string }) => uploadFilesApi.preview(id, name) });
   const selectedArchive = history.data?.find((item) => item.id === archiveId) ?? (archiveId === null && saved ? history.data?.find((item) => item.imports.some((entry) => entry.batch_id === saved.id)) : undefined);
   const activeArchiveId = archiveId ?? selectedArchive?.id;
-  const sheetNames = selectedArchive?.sheet_names ?? workbook?.SheetNames ?? [];
+  const sheetNames = selectedArchive?.sheet_names ?? [];
   const sheetImport = (name: string) => selectedArchive?.imports.find((item) => item.dataset_type === kind && (item.period ?? "") === period && (item.source_sheet ?? "") === name);
   const alreadySaved = sheetImport(sheet)?.status === "completed";
   const readVersion = useRef(0);
-  const [importPhase, setImportPhase] = useState<string | null>(null);
-  const [elapsedSeconds, setElapsedSeconds] = useState(0);
-  const [progress, setProgress] = useState<{ total_rows: number; processed_rows: number; valid_rows: number; status: string; percentage: number } | null>(null);
 
   const acceptPreview = (preview: ImportPreview) => {
     if (!preview.headers.length || preview.headers.some((header) => !header.trim()) || new Set(preview.headers).size !== preview.headers.length) {
@@ -160,11 +56,12 @@ export function MasterImport({ kind, saved, onSaved, onCancel }: {
   const mutation = useMutation<ImportResult, ApiError | Error>({
     mutationFn: async () => {
       if (fields.some((field) => field.required && !mapping[field.key])) throw new Error("Pilih kolom wajib terlebih dahulu.");
+      const progressId = await progress.begin("validation", selectedArchive?.filename ?? file?.name ?? saved?.filename ?? "Berkas master", uploadId === null ? "importing" : "validating");
+      await progress.waitForResume();
       let batchId = uploadId;
       if (batchId === null) {
         if (!activeArchiveId) throw new Error(`Pilih berkas ${noun} dari riwayat atau unggah terlebih dahulu.`);
-        setImportPhase("Tahap 1/2: Menyimpan data mentah ke database cloud...");
-        const uploaded = await uploadFilesApi.importSheet(activeArchiveId, kind, sheet, period);
+        const uploaded = await uploadFilesApi.importSheet(activeArchiveId, kind, sheet, period, progressId);
         if (uploaded.status === "completed") {
           await queryClient.invalidateQueries({ queryKey: ["upload-files"] });
           throw new Error("Sheet ini sudah disimpan dan divalidasi. Pilih sheet lain.");
@@ -172,95 +69,54 @@ export function MasterImport({ kind, saved, onSaved, onCancel }: {
         batchId = uploaded.id;
         setUploadId(batchId);
       }
-      setImportPhase("Tahap 2/2: Memvalidasi pemetaan kolom & normalisasi baris...");
-      return (await api.post<ImportResult>("/upload/confirm-mapping", { batch_id: batchId, column_mapping: mapping })).data;
+      await progress.waitForResume();
+      progress.stage("validating");
+      return (await api.post<ImportResult>("/upload/confirm-mapping", { batch_id: batchId, column_mapping: mapping }, { headers: progressHeaders(progressId) })).data;
     },
+    onError: () => progress.finish("failed"),
     onSuccess: async (result) => {
+      progress.finish("completed");
       await queryClient.invalidateQueries({ queryKey: ["upload-files"] });
       onSaved(result, selectedArchive?.filename ?? file?.name ?? saved?.filename ?? "Berkas master");
     },
   });
 
-  // Poll progress during mutation
-  useEffect(() => {
-    let interval: ReturnType<typeof setInterval> | undefined;
-    let timer: ReturnType<typeof setInterval> | undefined;
-
-    if (mutation.isPending) {
-      setElapsedSeconds(0);
-      timer = setInterval(() => {
-        setElapsedSeconds((prev) => prev + 1);
-      }, 1000);
-
-      const pollProgress = async () => {
-        try {
-          if (uploadId !== null) {
-            const response = await api.get(`/upload/batches/${uploadId}/progress`);
-            if (response.data) {
-              setProgress(response.data);
-            }
-          } else if (activeArchiveId) {
-            const response = await api.get(`/upload/files/${activeArchiveId}/progress`);
-            if (response.data && response.data.status !== "idle") {
-              setProgress(response.data);
-            }
-          }
-        } catch {
-          // Ignore progress poll errors
-        }
-      };
-
-      pollProgress();
-      interval = setInterval(pollProgress, 500);
-    } else {
-      setImportPhase(null);
-      setProgress(null);
-      setElapsedSeconds(0);
-    }
-    return () => {
-      if (interval) clearInterval(interval);
-      if (timer) clearInterval(timer);
-    };
-  }, [mutation.isPending, uploadId, activeArchiveId]);
-
   const chooseFile = async (event: ChangeEvent<HTMLInputElement>) => {
     const chosen = event.target.files?.[0];
     if (!chosen) return;
     const version = ++readVersion.current;
-    setFile(chosen); setHeaders([]); setRows([]); setMapping({}); setWorkbook(null); setSheet("");
+    setFile(chosen); setHeaders([]); setRows([]); setMapping({}); setSheet("");
     setParseError(null); setReading(true); mutation.reset(); setUploadId(null); setArchiveId(null);
     try {
       if (chosen.size > MAX_UPLOAD_BYTES) throw new Error("Ukuran file maksimal 500 MB.");
-      const archived = await storeFile.mutateAsync(chosen);
+      const progressId = await progress.begin("preview", chosen.name, "uploading", chosen.size);
+      const archived = await uploadFilesApi.store(chosen, progressId, (event) => {
+        if (version !== readVersion.current) return;
+        progress.update(event.loaded, event.total ?? chosen.size);
+        if (event.total && event.loaded >= event.total) progress.stage("server-file");
+      });
       await queryClient.cancelQueries({ queryKey: ["upload-files"] });
       queryClient.setQueryData<UploadFileHistory[]>(["upload-files"], (previous) => [archived, ...(previous ?? []).filter((item) => item.id !== archived.id)]);
       if (version !== readVersion.current) return;
       setArchiveId(archived.id);
-      if (chosen.name.toLowerCase().endsWith(".csv")) {
-        const preview = await readCsv(chosen);
-        if (version === readVersion.current) acceptPreview(preview);
-      } else {
-        const content = await chosen.arrayBuffer();
-        if (version !== readVersion.current) return;
-        const book = readExcelPreview(content);
-        const visibleSheets = book.SheetNames.filter((_, index) => !book.Workbook?.Sheets?.[index]?.Hidden);
-        const candidates = visibleSheets.length ? visibleSheets : book.SheetNames;
-        const previews = candidates.flatMap((name) => {
-          try { return [{ name, preview: sheetPreview(book, name) }]; } catch { return []; }
-        });
-        const detected = previews.find(({ preview }) => {
-          const guessed = guessMasterMapping(preview.headers, kind, preview.rows);
-          return fields.every((field) => !field.required || guessed[field.key]);
-        }) ?? previews[0];
-        const first = detected?.name ?? candidates[0];
-        if (!first) throw new Error("Berkas Excel tidak memiliki sheet.");
-        // Keep the selector available even when the selected sheet cannot be previewed.
-        setWorkbook(book); setSheet(first);
-        const preview = detected?.preview ?? await previewExcelSheet(book, first, chosen, () => loadPreview.mutateAsync({ id: archived.id, name: first }));
-        if (version === readVersion.current) acceptPreview(preview);
+      await progress.waitForResume();
+      progress.stage("preview", chosen.size, "bytes");
+      const previewTask = readMasterPreview(chosen, kind, (processed, total) => {
+        if (version === readVersion.current) progress.update(processed, total);
+      }, progress.localPaused);
+      progress.registerLocal(previewTask);
+      const result = await previewTask.result;
+      progress.registerLocal(null);
+      if (version !== readVersion.current) return;
+      setSheet(result.sheet);
+      const preview = result.preview ?? await loadPreview.mutateAsync({ id: archived.id, name: result.sheet });
+      await progress.waitForResume();
+      if (version === readVersion.current) {
+        acceptPreview(preview);
+        progress.finish("completed");
       }
     } catch (error) {
-      if (version === readVersion.current) setParseError(readError(error));
+      if (version === readVersion.current) { setParseError(readError(error)); progress.finish("failed"); }
     } finally {
       if (version === readVersion.current) setReading(false);
     }
@@ -271,10 +127,12 @@ export function MasterImport({ kind, saved, onSaved, onCancel }: {
     const version = ++readVersion.current;
     setSheet(name); setUploadId(null); setParseError(null); setHeaders([]); setRows([]); setMapping({}); setReading(true); mutation.reset();
     try {
+      await progress.begin("preview", history.data?.find((item) => item.id === id)?.filename ?? saved?.filename ?? "Berkas tersimpan", "preview");
       const preview = await loadPreview.mutateAsync({ id, name });
-      if (version === readVersion.current) acceptPreview(preview);
+      await progress.waitForResume();
+      if (version === readVersion.current) { acceptPreview(preview); progress.finish("completed"); }
     } catch (error) {
-      if (version === readVersion.current) setParseError(readError(error));
+      if (version === readVersion.current) { setParseError(readError(error)); progress.finish("failed"); }
     } finally { if (version === readVersion.current) setReading(false); }
   };
   const lockedFile = mutation.isPending;
@@ -283,13 +141,13 @@ export function MasterImport({ kind, saved, onSaved, onCancel }: {
       <div className="flex items-start justify-between gap-3 border-b border-ui-border pb-3">
         <div><h2 className="flex items-center gap-2 text-base font-semibold"><Upload size={18} />{saved ? "Lanjutkan mapping" : kind === "pdpj" || correction ? "Unggah" : "Unggah master"} {label}</h2>
           <p className="mt-1 text-xs text-ui-muted">{kind === "idpel_kosong" ? "IDPEL boleh kosong. Petakan referensi dan koordinat yang tersedia; semua baris tetap disimpan." : "IDPEL wajib dipetakan. Koordinat dan informasi lain dapat dilengkapi kemudian."}</p></div>
-        <button type="button" onClick={onCancel} disabled={mutation.isPending} aria-label="Tutup formulir unggah" className="touch-min rounded-lg border border-ui-border hover:bg-neo-white disabled:opacity-40"><X size={18} /></button>
+        <button type="button" onClick={onCancel} disabled={mutation.isPending || reading} aria-label="Tutup formulir unggah" className="touch-min rounded-lg border border-ui-border hover:bg-neo-white disabled:opacity-40"><X size={18} /></button>
       </div>
       <label className="block space-y-2 text-xs font-semibold">Riwayat berkas unggahan
         <select aria-label="Riwayat berkas unggahan" value={activeArchiveId ?? ""} disabled={lockedFile || reading || history.isPending} onChange={(event) => {
           const archive = history.data?.find((item) => item.id === Number(event.target.value));
           if (!archive) return;
-          setArchiveId(archive.id); setFile(null); setWorkbook(null);
+          setArchiveId(archive.id); setFile(null);
           void selectArchivedSheet(archive.sheet_names[0] ?? "", archive.id);
         }} className={inputClass}>
           <option value="" disabled>{history.isPending ? "Memuat riwayat berkas…" : "Pilih berkas yang pernah diunggah"}</option>
@@ -315,7 +173,7 @@ export function MasterImport({ kind, saved, onSaved, onCancel }: {
       </label>}
       {alreadySaved && <p role="status" className="rounded-lg border border-green-700 bg-green-50 p-3 text-xs text-green-900">✓ Sheet ini sudah disimpan dan divalidasi untuk {label}{period ? ` periode ${period}` : " tanpa periode"}. Pilih sheet lain untuk menyimpan data berikutnya.</p>}
       {activeArchiveId && !alreadySaved && <p className="text-xs text-ui-muted">Pratinjau belum menjadi data acuan. Sheet hanya diaktifkan setelah Anda menekan Simpan dan validasi.</p>}
-      {reading && <p role="status" className="flex items-center gap-2 text-sm"><LoaderCircle size={16} className="animate-spin" />Membaca pratinjau berkas…</p>}
+      {progress.activity && <ImportProgress activity={progress.activity} snapshot={progress.server.data} disconnected={progress.server.isError} onTogglePause={() => void progress.togglePause()} controlBusy={progress.controlBusy} controlError={progress.controlError} />}
       {(parseError || mutation.error) && <p role="alert" className="flex items-start gap-2 rounded-lg border border-red-600 bg-red-50 p-3 text-sm text-red-700"><AlertCircle size={17} className="mt-0.5 shrink-0" />{parseError ?? mutation.error?.message}</p>}
       {headers.length > 0 && <>
         {sheetNames.length > 0 && <p className="text-xs text-ui-muted">Nama kolom dibaca dari baris {firstDataRow - 1}. Baris kosong di awal dilewati.</p>}
@@ -335,52 +193,6 @@ export function MasterImport({ kind, saved, onSaved, onCancel }: {
           </table></div>
         </div>
       </>}
-      {mutation.isPending && (
-        <div className="rounded-lg border border-blue-200 bg-blue-50/80 p-3.5 text-xs text-blue-900 space-y-2">
-          <div className="flex items-center justify-between font-medium">
-            <span className="flex items-center gap-2 text-blue-800">
-              <LoaderCircle size={15} className="animate-spin text-ui-primary" />
-              {importPhase ?? "Sedang memproses data..."}
-            </span>
-            <span className="font-mono bg-blue-100 text-blue-800 px-2 py-0.5 rounded text-[11px]">
-              {elapsedSeconds} detik
-            </span>
-          </div>
-          {progress && (
-            <div className="space-y-1.5">
-              <div className="flex items-center justify-between text-[10px] text-blue-700/80">
-                <span>
-                  {progress.total_rows > 0 ? (
-                    <>
-                      {progress.percentage}% ({progress.processed_rows.toLocaleString()} / {progress.total_rows.toLocaleString()} baris)
-                    </>
-                  ) : (
-                    <>
-                      {progress.processed_rows.toLocaleString()} baris tersimpan
-                    </>
-                  )}
-                </span>
-                <span className="font-mono">{progress.status}</span>
-              </div>
-              <div className="w-full bg-blue-200/70 rounded-full h-2 overflow-hidden">
-                <div
-                  className={`bg-ui-primary h-full rounded-full transition-all duration-300 ease-out ${progress.total_rows === 0 ? "animate-pulse" : ""}`}
-                  style={{
-                    width: `${
-                      progress.total_rows > 0
-                        ? progress.percentage
-                        : Math.min(Math.max((progress.processed_rows / 100000) * 100, 10), 95)
-                    }%`,
-                  }}
-                />
-              </div>
-            </div>
-          )}
-          <p className="text-[11px] text-blue-700/80">
-            Untuk berkas besar (100.000+ baris), proses penyimpanan & validasi ke cloud Supabase membutuhkan waktu sekitar 30–60 detik. Mohon jangan menutup halaman ini.
-          </p>
-        </div>
-      )}
       <div className="flex flex-col justify-between gap-3 border-t border-ui-border pt-4 sm:flex-row sm:items-center">
         <p className="max-w-xl text-xs text-ui-muted">Simpan IDPEL sebagai teks agar nol di depan tetap utuh. Data asli tetap tersedia pada detail setiap baris.</p>
         <button type="button" disabled={alreadySaved || !headers.length || fields.some((field) => field.required && !mapping[field.key]) || reading || mutation.isPending || !!parseError} onClick={() => mutation.mutate()} className="touch-min shrink-0 gap-2 rounded-lg border border-ui-border bg-ui-primary px-4 py-2.5 text-xs font-semibold text-white  hover:bg-ui-primary-hover disabled:cursor-not-allowed disabled:opacity-40">

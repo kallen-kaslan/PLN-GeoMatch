@@ -14,7 +14,7 @@ def test_approve_partial_correct_and_resume_without_changing_old_reference(
     batch = upload(api, "pdpj", "IDPEL,LAT,LON\n" + "001,-6.2,106.8\n" * 2400 + "002,-6.2,106.8\n")
     target = upload(api, "idpel_tidak_ketemu", "IDPEL,NAMA,LAT,LON\n999,Target,-6.2,106.8\n")
     page.goto(f"/pdpj?batch_id={batch}")
-    page.get_by_label("Petugas untuk riwayat", exact=True).fill("Petugas Bertahap")
+    expect(page.get_by_label("Petugas untuk riwayat", exact=True)).to_have_value("test-admin")
     with page.expect_response(lambda response: response.url.endswith("/advance") and response.status == 200):
         page.get_by_role("button", name="Periksa IDPEL ke master", exact=True).click()
     page.get_by_role("button", name="Hentikan sementara", exact=True).click()
@@ -47,7 +47,7 @@ def test_approve_partial_correct_and_resume_without_changing_old_reference(
     expect(progress.get_by_role("progressbar")).to_have_attribute("value", "100", timeout=30000)
     assert httpx.get(path).json()["processing"]["processed_rows"] == 2401
     assert httpx.get(f"{api}/pdpj/reviews/{snapshot['id']}").json()["summary"]["total_rows"] == snapshot["publication"]["row_count"]
-    page.get_by_label("Petugas untuk riwayat", exact=True).fill("Petugas Bertahap")
+    expect(page.get_by_label("Petugas untuk riwayat", exact=True)).to_have_value("test-admin")
     page.get_by_role("button", name="Selesaikan validasi PDPJ", exact=True).click()
     expect(page.get_by_role("dialog", name="PDPJ selesai divalidasi", exact=True)).to_be_visible()
     page.goto(f"/koreksi/idpel-tidak-ketemu?batch_id={target}&process_id={process_id}")

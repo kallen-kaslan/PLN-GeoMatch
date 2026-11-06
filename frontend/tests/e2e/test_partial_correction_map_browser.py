@@ -47,7 +47,7 @@ def test_partial_map_choice_survives_more_saved_rows_and_completion(
     expect(table.get_by_role("button", name="Pilih target baris 2", exact=True)).to_be_visible()
     expect(table.get_by_role("button", name="Pilih target baris 4", exact=True)).to_have_count(0)
     page.get_by_role("button", name="Pilih target baris 2", exact=True).click()
-    page.get_by_label("Petugas peta", exact=True).fill("Petugas Peta Bertahap")
+    expect(page.get_by_label("Petugas peta", exact=True)).to_have_value("test-admin")
     page.get_by_label("Radius peta (meter)", exact=True).fill("100")
     open_radius_controls(page)
     expect(page.get_by_role("button", name="Perluas pemeriksaan dan tampilkan kandidat", exact=True)).to_be_disabled()

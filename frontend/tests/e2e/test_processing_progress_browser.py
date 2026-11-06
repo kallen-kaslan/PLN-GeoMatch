@@ -73,7 +73,7 @@ def test_final_validation_and_approval_saving_are_visible(page: Page, servers: t
     expect(progress.get_by_text("305 / 305 baris", exact=True)).to_have_count(2)
     approval: list[Route] = []
     page.route("**/pdpj/reviews/*/complete", lambda route: approval.append(route))
-    page.get_by_label("Petugas untuk riwayat", exact=True).fill("Petugas Progres")
+    expect(page.get_by_label("Petugas untuk riwayat", exact=True)).to_have_value("test-admin")
     page.get_by_role("button", name="Selesaikan validasi PDPJ", exact=True).click()
     expect(progress.get_by_role("heading", name="Menyimpan hasil validasi yang disetujui", exact=True)).to_be_visible()
     expect(progress).to_have_attribute("aria-busy", "true")
@@ -86,7 +86,7 @@ def test_correction_progress_saves_pauses_and_resumes_after_reload(page: Page, s
     prepare(api, candidates=2)
     batch = upload(api, "idpel_kosong", "NAMA,LAT,LON\n" + "Target,-6.2,106.8\n" * 1001)
     page.goto(f"/koreksi/idpel-kosong?batch_id={batch}")
-    page.get_by_label("Petugas untuk riwayat", exact=True).fill("Petugas Progres")
+    expect(page.get_by_label("Petugas untuk riwayat", exact=True)).to_have_value("test-admin")
     page.get_by_label("Radius pemeriksaan (meter)", exact=True).fill("10")
     with page.expect_response(lambda response: response.url.endswith("/advance") and response.status == 200 and response.json()["processing"]["processed_rows"] >= 100):
         page.get_by_role("button", name="Jalankan pemeriksaan", exact=True).click()
@@ -137,7 +137,7 @@ def test_committed_correction_rows_refresh_while_next_chunk_is_running(page: Pag
 
     page.route("**/corrections/idpel_kosong/checks/*/advance", hold_after_saved)
     page.goto(f"/koreksi/idpel-kosong?batch_id={batch}")
-    page.get_by_label("Petugas untuk riwayat", exact=True).fill("Petugas Progres")
+    expect(page.get_by_label("Petugas untuk riwayat", exact=True)).to_have_value("test-admin")
     page.get_by_label("Radius pemeriksaan (meter)", exact=True).fill("10")
     page.get_by_role("button", name="Jalankan pemeriksaan", exact=True).click()
     active = captured(page, held)

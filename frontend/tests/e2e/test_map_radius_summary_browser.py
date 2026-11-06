@@ -61,7 +61,7 @@ def test_global_expansion_without_target_and_radius_specific_status_filters(
     assert (
         len(httpx.get(f"{api}/corrections/{kind}/checks/{process}").json()["runs"]) == 1
     )
-    page.get_by_label("Petugas peta", exact=True).fill("Petugas Radius")
+    expect(page.get_by_label("Petugas peta", exact=True)).to_have_value("test-admin")
     expand = page.get_by_role(
         "button", name="Perluas pemeriksaan dan tampilkan kandidat", exact=True
     )

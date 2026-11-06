@@ -17,7 +17,7 @@ def test_radius_dropdown_historical_choices_and_versioned_xlsx(
 ) -> None:
     batch, process = setup_map(page, servers[1], kind=kind, count=2)
     page.get_by_role("button", name="Pilih target baris 2", exact=True).click()
-    page.get_by_label("Petugas peta", exact=True).fill("Petugas Radius")
+    expect(page.get_by_label("Petugas peta", exact=True)).to_have_value("test-admin")
 
     candidates = page.get_by_role("region", name="Kandidat target peta", exact=True)
     candidates.get_by_role("button", name="Pilih kandidat 1", exact=True).click()
@@ -73,16 +73,18 @@ def test_radius_dropdown_historical_choices_and_versioned_xlsx(
         target = tmp_path / f"{radius}-{version}-{history}-{button[:5]}.xlsx"
         downloaded.value.save_as(target)
         book = load_workbook(target)
-        info = dict(list(book["Informasi"].values)[1:])
-        assert info["Radius pemeriksaan (meter)"] == radius
-        assert info["Versi pemeriksaan"] == version
         sheet = book["Riwayat Pilihan" if history else "Hasil Koreksi"]
         assert sheet["B2"].value == identity
         assert sheet["A1"].fill.patternType is None and sheet.freeze_panes is None
-        if not history:
-            report = list(book["Pemeriksaan Radius"].values)
-            row = dict(zip(report[0], report[1]))
-            assert row["radius_meter"] == radius and row["versi_pemeriksaan"] == version
+        if history:
+            info = dict(list(book["Informasi"].values)[1:])
+            assert info["Radius pemeriksaan (meter)"] == radius
+            assert info["Versi pemeriksaan"] == version
+        else:
+            assert book.sheetnames == ["Hasil Koreksi"]
+            headers = [cell.value for cell in sheet[1]]
+            assert len(headers) == 9 and "verif" not in headers
+            assert headers[-2:] == ["x_akhir", "y_akhir"]
         book.close()
 
     verify_download("Unduh hasil radius 10 m XLSX", 10, 1, "002")

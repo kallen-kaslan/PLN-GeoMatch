@@ -2,16 +2,17 @@
 
 from typing import Annotated, Any, Literal
 
-from fastapi import APIRouter, Depends, HTTPException, Query
-from pydantic import BaseModel, ConfigDict, Field, field_validator
-from sqlalchemy import and_, case, func, or_
-from sqlalchemy.exc import SQLAlchemyError
-from sqlalchemy.orm import Session, defer, object_session
-
-from app.auth import require_operator, require_viewer
 from app.database import get_db
-from app.models.pdpj import PdpjChange, PdpjRecommendation, PdpjReview, PdpjRow
+from app.models.pdpj import (
+    PdpjChange,
+    PdpjRecommendation,
+    PdpjReview,
+    PdpjRow,
+    pdpj_coordinates_missing,
+    pdpj_issue_count,
+)
 from app.models.upload import DatasetType, SourceRecord, UploadBatch
+from app.modules.auth.security import CurrentActor
 from app.modules.master.router import batch_info
 from app.modules.pdpj.service import (
     advance_review,
@@ -25,9 +26,16 @@ from app.modules.pdpj.service import (
     refresh_rows,
     update_fields,
 )
+from app.modules.pdpj.summary import review_counts, saved_total
 from app.modules.upload.storage import database_write_error
 from app.pdpj_warning_schema import DUPLICATE_IDPEL
 from app.processing_activity import monitor_request, request_activity
+from app.search_index import pending_search, prepare_search, search_candidates
+from fastapi import APIRouter, Depends, HTTPException, Query
+from pydantic import BaseModel, ConfigDict, Field, field_validator
+from sqlalchemy import case, func, or_
+from sqlalchemy.exc import SQLAlchemyError
+from sqlalchemy.orm import Session, defer, object_session
 
 DbSession = Annotated[Session, Depends(get_db)]
 router = APIRouter(prefix="/pdpj", tags=["Validasi PDPJ"])
@@ -143,7 +151,7 @@ def selected_row(db: Session, review_id: int, row_id: int) -> PdpjRow:
     return row
 
 
-@router.get("/batches", dependencies=[require_viewer])
+@router.get("/batches")
 def list_batches(db: DbSession) -> list[dict[str, Any]]:
     """List PDPJ uploads separately from masters and correction data."""
     return [
@@ -155,7 +163,7 @@ def list_batches(db: DbSession) -> list[dict[str, Any]]:
     ]
 
 
-@router.get("/batches/{batch_id}", dependencies=[require_viewer])
+@router.get("/batches/{batch_id}")
 def batch_preview(batch_id: int, db: DbSession) -> dict[str, Any]:
     """Resume mapping of an already uploaded PDPJ file."""
     batch = pdpj_batch(db, batch_id)
@@ -175,7 +183,7 @@ def batch_preview(batch_id: int, db: DbSession) -> dict[str, Any]:
     }
 
 
-@router.get("/batches/{batch_id}/reviews", dependencies=[require_viewer])
+@router.get("/batches/{batch_id}/reviews")
 def list_reviews(batch_id: int, db: DbSession) -> list[dict[str, Any]]:
     """Retain completed checks when the operator starts a new validation version."""
     pdpj_batch(db, batch_id)
@@ -191,7 +199,7 @@ def list_reviews(batch_id: int, db: DbSession) -> list[dict[str, Any]]:
     ]
 
 
-@router.post("/reviews", dependencies=[require_operator])
+@router.post("/reviews")
 def start_review(req: StartReview, db: DbSession) -> dict[str, Any]:
     """Match every PDPJ identity against every observation in the selected sources."""
     if req.incremental:
@@ -201,7 +209,7 @@ def start_review(req: StartReview, db: DbSession) -> dict[str, Any]:
     return review_info(create_review(db, req.batch_id, req.master_batch_ids))
 
 
-@router.post("/reviews/{review_id}/advance", dependencies=[require_operator])
+@router.post("/reviews/{review_id}/advance")
 @monitor_request("pdpj", "review_id", "matching")
 def advance_processing(
     review_id: int, req: ProcessingStep, db: DbSession
@@ -213,7 +221,7 @@ def advance_processing(
         raise database_write_error(db, exc, "pemeriksaan PDPJ") from exc
 
 
-@router.post("/reviews/{review_id}/pause", dependencies=[require_operator])
+@router.post("/reviews/{review_id}/pause")
 @monitor_request("pdpj", "review_id", "pausing")
 def pause_processing(review_id: int, db: DbSession) -> dict[str, Any]:
     """Wait for the active chunk and preserve all committed results."""
@@ -223,7 +231,7 @@ def pause_processing(review_id: int, db: DbSession) -> dict[str, Any]:
         raise database_write_error(db, exc, "jeda pemeriksaan PDPJ") from exc
 
 
-@router.post("/reviews/{review_id}/resume", dependencies=[require_operator])
+@router.post("/reviews/{review_id}/resume")
 @monitor_request("pdpj", "review_id", "resuming")
 def resume_processing(review_id: int, db: DbSession) -> dict[str, Any]:
     """Continue with the saved sources and cursors, never create another review."""
@@ -233,50 +241,20 @@ def resume_processing(review_id: int, db: DbSession) -> dict[str, Any]:
         raise database_write_error(db, exc, "kelanjutan pemeriksaan PDPJ") from exc
 
 
-@router.get("/reviews/{review_id}/progress", dependencies=[require_viewer])
+@router.get("/reviews/{review_id}/progress")
 def processing_status(review_id: int, db: DbSession) -> dict[str, Any]:
     """Return a lightweight checkpoint and actual in-flight activity."""
     return review_info(get_review(db, review_id))
 
 
-@router.get("/reviews/{review_id}", dependencies=[require_viewer])
+@router.get("/reviews/{review_id}")
 def review_summary(review_id: int, db: DbSession) -> dict[str, Any]:
     """Aggregate the entire review, independent of row filters and pagination."""
     review = get_review(db, review_id)
-    query = db.query(PdpjRow).filter(PdpjRow.review_id == review.id)
-    unresolved = and_(
-        func.json_array_length(PdpjRow.issues) > 0, PdpjRow.exception.is_(False)
-    )
-    total, found, not_found, empty, invalid, incomplete, exceptions, pending = (
-        query.with_entities(
-            func.count(PdpjRow.id),
-            func.count(PdpjRow.id).filter(PdpjRow.existence == "found"),
-            func.count(PdpjRow.id).filter(PdpjRow.existence == "not_found"),
-            func.count(PdpjRow.id).filter(PdpjRow.existence == "empty"),
-            func.count(PdpjRow.id).filter(PdpjRow.existence == "invalid"),
-            func.count(PdpjRow.id).filter(
-                or_(
-                    PdpjRow.current_fields["lat"].as_float().is_(None),
-                    PdpjRow.current_fields["lon"].as_float().is_(None),
-                )
-            ),
-            func.count(PdpjRow.id).filter(PdpjRow.exception.is_(True)),
-            func.count(PdpjRow.id).filter(unresolved),
-        ).one()
-    )
+    counts = review_counts(db, review)
     return {
         **review_info(review),
-        "summary": {
-            "total_rows": total,
-            "found": found,
-            "not_found": not_found,
-            "empty": empty,
-            "invalid": invalid,
-            "incomplete_coordinates": incomplete,
-            "exceptions": exceptions,
-            "unresolved": pending,
-            "ready": total - pending - exceptions,
-        },
+        "summary": counts,
         "masters": [
             batch_info(batch)
             for batch in db.query(UploadBatch)
@@ -294,7 +272,7 @@ def review_summary(review_id: int, db: DbSession) -> dict[str, Any]:
     }
 
 
-@router.get("/reviews/{review_id}/rows", dependencies=[require_viewer])
+@router.get("/reviews/{review_id}/rows")
 def list_rows(
     review_id: int,
     db: DbSession,
@@ -314,9 +292,13 @@ def list_rows(
     limit: int = Query(25, ge=1, le=100),
 ) -> dict[str, Any]:
     """Include invalid and empty identities rather than silently discarding rows."""
-    get_review(db, review_id)
+    review = get_review(db, review_id)
     query = db.query(PdpjRow).filter(PdpjRow.review_id == review_id)
     if q.strip():
+        state = prepare_search(db, ("pdpj",))
+        if state and not state["ready"]:
+            return pending_search(state)
+        query = query.filter(search_candidates(db, (("pdpj", PdpjRow.id),), q))
         pattern = (
             "%"
             + q.strip().replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
@@ -326,30 +308,30 @@ def list_rows(
             or_(
                 *(
                     PdpjRow.current_fields[key].as_string().ilike(pattern, escape="\\")
-                    for key in ("idpel", "nama", "target_ref")
+                    for key in (
+                        "idpel",
+                        "nama",
+                        "target_ref",
+                        "meter_ref",
+                        "nomor_meter_kwh",
+                        "nomor_meter_prepaid",
+                    )
                 )
             )
         )
     if status in {"found", "not_found", "empty", "invalid"}:
         query = query.filter(PdpjRow.existence == status)
     elif status == "incomplete":
-        query = query.filter(
-            or_(
-                PdpjRow.current_fields["lat"].as_float().is_(None),
-                PdpjRow.current_fields["lon"].as_float().is_(None),
-            )
-        )
+        query = query.filter(pdpj_coordinates_missing().is_(True))
     elif status == "unresolved":
-        query = query.filter(
-            func.json_array_length(PdpjRow.issues) > 0, PdpjRow.exception.is_(False)
-        )
+        query = query.filter(pdpj_issue_count() > 0, PdpjRow.exception.is_(False))
     elif status == "exception":
         query = query.filter(PdpjRow.exception.is_(True))
     elif status == "ready":
-        query = query.filter(
-            func.json_array_length(PdpjRow.issues) == 0, PdpjRow.exception.is_(False)
-        )
-    total = query.with_entities(func.count(PdpjRow.id)).scalar() or 0
+        query = query.filter(pdpj_issue_count() == 0, PdpjRow.exception.is_(False))
+    total = saved_total(db, review, status) if not q.strip() else None
+    if total is None:
+        total = query.with_entities(func.count(PdpjRow.id)).scalar() or 0
     page_ids = (
         query.with_entities(PdpjRow.id)
         .order_by(PdpjRow.row_number, PdpjRow.id)
@@ -370,7 +352,7 @@ def list_rows(
     }
 
 
-@router.get("/reviews/{review_id}/rows/{row_id}", dependencies=[require_viewer])
+@router.get("/reviews/{review_id}/rows/{row_id}")
 def row_detail(
     review_id: int,
     row_id: int,
@@ -427,20 +409,20 @@ def row_detail(
     }
 
 
-@router.patch("/reviews/{review_id}/rows/{row_id}", dependencies=[require_operator])
+@router.patch("/reviews/{review_id}/rows/{row_id}")
 def edit_row(
-    review_id: int, row_id: int, req: EditRow, db: DbSession
+    review_id: int, row_id: int, req: EditRow, db: DbSession, actor: CurrentActor
 ) -> dict[str, Any]:
     """Apply manual partial corrections and retain before/after history."""
     review = get_review(db, review_id, req.revision)
     row = selected_row(db, review_id, row_id)
-    update_fields(db, review, row, req.fields, req.actor, req.reason)
+    update_fields(db, review, row, req.fields, actor, req.reason)
     return {"revision": review.revision, **row_info(row)}
 
 
-@router.post("/reviews/{review_id}/rows/{row_id}/apply", dependencies=[require_operator])
+@router.post("/reviews/{review_id}/rows/{row_id}/apply")
 def apply_recommendation(
-    review_id: int, row_id: int, req: ApplyRecommendation, db: DbSession
+    review_id: int, row_id: int, req: ApplyRecommendation, db: DbSession, actor: CurrentActor
 ) -> dict[str, Any]:
     """Fill selected fields from exactly one stored recommendation."""
     review = get_review(db, review_id, req.revision)
@@ -453,7 +435,7 @@ def apply_recommendation(
         review,
         row,
         {key: recommendation.fields.get(key) for key in req.fields},
-        req.actor,
+        actor,
         req.reason,
         recommendation,
         req.overwrite,
@@ -461,9 +443,9 @@ def apply_recommendation(
     return {"revision": review.revision, **row_info(row)}
 
 
-@router.post("/reviews/{review_id}/rows/{row_id}/decision", dependencies=[require_operator])
+@router.post("/reviews/{review_id}/rows/{row_id}/decision")
 def decide_row(
-    review_id: int, row_id: int, req: DecideRow, db: DbSession
+    review_id: int, row_id: int, req: DecideRow, db: DbSession, actor: CurrentActor
 ) -> dict[str, Any]:
     """Require a reason for unresolved exceptions and preserve reopening decisions."""
     review = get_review(db, review_id, req.revision)
@@ -477,19 +459,19 @@ def decide_row(
     row.reviewed = req.action != "reopen"
     row.exception = req.action == "exception"
     row.exception_reason = req.reason.strip() if row.exception else ""
-    record_change(db, row, req.action, req.actor, req.reason.strip(), before)
+    record_change(db, row, req.action, actor, req.reason.strip(), before)
     review.revision += 1
     db.commit()
     return {"revision": review.revision, **row_info(row)}
 
 
-@router.post("/reviews/{review_id}/complete", dependencies=[require_operator])
+@router.post("/reviews/{review_id}/complete")
 @monitor_request("pdpj", "review_id", "publishing")
-def finish_review(review_id: int, req: ReviewAction, db: DbSession) -> dict[str, Any]:
+def finish_review(review_id: int, req: ReviewAction, db: DbSession, actor: CurrentActor) -> dict[str, Any]:
     """Finalize clean rows together; exceptions must already carry explicit reasons."""
     try:
         review = get_review(db, review_id, req.revision)
-        _, published = complete_validation(db, review, req.actor)
+        _, published = complete_validation(db, review, actor)
         return {**review_info(review), "published_review": review_info(published)}
     except HTTPException:
         db.rollback()
@@ -498,10 +480,10 @@ def finish_review(review_id: int, req: ReviewAction, db: DbSession) -> dict[str,
         raise database_write_error(db, exc, "penyelesaian PDPJ") from exc
 
 
-@router.post("/reviews/{review_id}/complete-with-exceptions", dependencies=[require_operator])
+@router.post("/reviews/{review_id}/complete-with-exceptions")
 @monitor_request("pdpj", "review_id", "publishing")
 def finish_with_exceptions(
-    review_id: int, req: CompleteWithExceptions, db: DbSession
+    review_id: int, req: CompleteWithExceptions, db: DbSession, actor: CurrentActor
 ) -> dict[str, Any]:
     """Finalize after an explicit, audited deferral of all remaining problem rows."""
     try:
@@ -509,7 +491,7 @@ def finish_with_exceptions(
         added, published = complete_validation(
             db,
             review,
-            req.actor,
+            actor,
             exception_reason=req.reason,
             expected_unresolved=req.expected_unresolved,
         )

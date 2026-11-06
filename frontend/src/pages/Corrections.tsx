@@ -1,6 +1,9 @@
+import { useDebouncedSearch } from "@/hooks/useDebouncedSearch";
+import { SearchFeedback } from "@/components/data/SearchFeedback";
+import { searchPreparing, searchRefreshInterval } from "@/lib/search";
 import { MetricCard, type MetricTone } from "@/components/data/MetricCard";
 import { buttonClass } from "@/lib/button";
-import { useDeferredValue, useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Link, Navigate, useParams, useSearchParams } from "react-router-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { AlertCircle, CheckCircle2, FolderUp, LoaderCircle, Pause, Plus, RefreshCw } from "lucide-react";
@@ -17,11 +20,6 @@ import { usePdpjUpdate } from "@/hooks/usePdpjUpdate";
 const control = "min-w-0 rounded-lg border border-ui-border bg-white px-3 py-2 text-sm disabled:opacity-50";
 const button = buttonClass.secondary;
 const count = (value: number | undefined) => value === undefined ? "—" : value.toLocaleString("id-ID");
-
-function savedActor(kind: CorrectionKind, fallback: string): string {
-  try { return sessionStorage.getItem(`pln_geomatch_correction_actor_${kind}`) ?? fallback; }
-  catch { return fallback; }
-}
 
 function CompletedDialog({ run, onClose }: { run: CorrectionRun; onClose: () => void }) {
   const dialog = useRef<HTMLDialogElement>(null);
@@ -40,22 +38,18 @@ function CorrectionWorkspace({ kind }: { kind: CorrectionKind }) {
   const canOperate = user?.role === "admin" || user?.role === "analis";
   const queryClient = useQueryClient();
   const [params, setParams] = useSearchParams();
-  const [actor, setActor] = useState(() => savedActor(kind, user?.username ?? ""));
+  const actor = user?.username ?? "";
   const reviewChoice = Number(params.get("pdpj_review_id")) || null;
   const radiusChoice = params.get("radius_meters");
   const setDraft = (key: string, value: string) => {
-    const next = new URLSearchParams(params);
+    const next = new URLSearchParams(window.location.search);
     if (value) next.set(key, value); else next.delete(key);
     setParams(next, { replace: true });
   };
-  useEffect(() => {
-    try { sessionStorage.setItem(`pln_geomatch_correction_actor_${kind}`, actor); }
-    catch { /* Keep the editable label available when browser storage is disabled. */ }
-  }, [actor, kind]);
   const [showImport, setShowImport] = useState(false);
   const [resumeId, setResumeId] = useState<number | null>(null);
   const [search, setSearch] = useState("");
-  const deferredSearch = useDeferredValue(search);
+  const deferredSearch = useDebouncedSearch(search);
   const [status, setStatus] = useState<CorrectionFilter>("all");
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(25);
@@ -95,7 +89,8 @@ function CorrectionWorkspace({ kind }: { kind: CorrectionKind }) {
   const partialResults = !!displayedRun?.processing && displayedRun.status !== "completed";
   const scope: CorrectionScope = { batch_id: batchId ?? undefined, process_id: processId ?? undefined, generation: activeGeneration };
   const summary = useQuery({ queryKey: ["corrections", kind, "summary", batchId, processId, activeGeneration], queryFn: () => correctionApi.summary(kind, scope), enabled: scopeReady });
-  const records = useQuery({ queryKey: ["corrections", kind, "rows", batchId, processId, activeGeneration, deferredSearch, status, page, pageSize], queryFn: ({ signal }) => correctionApi.rows(kind, { ...scope, q: deferredSearch, status, skip: (page - 1) * pageSize, limit: pageSize }, signal), enabled: scopeReady });
+  const records = useQuery({ queryKey: ["corrections", kind, "rows", batchId, processId, activeGeneration, deferredSearch, status, page, pageSize], queryFn: ({ signal }) => correctionApi.rows(kind, { ...scope, q: deferredSearch, status, skip: (page - 1) * pageSize, limit: pageSize }, signal), enabled: scopeReady && search === deferredSearch, refetchInterval: searchRefreshInterval });
+  const searchBusy = search !== deferredSearch || searchPreparing(records.data);
   const saved = useQuery({ queryKey: ["corrections", kind, "batch", resumeId], queryFn: () => correctionApi.batch(kind, resumeId!), enabled: resumeId !== null });
   const reviewId = reviewChoice ?? check.data?.pdpj_review_id ?? (!restoring && !processId ? readyPdpj.data?.[0]?.review_id : null) ?? null;
   const radius = radiusChoice ?? (restoring ? "" : String(check.data?.latest_run.radius_meters ?? 100));
@@ -171,13 +166,15 @@ function CorrectionWorkspace({ kind }: { kind: CorrectionKind }) {
       {!readyPdpj.isPending && !readyPdpj.data?.length && !check.data && <p className="rounded-lg border border-amber-700 bg-amber-50 p-3 text-xs text-amber-900">Selesaikan pemeriksaan melalui <Link to="/pdpj" className="font-semibold underline">Data PDPJ</Link> sebelum menjalankan koreksi.</p>}
       {batch && batch.status !== "completed" && <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-amber-700 bg-amber-50 p-3 text-xs text-amber-900"><p>Berkas menunggu konfirmasi mapping.</p><button type="button" onClick={() => { setResumeId(batch.id); setShowImport(true); }} className={button}>Lanjutkan mapping koreksi</button></div>}
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-        <label className="flex flex-col gap-1.5 text-xs font-semibold">Petugas untuk riwayat<input aria-label="Petugas untuk riwayat" value={actor} onChange={(event) => setActor(event.target.value)} maxLength={80} className={control} placeholder="Isi nama petugas" /></label>
+        <label className="flex flex-col gap-1.5 text-xs font-semibold">Petugas untuk riwayat<input aria-label="Petugas untuk riwayat" value={actor} readOnly maxLength={80} className={control} placeholder="Isi nama petugas" /></label>
         <label className="flex flex-col gap-1.5 text-xs font-semibold">Radius pemeriksaan (meter)<input aria-label="Radius pemeriksaan (meter)" type="number" min="0.01" max="100000" step="any" value={radius} onChange={(event) => setDraft("radius_meters", event.target.value)} disabled={sourceLocked || processingActive || execute.isPending} className={control} /></label>
-        {canOperate && (
+        {canOperate ? (
           <div className="flex flex-wrap items-end gap-2">
             <button type="button" onClick={() => execute.mutate({ requestKey: crypto.randomUUID(), fresh: !check.data || !!newSource })} disabled={blocked} className={buttonClass.primary}>{execute.isPending || (pending && processingActive && !newSource) ? <LoaderCircle size={16} className="animate-spin" /> : paused && !newSource ? <Pause size={16} /> : <CheckCircle2 size={16} />}{restoring ? "Memulihkan pemeriksaan..." : execute.isPending ? "Menyiapkan pemeriksaan..." : upgradePaused && !newSource ? "Periksa ulang dengan seluruh observasi": pending && !newSource ? paused ? "Pemeriksaan dijeda" : waitingToResume ? "Menunggu dilanjutkan" : "Pemeriksaan berjalan…" : check.data && !newSource ? "Periksa ulang" : "Jalankan pemeriksaan"}</button>
             {check.data && <button type="button" disabled={newCheckBlocked} onClick={() => execute.mutate({ requestKey: crypto.randomUUID(), fresh: true })} className={button}>Pemeriksaan baru</button>}
           </div>
+        ) : (
+          <div className="flex items-end"><p className="text-xs text-ui-muted">Auditor: akses baca saja</p></div>
         )}
       </div>
       {savedPause && <p role="status" className="rounded-lg border border-blue-700 bg-blue-50 p-3 text-xs text-blue-950">Pemeriksaan lama sudah dijeda dan hasilnya tersimpan. Pilih versi PDPJ lain lalu jalankan pemeriksaan baru, atau gunakan tombol Pemeriksaan baru. Hasil dan pilihan kandidat lama tetap tersimpan. Untuk melanjutkan proses lama, gunakan panel progres.</p>}
@@ -199,9 +196,10 @@ function CorrectionWorkspace({ kind }: { kind: CorrectionKind }) {
     <section className="space-y-4 rounded-lg border border-ui-border bg-white p-4  sm:p-5">
       <div><h2 className="text-sm font-semibold">Daftar {descriptor.label}</h2><p className="mt-1 text-xs text-ui-muted">Kategori mengikuti berkas asal. Ringkasan menghitung seluruh baris pada berkas/versi terpilih, terpisah dari pencarian dan halaman tabel.</p>{processId && displayedRun && (displayedRun.status === "completed" || (displayedRun.processing?.processed_rows ?? 0) > 0) ? <Link to={`/peta-koreksi?category=${kind}&batch_id=${batchId}&process_id=${processId}${activeGeneration ? `&generation=${activeGeneration}` : ""}`} className="mt-3 inline-block text-xs font-semibold underline">Buka Peta Koreksi</Link> : null}</div>
       <div className="grid gap-3 md:grid-cols-2"><label className="flex min-w-0 flex-col gap-1.5 text-xs font-semibold">Pemeriksaan tersimpan<select aria-label="Pemeriksaan tersimpan" value={processId ?? ""} disabled={!checks.data?.length || execute.isPending} onChange={(event) => { setParams({ batch_id: String(batchId), process_id: event.target.value }); setRecordId(null);  setPage(1); setWaitingRun(null); }} className={control}><option value="" disabled>Belum ada pemeriksaan</option>{checks.data?.map((item) => <option key={item.process_id} value={item.process_id}>Pemeriksaan #{item.process_id} · PDPJ #{item.pdpj_review_id}</option>)}</select></label><label className="flex min-w-0 flex-col gap-1.5 text-xs font-semibold">Versi hasil<select aria-label="Versi hasil" value={generation ?? ""} disabled={!check.data?.runs.some((run) => run.status === "completed" || run.processing)} onChange={(event) => { const next = { batch_id: String(batchId), process_id: String(processId), ...(event.target.value ? { generation: event.target.value } : {}) }; setParams(next); setRecordId(null); setPage(1); }} className={control}><option value="">Hasil terbaru tersimpan</option>{check.data?.runs.filter((run) => run.status === "completed" || run.processing).map((run) => <option key={run.id} value={run.generation}>Versi {run.generation} · Radius {count(run.radius_meters)} m{run.status !== "completed" ? " (hasil sementara)" : ""}</option>)}</select></label></div>
-      <div className="flex flex-col gap-3 sm:flex-row"><input type="search" aria-label="Cari data koreksi" placeholder="Cari IDPEL, nama, meter, agenda, atau referensi…" value={search} onChange={(event) => { setSearch(event.target.value); setPage(1); }} className={`${control} flex-1`} /><select aria-label="Filter hasil koreksi" value={status} onChange={(event) => { setStatus(event.target.value as CorrectionFilter); setPage(1); }} className={control}><option value="all">Semua kondisi</option>{Object.entries(searchLabel).map(([key, label]) => <option key={key} value={key}>{label}</option>)}<option value="identity_found">IDPEL ditemukan di master</option><option value="identity_not_found">IDPEL tidak ditemukan di master</option></select></div>
-      <div className="overflow-x-auto rounded-lg border border-ui-border"><table className="w-full min-w-[1000px] text-left text-[13px]"><thead className="bg-ui-table-head"><tr>{["Baris", "IDPEL / Nama", "Referensi", "Koordinat", "Keberadaan IDPEL", "Hasil pemeriksaan", "Kandidat", "Detail"].map((label) => <th key={label} className="p-3">{label}</th>)}</tr></thead><tbody>{records.isPending ? <tr><td colSpan={8} className="p-8 text-center">Memuat data koreksi…</td></tr> : records.isError ? <tr><td colSpan={8} className="p-8 text-center text-red-700">Data belum dapat dimuat.</td></tr> : records.data?.items.length ? records.data.items.map((row) => <tr key={row.id} className={`border-t border-gray-200 ${recordId === row.id ? "bg-amber-50" : "hover:bg-neo-white"}`}><td className="p-3 font-mono">{row.row_number}</td><td className="p-3"><p className="font-mono font-semibold">{displayValue(row.fields.idpel)}</p><p className="mt-1 max-w-48 truncate">{displayValue(row.fields.nama)}</p></td><td className="p-3 font-mono">{displayValue(row.fields.meter_ref || row.fields.agenda_ref || row.fields.survey_ref || row.fields.target_ref)}</td><td className="p-3 font-mono">{displayValue(row.fields.lat)}, {displayValue(row.fields.lon)}</td><td className="p-3">{identityLabel[row.identity_status]}</td><td className={`p-3 font-semibold ${row.search_status === "pdpj_conflict" || row.search_status === "invalid_data" ? "text-red-700" : row.search_status === "matched" ? "text-green-800" : "text-amber-900"}`}>{searchLabel[row.search_status]}</td><td className="p-3">{row.candidate_count}</td><td className="p-3"><button type="button" aria-label={`Detail koreksi baris ${row.row_number}`} onClick={() => setRecordId(row.id)} className={button}>Detail</button></td></tr>) : <tr><td colSpan={8} className="p-8 text-center">{batch?.status !== "completed" && batch ? "Selesaikan mapping untuk menampilkan baris koreksi." : "Belum ada data sesuai berkas atau filter yang dipilih."}</td></tr>}</tbody></table></div>
-      <PreviewPagination context="koreksi" page={page} pageSize={pageSize} total={records.data?.total} loading={records.isFetching} key={`${batchId}-${processId}-${activeGeneration}-${deferredSearch}-${status}-${pageSize}`} onPageChange={setPage} onPageSizeChange={setPageSize} />
+      <div className="flex flex-col gap-3 sm:flex-row"><input type="search" maxLength={120} aria-label="Cari data koreksi" placeholder="Cari IDPEL, nama, meter, agenda, atau referensi…" value={search} onChange={(event) => { setSearch(event.target.value); setPage(1); }} className={`${control} flex-1`} /><select aria-label="Filter hasil koreksi" value={status} onChange={(event) => { setStatus(event.target.value as CorrectionFilter); setPage(1); }} className={control}><option value="all">Semua kondisi</option>{Object.entries(searchLabel).map(([key, label]) => <option key={key} value={key}>{label}</option>)}<option value="identity_found">IDPEL ditemukan di master</option><option value="identity_not_found">IDPEL tidak ditemukan di master</option></select></div>
+      <div className="overflow-x-auto rounded-lg border border-ui-border"><table className="w-full min-w-[1000px] text-left text-[13px]"><thead className="bg-ui-table-head"><tr>{["Baris", "IDPEL / Nama", "Referensi", "Koordinat", "Keberadaan IDPEL", "Hasil pemeriksaan", "Kandidat", "Detail"].map((label) => <th key={label} className="p-3">{label}</th>)}</tr></thead><tbody>{(records.isPending || searchBusy) ? <tr><td colSpan={8} className="p-8 text-center">Memuat data koreksi…</td></tr> : records.isError ? <tr><td colSpan={8} className="p-8 text-center text-red-700">Data belum dapat dimuat.</td></tr> : records.data?.items.length ? records.data.items.map((row) => <tr key={row.id} className={`border-t border-gray-200 ${recordId === row.id ? "bg-amber-50" : "hover:bg-neo-white"}`}><td className="p-3 font-mono">{row.row_number}</td><td className="p-3"><p className="font-mono font-semibold">{displayValue(row.fields.idpel)}</p><p className="mt-1 max-w-48 truncate">{displayValue(row.fields.nama)}</p></td><td className="p-3 font-mono">{displayValue(row.fields.meter_ref || row.fields.agenda_ref || row.fields.survey_ref || row.fields.target_ref)}</td><td className="p-3 font-mono">{displayValue(row.fields.lat)}, {displayValue(row.fields.lon)}</td><td className="p-3">{identityLabel[row.identity_status]}</td><td className={`p-3 font-semibold ${row.search_status === "pdpj_conflict" || row.search_status === "invalid_data" ? "text-red-700" : row.search_status === "matched" ? "text-green-800" : "text-amber-900"}`}>{searchLabel[row.search_status]}</td><td className="p-3">{row.candidate_count}</td><td className="p-3"><button type="button" aria-label={`Detail koreksi baris ${row.row_number}`} onClick={() => setRecordId(row.id)} className={button}>Detail</button></td></tr>) : <tr><td colSpan={8} className="p-8 text-center">{batch?.status !== "completed" && batch ? "Selesaikan mapping untuk menampilkan baris koreksi." : "Belum ada data sesuai berkas atau filter yang dipilih."}</td></tr>}</tbody></table></div>
+      <SearchFeedback state={records.data?.search_index} waiting={search !== deferredSearch} fetching={Boolean(search) && records.isFetching} />
+      <PreviewPagination context="koreksi" page={page} pageSize={pageSize} total={searchBusy ? undefined : records.data?.total} loading={(records.isFetching || searchBusy)} key={`${batchId}-${processId}-${activeGeneration}-${deferredSearch}-${status}-${pageSize}`} onPageChange={setPage} onPageSizeChange={setPageSize} />
     </section>
     {recordId !== null && <CorrectionDetail key={`${recordId}-${processId}-${generation ?? check.data?.current_generation}`} kind={kind} recordId={recordId} scope={scope} onClose={() => setRecordId(null)} />}
     {completed && <CompletedDialog run={completed} onClose={() => setDismissedRun(completed.id)} />}

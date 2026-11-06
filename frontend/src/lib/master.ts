@@ -1,3 +1,4 @@
+import type { SearchPage } from "@/lib/search";
 import { api } from "@/lib/api";
 
 export type MasterKind = "prabayar" | "pascabayar" | "dil";
@@ -169,7 +170,7 @@ export const masterApi = {
   batch: async (kind: MasterKind, id: number) => (await api.get<MasterBatchPreview>(`/master/${kind}/batches/${id}`)).data,
   summary: async (kind: MasterKind, batchId?: number, signal?: AbortSignal, details = true) => (await api.get<MasterSummary>(`/master/${kind}/summary`, { params: { batch_id: batchId, details }, signal })).data,
   records: async (kind: MasterKind, params: { batch_id?: number; q: string; status: MasterStatus; skip: number; limit: number }, signal?: AbortSignal) =>
-    (await api.get<{ total: number; items: MasterRecord[] }>(`/master/${kind}/records`, { params, signal })).data,
+    (await api.get<SearchPage<MasterRecord>>(`/master/${kind}/records`, { params, signal })).data,
   detail: async (kind: MasterKind, id: number) => (await api.get<MasterRecordDetail>(`/master/${kind}/records/${id}`)).data,
 };
 

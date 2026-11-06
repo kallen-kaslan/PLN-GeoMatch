@@ -29,7 +29,7 @@ def test_master_progress_is_saved_and_ready_snapshot_can_be_reused(page: Page, s
 
     page.route("**/corrections/idpel_kosong/checks/*/advance", hold_second)
     page.goto(f"/koreksi/idpel-kosong?batch_id={target}")
-    page.get_by_label("Petugas untuk riwayat", exact=True).fill("Petugas Persiapan")
+    expect(page.get_by_label("Petugas untuk riwayat", exact=True)).to_have_value("test-admin")
     page.get_by_label("Radius pemeriksaan (meter)", exact=True).fill("10")
     page.get_by_role("button", name="Jalankan pemeriksaan", exact=True).click()
     progress = page.get_by_role("region", name="Progres pemeriksaan koreksi")
@@ -57,7 +57,7 @@ def test_master_progress_is_saved_and_ready_snapshot_can_be_reused(page: Page, s
     assert ready["latest_run"]["processing"]["preparation"]["cached_rows"] == 5003
     page.get_by_role("button", name="Lihat hasil pemeriksaan", exact=True).click()
     expect(preparation.get_by_text("5.003 / 5.003 baris", exact=True)).to_be_visible()
-    page.get_by_label("Petugas untuk riwayat", exact=True).fill("Petugas Persiapan")
+    expect(page.get_by_label("Petugas untuk riwayat", exact=True)).to_have_value("test-admin")
     page.get_by_role("button", name="Pemeriksaan baru", exact=True).click()
     expect(page.get_by_role("dialog", name="Pemeriksaan koreksi selesai", exact=True)).to_be_visible(timeout=20000)
     page.get_by_role("button", name="Lihat hasil pemeriksaan", exact=True).click()

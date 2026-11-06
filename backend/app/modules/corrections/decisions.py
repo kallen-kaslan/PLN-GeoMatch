@@ -2,11 +2,6 @@
 
 from typing import Annotated, Any
 
-from fastapi import APIRouter, Depends, HTTPException, Query
-from pydantic import BaseModel, ConfigDict, Field, field_validator
-from sqlalchemy.orm import Session
-
-from app.auth import require_operator, require_viewer
 from app.database import get_db
 from app.models.correction import CorrectionCandidateEvidence, CorrectionTarget
 from app.models.correction_decision import CorrectionDecision
@@ -16,8 +11,12 @@ from app.models.matching import (
     ReconciliationProcess,
     ReviewStatus,
 )
+from app.modules.auth.security import CurrentActor
 from app.modules.corrections.service import CorrectionKind, check_process, selected_run
 from app.modules.pdpj.service import lock_review_session
+from fastapi import APIRouter, Depends, HTTPException, Query
+from pydantic import BaseModel, ConfigDict, Field, field_validator
+from sqlalchemy.orm import Session
 
 router = APIRouter()
 DbSession = Annotated[Session, Depends(get_db)]
@@ -89,7 +88,7 @@ def target_scope(
     return process
 
 
-@router.get("/{kind}/checks/{process_id}/records/{record_id}/choice", dependencies=[require_viewer])
+@router.get("/{kind}/checks/{process_id}/records/{record_id}/choice")
 def get_choice(
     kind: CorrectionKind,
     process_id: int,
@@ -103,13 +102,14 @@ def get_choice(
     return choice_history(db, process_id, record_id, generation)
 
 
-@router.post("/{kind}/checks/{process_id}/records/{record_id}/choice", dependencies=[require_operator])
+@router.post("/{kind}/checks/{process_id}/records/{record_id}/choice")
 def choose_candidate(
     kind: CorrectionKind,
     process_id: int,
     record_id: int,
     req: ChoiceRequest,
     db: DbSession,
+    actor: CurrentActor,
 ) -> dict[str, Any]:
     lock_review_session(db)
     process = target_scope(db, kind, process_id, record_id)
@@ -129,7 +129,7 @@ def choose_candidate(
             or existing.target_record_id != record_id
             or existing.candidate_id != req.candidate_id
             or existing.generation != req.generation
-            or existing.actor != req.actor
+            or existing.actor != actor
             or existing.reason != req.reason
             or existing.revision != req.expected_revision + 1
         ):
@@ -230,7 +230,7 @@ def choose_candidate(
             revision=req.expected_revision + 1,
             candidate_id=req.candidate_id,
             request_key=req.request_key,
-            actor=req.actor,
+            actor=actor,
             reason=req.reason,
             target_fields=target.fields,
             candidate=snapshot,

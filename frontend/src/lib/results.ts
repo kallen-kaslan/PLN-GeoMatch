@@ -1,3 +1,4 @@
+import type { SearchPage } from "@/lib/search";
 import { api } from "@/lib/api";
 import type { CorrectionDecision } from "@/lib/corrections";
 import type { CorrectionKind } from "@/lib/master";
@@ -33,7 +34,7 @@ async function spreadsheet(path: string, params: Record<string, unknown>, fallba
 export const resultsApi = {
   processes: async (signal?: AbortSignal) => (await api.get<ProcessHistory[]>("/history/processes", { signal })).data,
   rows: async (kind: CorrectionKind, id: number, params: { q: string; status: ResultFilter; skip: number; limit: number; generation?: number }, signal?: AbortSignal) =>
-    (await api.get<{ summary: ResultSummary; total: number; items: SavedResult[] }>(`/corrections/${kind}/checks/${id}/results`, { params, signal })).data,
+    (await api.get<SearchPage<SavedResult> & { summary: ResultSummary }>(`/corrections/${kind}/checks/${id}/results`, { params, signal })).data,
   history: async (kind: CorrectionKind, id: number, record_id: number | undefined, skip: number, signal?: AbortSignal, generation?: number) =>
     (await api.get<{ total: number; items: DecisionEvent[] }>(`/corrections/${kind}/checks/${id}/results/history`, { params: { record_id, skip, limit: 20, generation }, signal })).data,
   export: async (kind: CorrectionKind, id: number, params: { q: string; status: ResultFilter; generation?: number }) =>

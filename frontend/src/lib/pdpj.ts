@@ -1,3 +1,4 @@
+import type { SearchPage } from "@/lib/search";
 import { api } from "@/lib/api";
 import { masterFields, type MasterBatch, type MasterBatchPreview } from "@/lib/master";
 
@@ -58,7 +59,7 @@ export const pdpjApi = {
   pause: async (id: number) => (await api.post<PdpjReview>(`/pdpj/reviews/${id}/pause`)).data,
   resume: async (id: number) => (await api.post<PdpjReview>(`/pdpj/reviews/${id}/resume`)).data,
   summary: async (id: number, signal?: AbortSignal) => (await api.get<PdpjSummary>(`/pdpj/reviews/${id}`, { signal })).data,
-  rows: async (id: number, params: { q: string; status: PdpjStatus; skip: number; limit: number }, signal?: AbortSignal) => (await api.get<{ total: number; items: PdpjRow[] }>(`/pdpj/reviews/${id}/rows`, { params, signal })).data,
+  rows: async (id: number, params: { q: string; status: PdpjStatus; skip: number; limit: number }, signal?: AbortSignal) => (await api.get<SearchPage<PdpjRow>>(`/pdpj/reviews/${id}/rows`, { params, signal })).data,
   detail: async (id: number, rowId: number, skip: number) => (await api.get<PdpjDetail>(`/pdpj/reviews/${id}/rows/${rowId}`, { params: { skip, limit: 10 } })).data,
   edit: async (id: number, rowId: number, body: { revision: number; actor: string; reason: string; fields: Fields }) => (await api.patch(`/pdpj/reviews/${id}/rows/${rowId}`, body)).data,
   apply: async (id: number, rowId: number, body: { revision: number; actor: string; reason: string; recommendation_id: number; fields: string[]; overwrite: boolean }) => (await api.post(`/pdpj/reviews/${id}/rows/${rowId}/apply`, body)).data,
