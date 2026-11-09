@@ -1,5 +1,5 @@
 from pathlib import Path
-from typing import Literal
+from typing import Literal, Optional
 
 from pydantic import Field, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -24,6 +24,8 @@ class Settings(BaseSettings):
     AUTH_LOGIN_IP_LIMIT: int = Field(40, ge=5, le=200)
     CORS_ALLOWED_ORIGINS: list[str] = ["http://localhost:5173", "http://127.0.0.1:5173"]
     ALLOW_TEST_DATA_TOOLS: bool = False
+    SUPABASE_URL: Optional[str] = None  # Konfigurasi Supabase (Opsional)
+    SUPABASE_JWT_SECRET: Optional[str] = None  # Supabase JWT secret (Opsional)
 
     @model_validator(mode="after")
     def secure_production(self):
@@ -39,6 +41,8 @@ class Settings(BaseSettings):
                 for origin in self.CORS_ALLOWED_ORIGINS
             ):
                 raise ValueError("Origin produksi wajib memakai HTTPS")
+            if self.SUPABASE_URL and not self.SUPABASE_URL.startswith("https://"):
+                raise ValueError("SUPABASE_URL produksi wajib memakai HTTPS")
         return self
 
 

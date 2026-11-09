@@ -1,4 +1,4 @@
-import { useRef, useState, type ChangeEvent } from "react";
+import { useEffect, useRef, useState, type ChangeEvent } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { AlertCircle, ArrowRight, FileSpreadsheet, LoaderCircle, Upload, X } from "lucide-react";
 import { api, type ApiError } from "@/lib/api";
@@ -77,9 +77,17 @@ export function MasterImport({ kind, saved, onSaved, onCancel }: {
     onSuccess: async (result) => {
       progress.finish("completed");
       await queryClient.invalidateQueries({ queryKey: ["upload-files"] });
+      await queryClient.invalidateQueries({ queryKey: ["masters", kind] });
       onSaved(result, selectedArchive?.filename ?? file?.name ?? saved?.filename ?? "Berkas master");
     },
   });
+
+  // Auto-refetch upload files history when mutation succeeds to refresh sheet list
+  useEffect(() => {
+    if (mutation.isSuccess && !mutation.isPending) {
+      void history.refetch();
+    }
+  }, [mutation.isSuccess, history]);
 
   const chooseFile = async (event: ChangeEvent<HTMLInputElement>) => {
     const chosen = event.target.files?.[0];
@@ -97,6 +105,7 @@ export function MasterImport({ kind, saved, onSaved, onCancel }: {
       });
       await queryClient.cancelQueries({ queryKey: ["upload-files"] });
       queryClient.setQueryData<UploadFileHistory[]>(["upload-files"], (previous) => [archived, ...(previous ?? []).filter((item) => item.id !== archived.id)]);
+      await queryClient.invalidateQueries({ queryKey: ["upload-files"] });
       if (version !== readVersion.current) return;
       setArchiveId(archived.id);
       await progress.waitForResume();
@@ -134,6 +143,10 @@ export function MasterImport({ kind, saved, onSaved, onCancel }: {
     } catch (error) {
       if (version === readVersion.current) { setParseError(readError(error)); progress.finish("failed"); }
     } finally { if (version === readVersion.current) setReading(false); }
+  };
+
+  const refreshSheetList = async () => {
+    await queryClient.invalidateQueries({ queryKey: ["upload-files"] });
   };
   const lockedFile = mutation.isPending;
   return (

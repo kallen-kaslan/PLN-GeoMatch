@@ -5,9 +5,10 @@ import { useAppStore } from "@/store/app";
 import { useEffect } from "react";
 
 export default function Shell() {
-  const { user, initialized } = useAppStore();
+  const { user, authStatus } = useAppStore();
   const navigate = useNavigate();
   const location = useLocation();
+  const initialized = authStatus !== "checking";
 
   useEffect(() => {
     if (initialized && !user) {
