@@ -12,6 +12,7 @@ export interface ProcessHistory {
   partial?: boolean; processing_state?: string;
 }
 export interface ResultSummary {
+  automatic_extension?: import("./corrections").CorrectionProcessing["automatic_extension"];
   process_id: number; process_name: string; category: CorrectionKind; batch_id: number; filename: string;
   pdpj_review_id: number; generation: number; radius_meters: number; matching_status: string;
   review_status: string; processing_state: string; partial: boolean; total_targets: number;

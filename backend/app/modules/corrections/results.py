@@ -13,6 +13,7 @@ from app.models.matching import (
     ReconciliationProcess,
 )
 from app.models.upload import SourceRecord, UploadBatch
+from app.modules.corrections.candidate_scope import candidate_scope
 from app.modules.corrections.decisions import decision_info
 from app.modules.corrections.export_data import (
     coordinate_sources,
@@ -136,6 +137,7 @@ def results_summary(
         "pdpj_review_id": check.pdpj_review_id,
         "generation": run.generation,
         "radius_meters": run.radius_meters,
+        "automatic_extension": (run.processing or {}).get("automatic_extension"),
         "matching_status": run.status.value,
         "review_status": process.review_status.value,
         "processing_state": (run.processing or {}).get("state", run.status.value),
@@ -150,7 +152,7 @@ def results_summary(
         "not_selected": max(0, total - chosen),
         "decision_events": events,
         "total_candidates": db.query(MatchCandidate.id)
-        .filter_by(process_id=process_id, generation=run.generation)
+        .filter(candidate_scope(run))
         .count(),
         "valid_count": chosen,
         "rejected_count": 0,

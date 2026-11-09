@@ -11,7 +11,7 @@ from app.models.master_sisa import (
     CorrectionObservationCatalog,
     MasterSisaRecord,
 )
-from app.models.matching import MatchCandidate
+from app.models.matching import MatchCandidate, MatchingRun, ReconciliationProcess
 from app.models.upload import SourceRecord, UploadBatch
 from app.modules.corrections.advanced_search import coordinate_distance, pinned_sources
 from app.modules.corrections.automatic import (
@@ -21,6 +21,7 @@ from app.modules.corrections.automatic import (
     decision_version,
     writable_run,
 )
+from app.modules.corrections.candidate_scope import candidate_scope
 from app.modules.corrections.export_data import result_columns
 from app.modules.corrections.observations import ALL_OBSERVATIONS_POLICY
 from app.modules.corrections.selection_state import identity_owners
@@ -37,6 +38,7 @@ from app.modules.spatial.master_preparation import cached_fields
 from fastapi import APIRouter, HTTPException
 from pydantic import Field
 from sqlalchemy import or_
+from sqlalchemy.orm import Session
 
 router = APIRouter()
 
@@ -54,6 +56,7 @@ class Edge(NamedTuple):
     source: int
     latitude: float
     longitude: float
+    master: int
 
 
 @router.post("/{kind}/checks/{process_id}/automatic/unpaired-search")
@@ -68,6 +71,17 @@ def search_unpaired(
     plan = build_plan(db, kind, process_id, req)
     if req.fingerprint != plan["fingerprint"]:
         raise HTTPException(409, "Pilihan atau usulan berubah. Muat ulang pratinjau.")
+    return find_unpaired(db, process, run, req, plan)
+
+
+def find_unpaired(
+    db: Session,
+    process: ReconciliationProcess,
+    run: MatchingRun,
+    req: UnpairedRequest,
+    plan: dict[str, Any],
+) -> dict[str, Any]:
+    process_id = process.id
     remaining = {item["record_id"]: item for item in plan["unpaired"]}
     if len(remaining) > 500:
         raise HTTPException(
@@ -119,6 +133,7 @@ def search_unpaired(
                     CorrectionMasterObservation.source_record_id,
                     CorrectionMasterObservation.latitude,
                     CorrectionMasterObservation.longitude,
+                    MasterSisaRecord.id,
                 )
                 .select_from(CorrectionMasterObservation)
                 .join(
@@ -140,6 +155,7 @@ def search_unpaired(
                 MasterSisaRecord.source_record_id,
                 MasterSisaRecord.latitude,
                 MasterSisaRecord.longitude,
+                MasterSisaRecord.id,
             ).filter(
                 MasterSisaRecord.snapshot_id == process.master_snapshot_id,
                 MasterSisaRecord.latitude.between(lat - delta, lat + delta),
@@ -166,13 +182,13 @@ def search_unpaired(
                 else longitude.between(low, high)
             )
         nearest: dict[str, Edge] = {}
-        for identity, source, y, x in locations:
+        for identity, source, y, x, master in locations:
             if identity in reserved or source is None:
                 continue
             distance = coordinate_distance(fields, {"lat": y, "lon": x})
             if distance is None or distance > req.search_radius_meters:
                 continue
-            edge = Edge(distance, record, identity, source, y, x)
+            edge = Edge(distance, record, identity, source, y, x, master)
             if identity not in nearest or edge < nearest[identity]:
                 nearest[identity] = edge
         available[record] = len(nearest)
@@ -219,16 +235,17 @@ def search_unpaired(
                 db.query(MatchCandidate.id)
                 .filter_by(
                     process_id=process_id,
-                    generation=run.generation,
                     target_record_id=record,
                     candidate_idpel=edge.identity,
                 )
+                .filter(candidate_scope(run))
                 .first()
                 if edge.distance <= run.radius_meters
                 else None
             )
             candidate = {
                 "idpel": edge.identity,
+                "master_record_id": edge.master,
                 "distance_meters": edge.distance,
                 "fields": {
                     **fields,
@@ -237,6 +254,7 @@ def search_unpaired(
                     "lon": edge.longitude,
                 },
                 "source": {
+                    "record_id": source.id,
                     "batch_id": batch.id,
                     "filename": batch.filename,
                     "source_sheet": batch.source_sheet,

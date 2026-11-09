@@ -12,6 +12,7 @@ from app.models.matching import (
     ReviewStatus,
 )
 from app.modules.auth.security import CurrentActor
+from app.modules.corrections.candidate_scope import candidate_scope
 from app.modules.corrections.selection_state import identity_owners
 from app.modules.corrections.service import CorrectionKind, check_process, selected_run
 from app.modules.pdpj.service import lock_review_session
@@ -193,7 +194,7 @@ def choose_candidate(
             .filter(
                 MatchCandidate.id == req.candidate_id,
                 MatchCandidate.process_id == process_id,
-                MatchCandidate.generation == req.generation,
+                candidate_scope(run),
                 MatchCandidate.target_record_id == record_id,
             )
             .first()

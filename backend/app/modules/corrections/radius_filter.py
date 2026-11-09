@@ -4,6 +4,7 @@ from typing import Any
 
 from app.models.matching import MatchCandidate, MatchingRun
 from app.models.upload import SourceRecord
+from app.modules.corrections.candidate_scope import candidate_scope
 from fastapi import HTTPException
 from sqlalchemy.orm import Session
 
@@ -19,7 +20,7 @@ def has_candidate_in_radius(db: Session, run: MatchingRun, radius: float):
         db.query(MatchCandidate.id)
         .filter(
             MatchCandidate.process_id == run.process_id,
-            MatchCandidate.generation == run.generation,
+            candidate_scope(run),
             MatchCandidate.target_record_id == SourceRecord.id,
             MatchCandidate.rank == 1,
             MatchCandidate.distance_meters <= radius,

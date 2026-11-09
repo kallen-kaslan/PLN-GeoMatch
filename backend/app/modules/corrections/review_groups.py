@@ -12,6 +12,7 @@ from app.modules.corrections.automatic import (
     build_plan,
     writable_run,
 )
+from app.modules.corrections.candidate_scope import candidate_scope
 from app.modules.corrections.selection_state import identity_owners
 from app.modules.corrections.service import CorrectionKind
 from fastapi import APIRouter, HTTPException
@@ -71,7 +72,7 @@ def group_review(
                 )
                 .filter(
                     MatchCandidate.process_id == run.process_id,
-                    MatchCandidate.generation == run.generation,
+                    candidate_scope(run),
                     MatchCandidate.target_record_id == record,
                 )
                 .order_by(MatchCandidate.rank, MatchCandidate.id)

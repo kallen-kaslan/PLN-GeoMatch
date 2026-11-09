@@ -4,7 +4,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Download, LoaderCircle, WandSparkles } from "lucide-react";
 import { buttonClass } from "@/lib/button";
 import type { ApiError } from "@/lib/api";
-import { correctionApi, type AutomaticPreview, type CorrectionRun } from "@/lib/corrections";
+import { correctionApi, type AutomaticMode, type AutomaticPreview, type CorrectionRun } from "@/lib/corrections";
 import type { CorrectionKind } from "@/lib/master";
 import { downloadSpreadsheet, resultsApi } from "@/lib/results";
 import { useDebouncedSearch } from "@/hooks/useDebouncedSearch";
@@ -27,7 +27,7 @@ export function AutomaticSelection({ kind, processId, batchId, run, radius, onRa
   kind: CorrectionKind; processId: number; batchId: number; run: CorrectionRun;
   radius: string; onRadiusChange: (value: string) => void;
   onBusyChange?: (value: boolean) => void;
-  tieStrategy: "review" | "suggest"; onTieStrategyChange: (value: "review" | "suggest") => void;
+  tieStrategy: "review" | "suggest"; onTieStrategyChange: (value: AutomaticMode) => void;
 }) {
   const client = useQueryClient();
   const [saved, setSaved] = useState<number | null>(null);
@@ -89,7 +89,7 @@ export function AutomaticSelection({ kind, processId, batchId, run, radius, onRa
       <p className="mt-1 text-xs text-ui-muted">Menggunakan kandidat dan sumber pada hasil versi {run.generation}. Pratinjau mencakup seluruh berkas, termasuk baris di luar halaman atau pencarian tabel.</p>
     </div>
     <div className="flex flex-wrap items-end gap-3">
-      <label className="flex flex-col gap-1.5 text-xs font-semibold">Penanganan jarak sama<select aria-label="Penanganan jarak sama" value={tieStrategy} disabled={writing} onChange={(event) => { reset(); onTieStrategyChange(event.target.value as "review" | "suggest"); }} className="rounded-lg border border-ui-border px-3 py-2 text-sm"><option value="review">Tinjau manual</option><option value="suggest">Usulkan pasangan untuk jarak sama</option></select></label>
+      <label className="flex flex-col gap-1.5 text-xs font-semibold">Penanganan jarak sama<select aria-label="Penanganan jarak sama" value={tieStrategy} disabled={writing} onChange={(event) => { reset(); onTieStrategyChange(event.target.value as AutomaticMode); }} className="rounded-lg border border-ui-border px-3 py-2 text-sm"><option value="review">Tinjau manual</option><option value="suggest">Usulkan pasangan untuk jarak sama</option><option value="complete">Pemilihan otomatis lengkap</option></select></label>
       <label className="flex flex-col gap-1.5 text-xs font-semibold">Radius pilihan otomatis (meter)
         <input aria-label="Radius pilihan otomatis (meter)" type="number" min="0.01" max={run.radius_meters} step="any" value={radius} disabled={writing}
           onChange={(event) => { reset(); onRadiusChange(event.target.value); }} className="w-52 rounded-lg border border-ui-border px-3 py-2 text-sm" />

@@ -7,6 +7,7 @@ from typing import NamedTuple
 
 from app.models.correction import CorrectionTarget
 from app.models.matching import MatchCandidate, MatchingRun
+from app.modules.corrections.candidate_scope import candidate_scope
 from sqlalchemy import and_, or_
 from sqlalchemy.orm import Session
 
@@ -43,7 +44,7 @@ def candidate_frontier(
         db.query(MatchCandidate.id)
         .filter(
             MatchCandidate.process_id == run.process_id,
-            MatchCandidate.generation == run.generation,
+            candidate_scope(run),
             MatchCandidate.target_record_id == CorrectionTarget.source_record_id,
         )
         .order_by(MatchCandidate.rank, MatchCandidate.id)
@@ -83,7 +84,7 @@ def candidate_frontier(
                 db.query(*columns)
                 .filter(
                     MatchCandidate.process_id == run.process_id,
-                    MatchCandidate.generation == run.generation,
+                    candidate_scope(run),
                     MatchCandidate.target_record_id == record,
                     MatchCandidate.rank >= pair.rank,
                     or_(

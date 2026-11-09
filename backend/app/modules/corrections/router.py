@@ -20,6 +20,8 @@ from app.models.upload import BatchStatus, DatasetType, SourceRecord, UploadBatc
 from app.modules.auth.security import CurrentActor
 from app.modules.corrections.advanced_search import router as advanced_search_router
 from app.modules.corrections.automatic import router as automatic_router
+from app.modules.corrections.candidate_scope import candidate_scope
+from app.modules.corrections.complete_selection import router as complete_router
 from app.modules.corrections.decisions import router as decisions_router
 from app.modules.corrections.map_summary import radius_summary
 from app.modules.corrections.pdpj_updates import pdpj_update_info
@@ -31,7 +33,6 @@ from app.modules.corrections.radius_filter import (
 )
 from app.modules.corrections.results import router as results_router
 from app.modules.corrections.review_groups import router as review_groups_router
-from app.modules.corrections.unpaired_search import router as unpaired_search_router
 from app.modules.corrections.selection_state import candidate_usage
 from app.modules.corrections.service import (
     CorrectionKind,
@@ -41,6 +42,7 @@ from app.modules.corrections.service import (
     selected_run,
     source_batch,
 )
+from app.modules.corrections.unpaired_search import router as unpaired_search_router
 from app.modules.master.router import batch_info
 from app.modules.spatial.pipeline import execute_pipeline
 from app.modules.upload.normalization import (
@@ -709,7 +711,7 @@ def list_records(
             db.query(MatchCandidate.target_record_id, func.count(MatchCandidate.id))
             .filter(
                 MatchCandidate.process_id == run.process_id,
-                MatchCandidate.generation == run.generation,
+                candidate_scope(run),
                 MatchCandidate.target_record_id.in_(identities),
                 MatchCandidate.distance_meters <= radius_meters,
             )
@@ -759,7 +761,7 @@ def record_detail(
         )
         .filter(
             MatchCandidate.process_id == process_id,
-            MatchCandidate.generation == (run.generation if run else -1),
+            candidate_scope(run) if run else MatchCandidate.generation == -1,
             MatchCandidate.target_record_id == record_id,
         )
     )
@@ -808,6 +810,7 @@ def record_detail(
 
 router.include_router(decisions_router)
 router.include_router(automatic_router)
+router.include_router(complete_router)
 router.include_router(review_groups_router)
 router.include_router(unpaired_search_router)
 router.include_router(advanced_search_router)

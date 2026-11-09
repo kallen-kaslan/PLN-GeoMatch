@@ -8,6 +8,7 @@ import { LoaderCircle, X } from "lucide-react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { CorrectionMap } from "@/components/corrections/CorrectionMap";
 import { CorrectionProgress } from "@/components/corrections/CorrectionProgress";
+import { AutomaticExtensionNote } from "@/components/corrections/AutomaticExtensionNote";
 import { PreviewPagination } from "@/components/data/PreviewPagination";
 import { MapRadiusSummary } from "@/components/corrections/MapRadiusSummary";
 import { coordinates } from "@/lib/correction-map";
@@ -223,6 +224,7 @@ function MapWorkspace({ kind, batchParam, processParam, generationParam, params,
       {!process && !checks.isPending && <p className="text-sm">Belum ada pemeriksaan. Selesaikan pemeriksaan pada Data Koreksi untuk menampilkan peta.</p>}
       {check.data && batch && check.data.batch_id !== batch && <p role="alert" className="text-red-700">Pemeriksaan tidak sesuai dengan berkas terpilih.</p>}
       {historical && <p role="status" className="text-sm text-amber-900">Anda melihat versi historis {generation}. Pilihan mengikuti riwayat hingga versi ini dan tidak dapat diubah. <button className="underline" onClick={() => updateView({ generation: null, radius_meters: String(check.data!.latest_run.radius_meters) })}>Buka versi terbaru</button></p>}
+      <AutomaticExtensionNote extension={run?.processing?.automatic_extension} />
       {partial && <p role="status" className="text-sm">{run.processing!.processed_rows.toLocaleString("id-ID")} dari {run.processing!.total_rows.toLocaleString("id-ID")} baris sudah tersimpan dan tersedia untuk koreksi di peta. Pilihan kandidat langsung disimpan. Pemeriksaan sisa baris dapat dilanjutkan melalui Data Koreksi tanpa mengubah pilihan yang sudah tersimpan.</p>}
       {radiusExpansion && busy && !check.data?.latest_run.processing && <LegacySearchProgress run={check.data!.latest_run} />}
       {check.data?.latest_run.status === "failed" && <p role="alert" className="text-sm text-red-700">Pencarian terakhir terhenti. Hasil yang sudah tersimpan tetap tersedia. Lanjutkan pemeriksaan melalui Data Koreksi.</p>}

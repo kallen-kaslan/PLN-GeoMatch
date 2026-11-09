@@ -70,6 +70,8 @@ def add_user(client, username="analis", role="analis"):
         ("POST", "/upload/progress"),
         ("POST", "/corrections/idpel_kosong/checks/1/automatic/preview"),
         ("POST", "/corrections/idpel_kosong/checks/1/automatic/apply"),
+        ("POST", "/corrections/idpel_kosong/checks/1/automatic/complete/preview"),
+        ("POST", "/corrections/idpel_kosong/checks/1/automatic/complete/apply"),
         ("POST", "/corrections/idpel_kosong/checks/1/automatic/review-groups"),
         ("POST", "/corrections/idpel_kosong/checks/1/automatic/suggestions/export"),
         ("POST", "/corrections/idpel_kosong/checks/1/automatic/unpaired-search"),
@@ -198,7 +200,7 @@ def test_auditor_read_only_and_password_change_revokes_all_sessions(secured):
     login(client, "audit01", OTHER_PASSWORD)
     assert client.get("/history/processes").status_code == 200
     assert client.post("/pdpj/reviews", json={"batch_id": 1}).status_code == 403
-    for action in ("preview", "apply", "review-groups", "suggestions/export", "unpaired-search", "unpaired-search/export"):
+    for action in ("preview", "apply", "review-groups", "suggestions/export", "unpaired-search", "unpaired-search/export", "complete/preview", "complete/apply"):
         assert client.post(f"/corrections/idpel_kosong/checks/1/automatic/{action}", json={}).status_code == 403
     old_token = client.cookies[cookie_name()]
     result = client.post(

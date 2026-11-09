@@ -3,9 +3,11 @@ import { Link, useSearchParams } from "react-router-dom";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { LoaderCircle, RefreshCw, WandSparkles } from "lucide-react";
 import { AutomaticSelection } from "@/components/corrections/AutomaticSelection";
+import { CompleteAutomaticSelection } from "@/components/corrections/CompleteAutomaticSelection";
+import { AutomaticExtensionNote } from "@/components/corrections/AutomaticExtensionNote";
 import { AutomaticCandidateResults } from "@/components/corrections/AutomaticCandidateResults";
 import { buttonClass } from "@/lib/button";
-import { CORRECTION_TYPES, correctionApi, mergeCheckProgress, type CorrectionCheck } from "@/lib/corrections";
+import { CORRECTION_TYPES, correctionApi, mergeCheckProgress, type AutomaticMode, type CompleteResult, type CorrectionCheck } from "@/lib/corrections";
 import { useAppStore } from "@/store/app";
 import { useDebouncedSearch } from "@/hooks/useDebouncedSearch";
 import { usePdpjUpdate } from "@/hooks/usePdpjUpdate";
@@ -39,8 +41,9 @@ export default function AutomaticCorrectionsPage() {
   const radiusScope = `${kind}-${batchId}-${processId}-${run?.id}`;
   const radius = radiusDraft?.scope === radiusScope ? radiusDraft.value : params.get("radius_meters") ?? String(run?.radius_meters ?? "");
   const settledRadius = useDebouncedSearch(radius);
-  const tieStrategy = params.get("tie_strategy") === "suggest" ? "suggest" : "review";
-  const setTieStrategy = (value: "review" | "suggest") => { const next = new URLSearchParams(window.location.search); next.set("tie_strategy", value); setParams(next, { replace: true }); };
+  const tieStrategy: AutomaticMode = params.get("tie_strategy") === "complete" ? "complete" : params.get("tie_strategy") === "suggest" ? "suggest" : "review";
+  const setTieStrategy = (value: AutomaticMode) => { const next = new URLSearchParams(window.location.search); next.set("tie_strategy", value); setParams(next, { replace: true }); };
+  const completed = (result: CompleteResult) => { setRadiusDraft(null); const next = new URLSearchParams(window.location.search); next.set("generation", String(result.generation)); next.set("radius_meters", String(result.radius_meters)); setParams(next, { replace: true }); };
   const loading = batches.isPending || (!!batch && batch.status === "completed" && checks.isPending) || (!!matchingCheck && check.isPending);
   const failed = batches.isError || (!!batch && checks.isError) || (!!matchingCheck && check.isError);
   const invalidScope = !loading && !failed && (
@@ -93,8 +96,9 @@ export default function AutomaticCorrectionsPage() {
     {!loading && !failed && !invalidScope && (!batch || !processId) && <p role="status" className="rounded-lg border border-ui-border bg-white p-4 text-sm">Belum ada pemeriksaan untuk pemilihan otomatis. <Link to={`/koreksi/${descriptor.slug}`} className="font-semibold underline">Buka Data Koreksi</Link> untuk mengunggah berkas dan menyelesaikan pemeriksaan.</p>}
     {!loading && !failed && !invalidScope && run && !ready && <p role="status" className="rounded-lg bg-amber-50 p-4 text-sm text-amber-950">Pemilihan otomatis hanya tersedia pada hasil terbaru yang sudah selesai. <Link to={backUrl} className="font-semibold underline">Buka pemeriksaan asal</Link> untuk melihat progres atau melanjutkan pemeriksaan.</p>}
     {ready && batchId && processId && run && <>
+      <AutomaticExtensionNote extension={run.processing?.automatic_extension} />
       <div className="flex flex-wrap gap-4 text-xs font-semibold"><Link to={mapUrl} className="underline">Tinjau melalui Peta Koreksi</Link><Link to={`/result?category=${kind}&process_id=${processId}&generation=${generation}&radius_meters=${mapRadius}`} className="underline">Hasil pemeriksaan ini</Link></div>
-      {user?.role === "auditor" ? <p role="status" className="rounded-lg bg-blue-50 p-4 text-sm">Auditor dapat meninjau kandidat. Penyimpanan pilihan otomatis tersedia bagi admin dan analis.</p> : <AutomaticSelection key={`automatic-${kind}-${processId}-${run.id}`} kind={kind} processId={processId} batchId={batchId} run={run} radius={radius} onRadiusChange={setRadius} onBusyChange={setWriting} tieStrategy={tieStrategy} onTieStrategyChange={setTieStrategy} />}
+      {user?.role === "auditor" ? <p role="status" className="rounded-lg bg-blue-50 p-4 text-sm">Auditor dapat meninjau kandidat. Penyimpanan pilihan otomatis tersedia bagi admin dan analis.</p> : tieStrategy === "complete" ? <CompleteAutomaticSelection key={`complete-${kind}-${processId}`} kind={kind} processId={processId} batchId={batchId} run={run} radius={radius} onRadiusChange={setRadius} onModeChange={setTieStrategy} onBusyChange={setWriting} onCompleted={completed} /> : <AutomaticSelection key={`automatic-${kind}-${processId}-${run.id}`} kind={kind} processId={processId} batchId={batchId} run={run} radius={radius} onRadiusChange={setRadius} onBusyChange={setWriting} tieStrategy={tieStrategy} onTieStrategyChange={setTieStrategy} />}
       {radius === settledRadius ? <AutomaticCandidateResults key={`candidates-${kind}-${processId}-${run.id}-${radius}`} kind={kind} label={descriptor.label} batchId={batchId} processId={processId} run={run} radius={radius} /> : <p role="status" className="text-sm">Memuat kandidat sesuai radius...</p>}
     </>}
     {batchId && <Link to={backUrl} className="inline-block text-xs font-semibold underline">Kembali ke pemeriksaan asal</Link>}

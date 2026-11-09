@@ -24,6 +24,7 @@ export interface CorrectionProcessing {
   last_source_id: number; last_row_number: number | null; last_validated_source_id: number;
   started_at: string; updated_at: string; elapsed_seconds: number; stage_elapsed_seconds?: number; stage_timed_rows?: number; error: string | null;
   preparation?: MasterPreparationProgress;
+  automatic_extension?: { base_generation: number; base_radius_meters: number; search_radius_meters: number; target_count: number; added_count: number };
 }
 export interface MasterPreparationProgress {
   phase: "reading" | "reserving" | "materializing" | "observations" | "ready";
@@ -64,6 +65,7 @@ export interface CorrectionRow {
 }
 export interface ChoiceOwner { record_id: number; row_number: number }
 export interface CorrectionCandidate { id: number; rank: number; distance_meters: number; fields: Fields; is_accepted: number; used_by?: ChoiceOwner[];
+  automatic_selection?: { mode: "complete"; method: "nearest" | "equal_distance" | "expanded_radius"; identity_verified: boolean };
   observations: { batch_id: number; filename: string; dataset_type: string; row_number: number; source_sheet: string | null; fields: Fields }[] }
 export interface CorrectionDetail extends CorrectionRow { raw_data: Record<string, unknown>; column_mapping: Record<string, string>; generation: number | null; radius_meters: number | null; filter_radius_meters?: number | null; candidates_total: number; candidates: CorrectionCandidate[] }
 export interface CheckRequest { batch_id: number; pdpj_review_id: number; radius_meters: number; actor: string; request_key: string; incremental?: boolean }
@@ -81,6 +83,15 @@ export interface AutomaticPreview {
   unpaired_count?: number; unpaired?: AutomaticPreview["review"]; unpaired_reasons?: Record<string, number>;
 }
 export interface AutomaticRequest { generation: number; radius_meters: number; tie_strategy?: "review" | "suggest" }
+export type AutomaticMode = "review" | "suggest" | "complete";
+export interface CompleteRequest { generation: number; radius_meters: number; max_radius_meters: number }
+export interface CompletePreview extends CompleteRequest {
+  result_radius_meters: number; total_targets: number; protected_count: number; selected_count: number;
+  nearest_count: number; equal_distance_count: number; expanded_count: number; unpaired_count: number;
+  unpaired: AutomaticPreview["review"]; unpaired_reasons: Record<string, number>; fingerprint: string; creates_version: boolean;
+  selections: { record_id: number; row_number: number; idpel: string; distance_meters: number; method: "nearest" | "equal_distance" | "expanded_radius" }[];
+}
+export interface CompleteResult { selected_count: number; generation: number; radius_meters: number; unpaired_count: number; created_version: boolean; already_applied: boolean }
 export interface AutomaticReviewGroup {
   id: string; target_count: number; candidate_count: number; reason_counts: Record<string, number>;
   targets: AutomaticPreview["review"];
@@ -109,6 +120,8 @@ export interface UnpairedSearchResults {
 }
 
 export const correctionApi = {
+  completePreview: async (kind: CorrectionKind, process: number, body: CompleteRequest) => (await api.post<CompletePreview>(`/corrections/${kind}/checks/${process}/automatic/complete/preview`, body)).data,
+  completeApply: async (kind: CorrectionKind, process: number, body: CompleteRequest & { fingerprint: string; request_key: string }) => (await api.post<CompleteResult>(`/corrections/${kind}/checks/${process}/automatic/complete/apply`, body)).data,
   downloadUnpaired: async (kind: CorrectionKind, process: number, body: AutomaticRequest & { fingerprint: string; search_radius_meters: number }) => {
     const response = await api.post<Blob>(`/corrections/${kind}/checks/${process}/automatic/unpaired-search/export`, body, { responseType: "blob" });
     const filename = /filename="([^"\\/]+)"/.exec(String(response.headers["content-disposition"] ?? ""))?.[1] ?? `usulan_lanjutan_${process}.xlsx`;

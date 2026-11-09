@@ -14,6 +14,7 @@ from app.models.master_sisa import (
 from app.models.matching import MatchCandidate
 from app.models.upload import SourceRecord
 from app.modules.corrections.automatic import DbSession, PreviewRequest, writable_run
+from app.modules.corrections.candidate_scope import candidate_scope
 from app.modules.corrections.export_data import coordinate_sources
 from app.modules.corrections.selection_state import current_choices
 from app.modules.corrections.service import (
@@ -239,7 +240,7 @@ def advanced_candidates(
             )
             .filter(
                 MatchCandidate.process_id == process_id,
-                MatchCandidate.generation == generation,
+                candidate_scope(run),
                 MatchCandidate.target_record_id == record_id,
                 MatchCandidate.candidate_idpel.in_(
                     [master.idpel for master in masters]
