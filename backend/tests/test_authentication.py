@@ -216,6 +216,29 @@ def test_auditor_read_only_and_password_change_revokes_all_sessions(secured):
     assert login(client, "audit01", "Password auditor baru 774!").status_code == 200
 
 
+def test_auditor_cannot_mutate_any_business_route(secured):
+    import re
+
+    from fastapi.routing import APIRoute
+
+    client, db = secured
+    login(client)
+    add_user(client, "route-auditor", "auditor")
+    login(client, "route-auditor", OTHER_PASSWORD)
+    checked = 0
+    for route in client.app.routes:
+        if not isinstance(route, APIRoute) or route.path.startswith("/auth/"):
+            continue
+        path = re.sub(r"\{[^}]+\}", "1", route.path)
+        for method in route.methods - {"GET", "HEAD", "OPTIONS"}:
+            response = client.request(method, path, json={})
+            assert response.status_code == 403, (method, path, response.text)
+            assert response.json()["detail"] == "Auditor hanya memiliki izin membaca data"
+            checked += 1
+    assert checked > 30
+    assert db.query(User).count() == 2
+
+
 def test_idle_and_absolute_expiration_are_enforced_on_server(secured):
     client, db = secured
     for field, value in (

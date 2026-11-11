@@ -1,3 +1,4 @@
+import { usePermissions } from "@/hooks/usePermissions";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { CheckCircle2, LoaderCircle, Pause, Play } from "lucide-react";
@@ -14,6 +15,7 @@ const count = (value: number) => value.toLocaleString("id-ID");
 export function CorrectionProgress({ kind, check, autoStart, onStarted, onBusyChange, showDetails = true }: {
   kind: CorrectionKind; check: CorrectionCheck; autoStart: boolean; onStarted: (runId: number) => void; onBusyChange?: (busy: boolean) => void; showDetails?: boolean;
 }) {
+  const { canWrite } = usePermissions();
   const client = useQueryClient();
   const generation = useRef(0);
   const request = useRef<Promise<CorrectionRun> | null>(null);
@@ -100,9 +102,9 @@ export function CorrectionProgress({ kind, check, autoStart, onStarted, onBusyCh
     } finally { if (generation.current === token) setWorking(false); }
   }, [resume, advance, publish, onStarted, runId, client, kind, check.process_id]);
   useEffect(() => {
-    const timer = autoStart ? window.setTimeout(() => void start(), 0) : undefined;
+    const timer = canWrite && autoStart ? window.setTimeout(() => void start(), 0) : undefined;
     return () => { window.clearTimeout(timer); generation.current += 1; };
-  }, [autoStart, start]);
+  }, [canWrite, autoStart, start]);
   const busy = working || stopping || serverActive;
   useEffect(() => { onBusyChange?.(busy); return () => onBusyChange?.(false); }, [busy, onBusyChange]);
   useEffect(() => {
@@ -135,7 +137,7 @@ export function CorrectionProgress({ kind, check, autoStart, onStarted, onBusyCh
   return <section aria-label="Progres pemeriksaan koreksi" aria-busy={busy} className="geo-process">
     <p className="text-xs font-semibold">Pemeriksaan #{check.process_id} · Versi {run.generation} · Radius {count(run.radius_meters)} m · Seluruh berkas</p>
     <div className="flex flex-wrap items-start justify-between gap-3"><div><h2 className="flex items-center gap-2 text-sm font-semibold">{busy ? <LoaderCircle size={18} className="animate-spin" /> : ready ? <CheckCircle2 size={18} className="text-green-700" /> : <Pause size={18} />}{stageLabel}</h2><p role="status" className="mt-1 text-xs">{stopping || (serverActive && run.activity?.operation === "pausing") ? "Menghentikan setelah bagian aktif tersimpan…" : ready ? "Seluruh hasil dan validasi akhir telah tersimpan" : working || serverActive ? "Pemeriksaan berjalan · hasil disimpan bertahap" : progress.state === "failed" || error ? "Proses terhenti · hasil tersimpan dapat dilanjutkan" : progress.state === "running" ? "Menunggu dilanjutkan dari hasil tersimpan" : "Proses dijeda · siap dilanjutkan"}</p></div>
-      {!ready && (working || serverActive ? <button type="button" onClick={() => void pause()} disabled={stopping || run.activity?.operation === "pausing"} className={buttonClass.secondary}><Pause size={16} />Hentikan sementara koreksi</button> : <button type="button" disabled={stopping || monitor.isError} onClick={() => void start()} className={buttonClass.primary}>{stopping ? <LoaderCircle size={16} className="animate-spin" /> : <Play size={16} />}{stopping ? "Menyimpan bagian aktif…" : "Lanjutkan pemeriksaan koreksi"}</button>)}
+      {canWrite && !ready && (working || serverActive ? <button type="button" onClick={() => void pause()} disabled={stopping || run.activity?.operation === "pausing"} className={buttonClass.secondary}><Pause size={16} />Hentikan sementara koreksi</button> : <button type="button" disabled={stopping || monitor.isError} onClick={() => void start()} className={buttonClass.primary}>{stopping ? <LoaderCircle size={16} className="animate-spin" /> : <Play size={16} />}{stopping ? "Menyimpan bagian aktif…" : "Lanjutkan pemeriksaan koreksi"}</button>)}
     </div>
     <div className="flex items-center gap-3"><progress aria-label="Kemajuan keseluruhan pemeriksaan koreksi" value={percent} max={100} className="h-1.5 min-w-0 flex-1" /><span className="text-sm font-semibold">{progressLabel(percent)}</span></div>
 

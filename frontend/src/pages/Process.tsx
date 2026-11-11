@@ -1,3 +1,4 @@
+import { usePermissions } from "@/hooks/usePermissions";
 import { useRef, useState, type FormEvent } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { useQueryClient } from "@tanstack/react-query";
@@ -20,6 +21,7 @@ function coordinate(value: string, limit: number, label: string): string {
 
 export default function ProcessPage() {
   const navigate = useNavigate();
+  const { canWrite } = usePermissions();
   const queryClient = useQueryClient();
   const [sessionName, setSessionName] = useState("");
   const [reference, setReference] = useState("");
@@ -84,6 +86,8 @@ export default function ProcessPage() {
       setStage(null);
     }
   };
+
+  if (!canWrite) return <div role="alert" className="geo-panel space-y-3 p-6"><h1 className="text-xl font-semibold">Akses Ditolak</h1><p>Input manual dan matching hanya tersedia untuk admin dan analis. Auditor dapat melihat data dan mengunduh hasil.</p><Link to="/result" className={buttonClass.secondary}>Lihat hasil</Link></div>;
 
   return <div className="space-y-5">
     <div className="space-y-2 border-b border-ui-border pb-4">

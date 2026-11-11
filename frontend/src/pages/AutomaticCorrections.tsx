@@ -8,7 +8,7 @@ import { AutomaticExtensionNote } from "@/components/corrections/AutomaticExtens
 import { AutomaticCandidateResults } from "@/components/corrections/AutomaticCandidateResults";
 import { buttonClass } from "@/lib/button";
 import { CORRECTION_TYPES, correctionApi, mergeCheckProgress, type AutomaticMode, type CompleteResult, type CorrectionCheck } from "@/lib/corrections";
-import { useAppStore } from "@/store/app";
+import { usePermissions } from "@/hooks/usePermissions";
 import { useDebouncedSearch } from "@/hooks/useDebouncedSearch";
 import { usePdpjUpdate } from "@/hooks/usePdpjUpdate";
 
@@ -18,7 +18,7 @@ const count = (value: number) => value.toLocaleString("id-ID");
 export default function AutomaticCorrectionsPage() {
   const [params, setParams] = useSearchParams();
   const client = useQueryClient();
-  const user = useAppStore((state) => state.user);
+  const { canWrite } = usePermissions();
   const [writing, setWriting] = useState(false);
   const [radiusDraft, setRadiusDraft] = useState<{ scope: string; value: string } | null>(null);
   const descriptor = CORRECTION_TYPES.find((item) => item.key === params.get("category")) ?? CORRECTION_TYPES[0];
@@ -98,7 +98,7 @@ export default function AutomaticCorrectionsPage() {
     {ready && batchId && processId && run && <>
       <AutomaticExtensionNote extension={run.processing?.automatic_extension} />
       <div className="flex flex-wrap gap-4 text-xs font-semibold"><Link to={mapUrl} className="underline">Tinjau melalui Peta Koreksi</Link><Link to={`/result?category=${kind}&process_id=${processId}&generation=${generation}&radius_meters=${mapRadius}`} className="underline">Hasil pemeriksaan ini</Link></div>
-      {user?.role === "auditor" ? <p role="status" className="rounded-lg bg-blue-50 p-4 text-sm">Auditor dapat meninjau kandidat. Penyimpanan pilihan otomatis tersedia bagi admin dan analis.</p> : tieStrategy === "complete" ? <CompleteAutomaticSelection key={`complete-${kind}-${processId}`} kind={kind} processId={processId} batchId={batchId} run={run} radius={radius} onRadiusChange={setRadius} onModeChange={setTieStrategy} onBusyChange={setWriting} onCompleted={completed} /> : <AutomaticSelection key={`automatic-${kind}-${processId}-${run.id}`} kind={kind} processId={processId} batchId={batchId} run={run} radius={radius} onRadiusChange={setRadius} onBusyChange={setWriting} tieStrategy={tieStrategy} onTieStrategyChange={setTieStrategy} />}
+      {!canWrite ? <p role="status" className="rounded-lg bg-blue-50 p-4 text-sm">Auditor dapat meninjau kandidat. Penyimpanan pilihan otomatis tersedia bagi admin dan analis.</p> : tieStrategy === "complete" ? <CompleteAutomaticSelection key={`complete-${kind}-${processId}`} kind={kind} processId={processId} batchId={batchId} run={run} radius={radius} onRadiusChange={setRadius} onModeChange={setTieStrategy} onBusyChange={setWriting} onCompleted={completed} /> : <AutomaticSelection key={`automatic-${kind}-${processId}-${run.id}`} kind={kind} processId={processId} batchId={batchId} run={run} radius={radius} onRadiusChange={setRadius} onBusyChange={setWriting} tieStrategy={tieStrategy} onTieStrategyChange={setTieStrategy} />}
       {radius === settledRadius ? <AutomaticCandidateResults key={`candidates-${kind}-${processId}-${run.id}-${radius}`} kind={kind} label={descriptor.label} batchId={batchId} processId={processId} run={run} radius={radius} /> : <p role="status" className="text-sm">Memuat kandidat sesuai radius...</p>}
     </>}
     {batchId && <Link to={backUrl} className="inline-block text-xs font-semibold underline">Kembali ke pemeriksaan asal</Link>}

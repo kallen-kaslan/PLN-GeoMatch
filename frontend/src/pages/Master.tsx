@@ -1,3 +1,4 @@
+import { usePermissions } from "@/hooks/usePermissions";
 import { useDebouncedSearch } from "@/hooks/useDebouncedSearch";
 import { SearchFeedback } from "@/components/data/SearchFeedback";
 import { searchPreparing, searchRefreshInterval } from "@/lib/search";
@@ -56,6 +57,7 @@ function ImportPanel({ kind, resumeId, onSaved, onCancel }: { kind: MasterKind; 
 
 function MasterWorkspace({ kind }: { kind: MasterKind }) {
   const queryClient = useQueryClient();
+  const { canWrite } = usePermissions();
   const descriptor = MASTER_TYPES.find((item) => item.key === kind)!;
   const [batchId, setBatchId] = useState<number | undefined>();
   const [search, setSearch] = useState("");
@@ -88,7 +90,7 @@ function MasterWorkspace({ kind }: { kind: MasterKind }) {
     <header className="geo-page-heading">
       <div><p className="text-xs font-semibold uppercase tracking-[0.18em] text-ui-muted">Referensi pelanggan</p><h1 className="fluid-h1 mt-1 flex items-center gap-2 font-semibold"><Database size={25} className="shrink-0" />Data Master {descriptor.label}</h1><p className="mt-1 text-xs text-ui-muted sm:text-sm">{descriptor.description}</p></div>
       <div className="flex gap-2"><button type="button" aria-label="Muat ulang data master" onClick={() => void queryClient.invalidateQueries({ queryKey: ["masters", kind] })} className="touch-min rounded-lg border border-ui-border bg-white px-3  hover:bg-gray-100"><RefreshCw size={16} className={batches.isFetching || summary.isFetching || (records.isFetching || searchBusy) ? "animate-spin" : ""} /></button>
-        <button type="button" onClick={() => { setResumeId(null); setShowImport(true); }} disabled={showImport} className="touch-min gap-2 rounded-lg border border-ui-border bg-ui-primary px-4 text-xs font-semibold text-white  hover:bg-ui-primary-hover disabled:opacity-40"><Plus size={16} />Unggah berkas</button></div>
+        {canWrite && <button type="button" onClick={() => { setResumeId(null); setShowImport(true); }} disabled={showImport} className="touch-min gap-2 rounded-lg border border-ui-border bg-ui-primary px-4 text-xs font-semibold text-white  hover:bg-ui-primary-hover disabled:opacity-40"><Plus size={16} />Unggah berkas</button>}</div>
     </header>
     <nav aria-label="Jenis data master" className="flex gap-2 overflow-x-auto pb-1">
       {MASTER_TYPES.map((item) => <Link key={item.key} to={`/master/${item.key}`} aria-current={kind === item.key ? "page" : undefined} className={`touch-min whitespace-nowrap rounded-lg border border-ui-border px-5 text-xs font-semibold ${kind === item.key ? "bg-ui-primary text-white " : "bg-white hover:bg-gray-100"}`}>{item.label}</Link>)}
@@ -97,7 +99,7 @@ function MasterWorkspace({ kind }: { kind: MasterKind }) {
       <div><p className="font-semibold">{notice.filename} berhasil disimpan.</p><p className="mt-1">{count(notice.valid_rows)} baris lolos validasi · {count(notice.error_rows)} baris perlu diperbaiki. Data asli tetap tersimpan.</p>{notice.error_rows > 0 && <button type="button" onClick={() => { setStatus("invalid"); setPage(1); }} className="mt-2 font-semibold underline">Lihat baris bermasalah</button>}</div>
       <button type="button" onClick={() => setNotice(null)} aria-label="Tutup pemberitahuan" className="p-1"><X size={16} /></button>
     </div>}
-    {showImport && <ImportPanel key={`${kind}-${resumeId ?? "new"}`} kind={kind} resumeId={resumeId} onSaved={imported} onCancel={() => { setShowImport(false); setResumeId(null); }} />}
+    {canWrite && showImport && <ImportPanel key={`${kind}-${resumeId ?? "new"}`} kind={kind} resumeId={resumeId} onSaved={imported} onCancel={() => { setShowImport(false); setResumeId(null); }} />}
     {failed && <div role="alert" className="flex items-start gap-2 rounded-lg border border-red-600 bg-red-50 p-4 text-sm text-red-700"><AlertCircle size={18} className="shrink-0" />Data master belum dapat dimuat. Periksa koneksi dan gunakan tombol muat ulang.</div>}
     <section aria-label="Ringkasan data master" className="geo-metrics geo-metrics-4">
       {[
@@ -115,8 +117,8 @@ function MasterWorkspace({ kind }: { kind: MasterKind }) {
           <select aria-label="Berkas sumber" value={batchId ?? ""} onChange={(event) => { setBatchId(event.target.value ? Number(event.target.value) : undefined); setPage(1); }} className={controlClass}><option value="">Semua berkas {descriptor.label}</option>{batches.data?.map((batch) => <option key={batch.id} value={batch.id}>{batch.filename}{batch.period ? ` · ${batch.period}` : ""}{batch.status !== "completed" ? " · Menunggu mapping" : ""}</option>)}</select>
         </label>
       </div>
-      {!!totals?.pending_files && !selectedBatch && <div className="rounded-lg border border-amber-600 bg-amber-50 p-3 text-xs text-amber-900">Ada {totals.pending_files} berkas menunggu mapping. Pilih berkas tersebut untuk melanjutkan impor.</div>}
-      {selectedBatch && selectedBatch.status !== "completed" && <div className="flex flex-col justify-between gap-3 rounded-lg border border-amber-600 bg-amber-50 p-3 text-xs text-amber-900 sm:flex-row sm:items-center"><p><strong>{selectedBatch.filename}</strong> memiliki {count(selectedBatch.total_rows)} baris. Selesaikan mapping agar masuk data referensi.</p><button type="button" onClick={() => { setResumeId(selectedBatch.id); setShowImport(true); }} className="touch-min shrink-0 rounded-lg border border-amber-700 bg-white px-3 font-semibold">Lanjutkan mapping</button></div>}
+      {canWrite && !!totals?.pending_files && !selectedBatch && <div className="rounded-lg border border-amber-600 bg-amber-50 p-3 text-xs text-amber-900">Ada {totals.pending_files} berkas menunggu mapping. Pilih berkas tersebut untuk melanjutkan impor.</div>}
+      {canWrite && selectedBatch && selectedBatch.status !== "completed" && <div className="flex flex-col justify-between gap-3 rounded-lg border border-amber-600 bg-amber-50 p-3 text-xs text-amber-900 sm:flex-row sm:items-center"><p><strong>{selectedBatch.filename}</strong> memiliki {count(selectedBatch.total_rows)} baris. Selesaikan mapping agar masuk data referensi.</p><button type="button" onClick={() => { setResumeId(selectedBatch.id); setShowImport(true); }} className="touch-min shrink-0 rounded-lg border border-amber-700 bg-white px-3 font-semibold">Lanjutkan mapping</button></div>}
       <div className="flex flex-col gap-3 sm:flex-row"><label className="relative flex-1"><span className="sr-only">Cari data master</span><Search size={16} className="pointer-events-none absolute top-3 left-3 text-ui-muted" /><input type="search" maxLength={120} value={search} onChange={(event) => { setSearch(event.target.value); setPage(1); }} placeholder="Cari IDPEL, nama, kode, atau nomor meter…" className={`${controlClass} w-full pl-9`} /></label>
         <select aria-label="Status kelengkapan data" value={status} onChange={(event) => { setStatus(event.target.value as MasterStatus); setPage(1); }} className={controlClass}><option value="all">Semua kondisi</option><option value="valid">Lolos validasi</option><option value="incomplete">Koordinat belum lengkap</option><option value="invalid">Perlu perbaikan</option></select></div>
       <SearchFeedback state={records.data?.search_index} waiting={search !== deferredSearch} fetching={Boolean(search) && records.isFetching} />
