@@ -569,8 +569,11 @@ def apply_mapping(
     last_id = 0
     total_rows = 0
     while True:
+        # Columns instead of ORM objects: the chunk only needs these three
+        # values, and 10k entities per chunk would fill the identity map and
+        # parse the stale normalized_data JSON that is about to be replaced.
         records = (
-            db.query(SourceRecord)
+            db.query(SourceRecord.id, SourceRecord.row_number, SourceRecord.data)
             .filter(SourceRecord.batch_id == batch.id, SourceRecord.id > last_id)
             .order_by(SourceRecord.id)
             .limit(IMPORT_CHUNK_ROWS)
@@ -579,10 +582,10 @@ def apply_mapping(
         if not records:
             break
         updates = []
-        for record in records:
+        for record_id, stored_row_number, data in records:
             total_rows += 1
-            row_number = record.row_number or total_rows + 1
-            fields = extract_standard_fields(record.data or {}, req.column_mapping)
+            row_number = stored_row_number or total_rows + 1
+            fields = extract_standard_fields(data or {}, req.column_mapping)
             fields["tglbaca"] = fields["tglbaca"] or batch.period
             normalized_data = {
                 key: value
@@ -593,7 +596,7 @@ def apply_mapping(
             is_valid = not validation_errors
             updates.append(
                 {
-                    "id": record.id,
+                    "id": record_id,
                     "row_number": row_number,
                     "idpel": fields["idpel"],
                     "normalized_data": normalized_data,
@@ -605,21 +608,18 @@ def apply_mapping(
             if validation_errors and len(errors) < 100:
                 errors.append(
                     {
-                        "record_id": record.id,
+                        "record_id": record_id,
                         "row": row_number,
                         "errors": validation_errors,
                     }
                 )
-        last_id = records[-1].id
+        last_id = records[-1][0]
         db.bulk_update_mappings(SourceRecord.__mapper__, updates)
         db.flush()
         if progress:
             progress.update(total_rows)
             if checkpointable:
                 progress.checkpoint(db)
-        # Release each chunk from the identity map before loading the next one.
-        for record in records:
-            db.expunge(record)
     batch.column_mapping = req.column_mapping
     batch.status = BatchStatus.COMPLETED
     batch.total_rows = total_rows

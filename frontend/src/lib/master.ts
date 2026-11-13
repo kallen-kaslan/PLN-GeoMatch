@@ -125,8 +125,12 @@ function cleanSourceHeader(value: unknown): string {
   return ["", "none", "null", "nan", "-"].includes(text.toLowerCase()) ? "" : text;
 }
 
+export function sourceHeaderCount(values: unknown[]): number {
+  return values.filter((value) => cleanSourceHeader(value)).length;
+}
+
 export function hasSourceHeaders(values: unknown[]): boolean {
-  return values.some((value) => cleanSourceHeader(value));
+  return sourceHeaderCount(values) > 0;
 }
 
 export function normalizeSourceHeaders(values: unknown[]): string[] {
@@ -172,6 +176,7 @@ export const masterApi = {
   records: async (kind: MasterKind, params: { batch_id?: number; q: string; status: MasterStatus; skip: number; limit: number }, signal?: AbortSignal) =>
     (await api.get<SearchPage<MasterRecord>>(`/master/${kind}/records`, { params, signal })).data,
   detail: async (kind: MasterKind, id: number) => (await api.get<MasterRecordDetail>(`/master/${kind}/records/${id}`)).data,
+  deleteBatch: async (kind: MasterKind, id: number) => { await api.delete(`/master/${kind}/batches/${id}`); },
 };
 
 export const masterFieldLabel = (field: string) => masterFields("dil").find((item) => item.key === (field === "target_ref" ? "nomor_meter" : field))?.label ?? field;

@@ -11,7 +11,9 @@ from app.models.upload import (
     UploadBatch,
     source_coordinates_missing,
 )
+from app.modules.auth.security import CurrentUser
 from app.modules.master.summary import master_summary
+from app.modules.pdpj.service import lock_review_session
 from app.modules.upload.normalization import extract_standard_fields
 from app.modules.upload.pagination import load_original_cells, source_page_ids
 from app.search_index import pending_search, prepare_search, search_candidates
@@ -135,6 +137,66 @@ def get_master_batch(kind: MasterKind, batch_id: int, db: DbSession) -> dict[str
         "preview": [record.data for record in rows],
         "row_numbers": [record.row_number for record in rows],
     }
+
+
+@router.delete("/{kind}/batches/{batch_id}")
+def delete_master_batch(
+    kind: MasterKind, batch_id: int, db: DbSession, user: CurrentUser
+) -> dict[str, str]:
+    """Admin-only deletion of a master batch and its imported source rows."""
+    if getattr(user.role, "value", user.role) != "admin":
+        raise HTTPException(403, "Hanya admin yang dapat menghapus berkas master")
+    batch = source_batch(db, kind, batch_id)
+    lock_review_session(db)
+
+    from app.models.matching import ReconciliationProcess
+    from app.models.pdpj import PdpjReview
+    from app.models.master_sisa import MasterPreparation, MasterSnapshot
+
+    has_pdpj = db.query(PdpjReview).filter(PdpjReview.batch_id == batch.id).first()
+    has_recon = (
+        db.query(ReconciliationProcess)
+        .filter(ReconciliationProcess.target_batch_id == batch.id)
+        .first()
+    )
+    has_snap = (
+        db.query(MasterSnapshot)
+        .filter(
+            (MasterSnapshot.master_batch_id == batch.id)
+            | (MasterSnapshot.pdpj_batch_id == batch.id)
+        )
+        .first()
+    )
+    has_prep = (
+        db.query(MasterPreparation)
+        .filter(MasterPreparation.master_batch_id == batch.id)
+        .first()
+    )
+    if has_pdpj or has_recon or has_snap or has_prep:
+        raise HTTPException(
+            409,
+            "Berkas master tidak dapat dihapus karena telah digunakan dalam proses PDPJ, rekonsiliasi, atau snapshot.",
+        )
+
+    from app.models.coordinate_repair import CoordinateRepair
+    from app.models.master_sisa import CleanedMasterRecord
+    from app.models.upload_file import UploadSheetImport
+
+    db.query(CoordinateRepair).filter(CoordinateRepair.batch_id == batch.id).delete(
+        synchronize_session=False
+    )
+    db.query(CleanedMasterRecord).filter(
+        CleanedMasterRecord.batch_id == batch.id
+    ).delete(synchronize_session=False)
+    db.query(UploadSheetImport).filter(
+        UploadSheetImport.batch_id == batch.id
+    ).delete(synchronize_session=False)
+    db.query(SourceRecord).filter(SourceRecord.batch_id == batch.id).delete(
+        synchronize_session=False
+    )
+    db.delete(batch)
+    db.commit()
+    return {"message": f"Berkas master #{batch_id} berhasil dihapus"}
 
 
 @router.get("/{kind}/summary")

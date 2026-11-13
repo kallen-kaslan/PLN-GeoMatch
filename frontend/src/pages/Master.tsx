@@ -5,8 +5,8 @@ import { MetricCard, type MetricTone } from "@/components/data/MetricCard";
 import { useState } from "react";
 import { InspectionDrawer } from "@/components/data/InspectionDrawer";
 import { Link, Navigate, useParams } from "react-router-dom";
-import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { AlertCircle, CheckCircle2, Database, FileSpreadsheet, LoaderCircle, MapPin, Plus, RefreshCw, Search, X } from "lucide-react";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { AlertCircle, CheckCircle2, Database, FileSpreadsheet, LoaderCircle, MapPin, Plus, RefreshCw, Search, Trash2, X } from "lucide-react";
 import { PreviewPagination } from "@/components/data/PreviewPagination";
 import { MasterImport } from "@/components/master/MasterImport";
 import { MASTER_TYPES, displayValue, masterApi, masterFieldLabel, masterFields, validationMessage, type ImportResult, type MasterKind, type MasterRecord, type MasterStatus } from "@/lib/master";
@@ -87,6 +87,15 @@ function MasterWorkspace({ kind }: { kind: MasterKind }) {
     void queryClient.invalidateQueries({ queryKey: ["upload", "batches"] });
   };
 
+  const removeBatch = useMutation({
+    mutationFn: (id: number) => masterApi.deleteBatch(kind, id),
+    onSuccess: () => {
+      setBatchId(undefined);
+      void queryClient.invalidateQueries({ queryKey: ["masters", kind] });
+      void queryClient.invalidateQueries({ queryKey: ["upload", "batches"] });
+    },
+  });
+
   return <div className="space-y-5 sm:space-y-6">
     <header className="geo-page-heading">
       <div><p className="text-xs font-semibold uppercase tracking-[0.18em] text-ui-muted">Referensi pelanggan</p><h1 className="fluid-h1 mt-1 flex items-center gap-2 font-semibold"><Database size={25} className="shrink-0" />Data Master {descriptor.label}</h1><p className="mt-1 text-xs text-ui-muted sm:text-sm">{descriptor.description}</p></div>
@@ -94,6 +103,13 @@ function MasterWorkspace({ kind }: { kind: MasterKind }) {
         <button type="button" aria-label="Muat ulang data master" onClick={() => void queryClient.invalidateQueries({ queryKey: ["masters", kind] })} className="touch-min rounded-lg border border-ui-border bg-white px-3  hover:bg-gray-100"><RefreshCw size={16} className={batches.isFetching || summary.isFetching || (records.isFetching || searchBusy) ? "animate-spin" : ""} /></button>
         {canUpload && (
           <button type="button" onClick={() => { setResumeId(null); setShowImport(true); }} disabled={showImport} className="touch-min gap-2 rounded-lg border border-ui-border bg-ui-primary px-4 text-xs font-semibold text-white  hover:bg-ui-primary-hover disabled:opacity-40"><Plus size={16} />Unggah berkas</button>
+        )}
+        {user?.role === "admin" && batchId && (
+          <button type="button" onClick={() => {
+            const batch = batches.data?.find((item) => item.id === batchId);
+            if (!window.confirm(`Hapus berkas "${batch?.filename}" dan semua data impor-nya? Tindakan ini tidak dapat dibatalkan.`)) return;
+            void removeBatch.mutateAsync(batchId);
+          }} disabled={removeBatch.isPending} className="touch-min gap-2 rounded-lg border border-[#dc2626]/50 text-xs font-semibold text-[#dc2626] hover:bg-[#fee2e2] hover:text-[#b91c1c] disabled:opacity-50 disabled:bg-[#fee2e2]"><Trash2 size={14} className={removeBatch.isPending ? "animate-spin" : ""} />{removeBatch.isPending ? "Menghapus…" : "Hapus berkas"}</button>
         )}
       </div>
     </header>
@@ -125,7 +141,14 @@ function MasterWorkspace({ kind }: { kind: MasterKind }) {
       {!!totals?.pending_files && !selectedBatch && <div className="rounded-lg border border-amber-600 bg-amber-50 p-3 text-xs text-amber-900">Ada {totals.pending_files} berkas menunggu mapping. Pilih berkas tersebut untuk melanjutkan impor.</div>}
       {selectedBatch && selectedBatch.status !== "completed" && <div className="flex flex-col justify-between gap-3 rounded-lg border border-amber-600 bg-amber-50 p-3 text-xs text-amber-900 sm:flex-row sm:items-center"><p><strong>{selectedBatch.filename}</strong> memiliki {count(selectedBatch.total_rows)} baris. Selesaikan mapping agar masuk data referensi.</p><button type="button" onClick={() => { setResumeId(selectedBatch.id); setShowImport(true); }} className="touch-min shrink-0 rounded-lg border border-amber-700 bg-white px-3 font-semibold">Lanjutkan mapping</button></div>}
       <div className="flex flex-col gap-3 sm:flex-row"><label className="relative flex-1"><span className="sr-only">Cari data master</span><Search size={16} className="pointer-events-none absolute top-3 left-3 text-ui-muted" /><input type="search" maxLength={120} value={search} onChange={(event) => { setSearch(event.target.value); setPage(1); }} placeholder="Cari IDPEL, nama, kode, atau nomor meter…" className={`${controlClass} w-full pl-9`} /></label>
-        <select aria-label="Status kelengkapan data" value={status} onChange={(event) => { setStatus(event.target.value as MasterStatus); setPage(1); }} className={controlClass}><option value="all">Semua kondisi</option><option value="valid">Lolos validasi</option><option value="incomplete">Koordinat belum lengkap</option><option value="invalid">Perlu perbaikan</option></select></div>
+        <select aria-label="Status kelengkapan data" value={status} onChange={(event) => { setStatus(event.target.value as MasterStatus); setPage(1); }} className={controlClass} disabled={removeBatch.isPending}><option value="all">Semua kondisi</option><option value="valid">Lolos validasi</option><option value="incomplete">Koordinat belum lengkap</option><option value="invalid">Perlu perbaikan</option></select></div>
+      {removeBatch.isPending && (
+        <p role="status" className="text-xs text-ui-muted">
+          Menghapus berkas dan sheet terkait…
+          <LoaderCircle size={14} className="animate-spin shrink-0 ms-1 text-ui-primary" />
+          Proses ini aman dan tidak mempengaruhi data master lain.
+        </p>
+      )}
       <SearchFeedback state={records.data?.search_index} waiting={search !== deferredSearch} fetching={Boolean(search) && records.isFetching} />
       <p className="text-xs text-ui-muted">Ringkasan menghitung seluruh data pada berkas terpilih. Observasi IDPEL yang berulang tetap dapat ditelusuri per sumber.</p>
       <div className="neo-scrollbar overflow-x-auto rounded-lg border border-ui-border" aria-busy={(records.isFetching || searchBusy)}>

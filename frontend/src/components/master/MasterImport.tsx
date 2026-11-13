@@ -145,9 +145,6 @@ export function MasterImport({ kind, saved, onSaved, onCancel }: {
     } finally { if (version === readVersion.current) setReading(false); }
   };
 
-  const refreshSheetList = async () => {
-    await queryClient.invalidateQueries({ queryKey: ["upload-files"] });
-  };
   const lockedFile = mutation.isPending;
   return (
     <section aria-label={kind === "pdpj" ? "Impor PDPJ" : correction ? `Impor koreksi ${label}` : `Impor master ${label}`} className="space-y-5 rounded-lg border border-ui-border bg-white p-4  sm:p-6">
@@ -184,8 +181,8 @@ export function MasterImport({ kind, saved, onSaved, onCancel }: {
           {sheetNames.map((name) => <option key={name} value={name}>{sheetImport(name)?.status === "completed" ? "✓ " : ""}{name}</option>)}
         </select>
       </label>}
-      {alreadySaved && <p role="status" className="rounded-lg border border-green-700 bg-green-50 p-3 text-xs text-green-900">✓ Sheet ini sudah disimpan dan divalidasi untuk {label}{period ? ` periode ${period}` : " tanpa periode"}. Pilih sheet lain untuk menyimpan data berikutnya.</p>}
-      {activeArchiveId && !alreadySaved && <p className="text-xs text-ui-muted">Pratinjau belum menjadi data acuan. Sheet hanya diaktifkan setelah Anda menekan Simpan dan validasi.</p>}
+      {alreadySaved && <p role="status" className="rounded-lg border border-green-700 bg-green-50 p-3 text-xs text-green-900">✓ Sheet ini sudah disimpan dan divalidasi untuk {label}{period ? ` periode ${period}` : " tanpa periode"}. Data tersimpan di database master.</p>}
+      {!alreadySaved && activeArchiveId && <p role="status" className="text-xs text-ui-muted">Pratinjau belum menjadi data acuan. Sheet hanya diaktifkan setelah Anda menekan Simpan dan validasi.</p>}
       {progress.activity && <ImportProgress activity={progress.activity} snapshot={progress.server.data} disconnected={progress.server.isError} onTogglePause={() => void progress.togglePause()} controlBusy={progress.controlBusy} controlError={progress.controlError} />}
       {(parseError || mutation.error) && <p role="alert" className="flex items-start gap-2 rounded-lg border border-red-600 bg-red-50 p-3 text-sm text-red-700"><AlertCircle size={17} className="mt-0.5 shrink-0" />{parseError ?? mutation.error?.message}</p>}
       {headers.length > 0 && <>

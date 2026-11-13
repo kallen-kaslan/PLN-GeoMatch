@@ -1,0 +1,13 @@
+{
+  "enabledPlugins": {
+    "agent-skills@addy-agent-skills": true,
+    "supermemory@supermemory-plugins": true,
+    "gsap-skills@gsap-skills": true,
+    "supabase@claude-plugins-official": true,
+    "supabase-expert@anthropic-plugin-directory": true,
+    "testerarmy@testerarmy-agent-skills": true,
+    "context7@claude-plugins-official": true,
+    "remember@claude-plugins-official": true,
+    "chrome-devtools-mcp@chrome-devtools-plugins": true
+  }
+}

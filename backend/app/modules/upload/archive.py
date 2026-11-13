@@ -13,6 +13,7 @@ from app.config import settings
 from app.database import get_db
 from app.models.upload import BatchStatus, DatasetType, UploadBatch
 from app.models.upload_file import UploadFileArchive, UploadSheetImport
+from app.modules.auth.security import CurrentUser
 from app.modules.pdpj.service import lock_review_session
 from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile
 from openpyxl import load_workbook
@@ -216,6 +217,91 @@ def preview_sheet(
             }
     except (OSError, ValueError, ImportError, BadZipFile) as exc:
         raise HTTPException(400, f"Pratinjau tidak dapat dibaca: {exc!s}") from exc
+
+
+@router.delete("/files/{file_id}")
+def delete_file(file_id: int, db: DbSession, user: CurrentUser) -> dict[str, str]:
+    if getattr(user.role, "value", user.role) != "admin":
+        raise HTTPException(403, "Hanya admin yang dapat menghapus berkas")
+    archive = get_archive(db, file_id)
+    lock_review_session(db)
+    imports = db.query(UploadSheetImport).filter_by(file_id=file_id).all()
+    batch_ids = [imp.batch_id for imp in imports]
+    if batch_ids:
+        from app.models.pdpj import PdpjReview
+        from app.models.matching import ReconciliationProcess
+        from app.models.master_sisa import MasterSnapshot, MasterPreparation
+
+        has_pdpj = db.query(PdpjReview).filter(PdpjReview.batch_id.in_(batch_ids)).first()
+        has_recon = db.query(ReconciliationProcess).filter(ReconciliationProcess.target_batch_id.in_(batch_ids)).first()
+        has_snap = db.query(MasterSnapshot).filter(
+            (MasterSnapshot.master_batch_id.in_(batch_ids)) | (MasterSnapshot.pdpj_batch_id.in_(batch_ids))
+        ).first()
+        has_prep = db.query(MasterPreparation).filter(MasterPreparation.master_batch_id.in_(batch_ids)).first()
+        if has_pdpj or has_recon or has_snap or has_prep:
+            raise HTTPException(409, "Berkas tidak dapat dihapus karena salah satu sheet telah digunakan dalam proses PDPJ, rekonsiliasi, atau snapshot master.")
+
+        from app.models.coordinate_repair import CoordinateRepair
+        from app.models.master_sisa import CleanedMasterRecord
+        from app.models.upload import SourceRecord
+
+        db.query(CoordinateRepair).filter(CoordinateRepair.batch_id.in_(batch_ids)).delete(synchronize_session=False)
+        db.query(CleanedMasterRecord).filter(CleanedMasterRecord.batch_id.in_(batch_ids)).delete(synchronize_session=False)
+        db.query(SourceRecord).filter(SourceRecord.batch_id.in_(batch_ids)).delete(synchronize_session=False)
+        db.query(UploadSheetImport).filter_by(file_id=file_id).delete(synchronize_session=False)
+        db.query(UploadBatch).filter(UploadBatch.id.in_(batch_ids)).delete(synchronize_session=False)
+    else:
+        db.query(UploadSheetImport).filter_by(file_id=file_id).delete(synchronize_session=False)
+    db.delete(archive)
+    db.commit()
+    try:
+        archive_path(archive.storage_key).unlink(missing_ok=True)
+    except OSError:
+        pass
+    return {"message": "Berkas dan sheet terkait berhasil dihapus"}
+
+
+@router.delete("/files/{file_id}/sheet/{sheet_key}")
+def delete_sheet(file_id: int, sheet_key: str, db: DbSession, user: CurrentUser, period: str | None = Query(None), dataset_type: str | None = Query(None)) -> dict[str, str]:
+    if getattr(user.role, "value", user.role) != "admin":
+        raise HTTPException(403, "Hanya admin yang dapat menghapus sheet")
+    get_archive(db, file_id)
+    lock_review_session(db)
+    sheet_import = db.query(UploadSheetImport).filter_by(
+        file_id=file_id,
+        sheet_key=sheet_key,
+        period_key=period or "",
+        dataset_type=dataset_type or ""
+    ).first()
+    if not sheet_import:
+        raise HTTPException(404, "Sheet import tidak ditemukan")
+    batch_id = sheet_import.batch_id
+
+    from app.models.pdpj import PdpjReview
+    from app.models.matching import ReconciliationProcess
+    from app.models.master_sisa import MasterSnapshot, MasterPreparation
+
+    has_pdpj = db.query(PdpjReview).filter(PdpjReview.batch_id == batch_id).first()
+    has_recon = db.query(ReconciliationProcess).filter(ReconciliationProcess.target_batch_id == batch_id).first()
+    has_snap = db.query(MasterSnapshot).filter(
+        (MasterSnapshot.master_batch_id == batch_id) | (MasterSnapshot.pdpj_batch_id == batch_id)
+    ).first()
+    has_prep = db.query(MasterPreparation).filter(MasterPreparation.master_batch_id == batch_id).first()
+    if has_pdpj or has_recon or has_snap or has_prep:
+        raise HTTPException(409, "Sheet tidak dapat dihapus karena telah digunakan dalam proses PDPJ, rekonsiliasi, atau snapshot master.")
+
+    from app.models.coordinate_repair import CoordinateRepair
+    from app.models.master_sisa import CleanedMasterRecord
+    from app.models.upload import SourceRecord
+
+    db.query(CoordinateRepair).filter(CoordinateRepair.batch_id == batch_id).delete(synchronize_session=False)
+    db.query(CleanedMasterRecord).filter(CleanedMasterRecord.batch_id == batch_id).delete(synchronize_session=False)
+    db.query(SourceRecord).filter(SourceRecord.batch_id == batch_id).delete(synchronize_session=False)
+    # Delete sheet_import via bulk (not ORM instance) so FK to upload_batches is gone before batch delete.
+    db.query(UploadSheetImport).filter(UploadSheetImport.id == sheet_import.id).delete(synchronize_session=False)
+    db.query(UploadBatch).filter(UploadBatch.id == batch_id).delete(synchronize_session=False)
+    db.commit()
+    return {"message": "Sheet import berhasil dihapus"}
 
 
 @router.post("/files/{file_id}/import-sheet")

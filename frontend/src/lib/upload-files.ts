@@ -31,4 +31,6 @@ export const uploadFilesApi = {
   },
   preview: async (id: number, sheet?: string) => (await api.get<FilePreview>(`/upload/files/${id}/preview`, { params: { sheet_name: sheet || undefined } })).data,
   importSheet: async (id: number, kind: SourceKind, sheet: string, period: string, progressId?: string) => (await api.post<{ id: number; status: string }>(`/upload/files/${id}/import-sheet`, { dataset_type: kind, sheet_name: sheet || null, period: period || null }, { headers: progressHeaders(progressId) })).data,
+  deleteFile: async (id: number) => { await api.delete(`/upload/files/${id}`); },
+  deleteSheet: async (id: number, sheet: string, period?: string, datasetType?: string) => { await api.delete(`/upload/files/${id}/sheet/${sheet}`, { params: { period: period || undefined, dataset_type: datasetType || undefined } }); },
 };

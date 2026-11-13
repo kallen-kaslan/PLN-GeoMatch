@@ -1,6 +1,6 @@
 import Papa from "papaparse";
 import * as XLSX from "xlsx";
-import { guessMasterMapping, hasSourceHeaders, masterFields, normalizeSourceHeaders, type SourceKind } from "@/lib/master";
+import { guessMasterMapping, hasSourceHeaders, masterFields, normalizeSourceHeaders, sourceHeaderCount, type SourceKind } from "@/lib/master";
 
 let lastReported = 0;
 let paused = false;
@@ -69,6 +69,8 @@ async function readCsv(file: File): Promise<{ headers: string[]; rows: Record<st
   });
 }
 
+const HEADER_SCAN_ROWS = 30;
+
 function sheetPreview(workbook: XLSX.WorkBook, sheet: string) {
   const worksheet = workbook.Sheets[sheet];
   // !ref from external exporters can be incorrect. Use the cells actually read
@@ -87,10 +89,19 @@ function sheetPreview(workbook: XLSX.WorkBook, sheet: string) {
   }
   range.s.c = 0;
   range.s.r = headerStart;
-  range.e.r = Math.min(range.e.r, headerStart + 5);
+  // Scan a window, not just the first row: some DIL exports put a title or
+  // label row above the real column header.
+  range.e.r = Math.min(range.e.r, headerStart + HEADER_SCAN_ROWS);
   const rows = XLSX.utils.sheet_to_json<unknown[]>(worksheet, { header: 1, defval: "", raw: false, range, blankrows: true });
-  const headers = normalizeSourceHeaders(rows[0] ?? []);
-  return { headers, headerRow: headerStart + 1, rows: rows.slice(1, 6).map((row) => Object.fromEntries(headers.map((header, index) => [header, row[index] ?? ""]))) };
+  // A real header row names several columns; a title row names one.
+  let headerIndex = rows.findIndex((row) => sourceHeaderCount(row ?? []) >= 2);
+  if (headerIndex < 0) headerIndex = rows.findIndex((row) => hasSourceHeaders(row ?? []));
+  if (headerIndex < 0) {
+    throw new Error(`Sheet "${sheet}" tidak memiliki baris header yang dapat dibaca.`);
+  }
+  const headers = normalizeSourceHeaders(rows[headerIndex] ?? []);
+  const headerRow = headerStart + headerIndex + 1;
+  return { headers, headerRow, rows: rows.slice(headerIndex + 1, headerIndex + 6).map((row) => Object.fromEntries(headers.map((header, index) => [header, row[index] ?? ""]))) };
 }
 
 async function readExcelPreview(content: ArrayBuffer): Promise<XLSX.WorkBook> {
@@ -100,7 +111,10 @@ async function readExcelPreview(content: ArrayBuffer): Promise<XLSX.WorkBook> {
     const book = XLSX.read(content, { type: "array", sheetRows: rowLimit });
     let nextLimit = rowLimit;
     for (const name of book.SheetNames) {
-      const fullRef = book.Sheets[name]["!fullref"];
+      const worksheet = book.Sheets[name];
+      // Excel workbooks may list chart/unsupported sheets without worksheet data.
+      if (!worksheet) continue;
+      const fullRef = worksheet["!fullref"] ?? worksheet["!ref"];
       if (!fullRef) continue;
       const fullRange = XLSX.utils.decode_range(fullRef);
       let neededRows: number;
@@ -136,8 +150,13 @@ self.onmessage = async (event: MessageEvent<{ file: File; kind: SourceKind; type
       reader.readAsArrayBuffer(file);
     });
     const book = await readExcelPreview(content);
-    const visible = book.SheetNames.filter((_, index) => !book.Workbook?.Sheets?.[index]?.Hidden);
-    const candidates = visible.length ? visible : book.SheetNames;
+    const worksheets = book.SheetNames.filter((name) => Boolean(book.Sheets[name]));
+    const visible = worksheets.filter((name) => {
+      const index = book.SheetNames.indexOf(name);
+      return !book.Workbook?.Sheets?.[index]?.Hidden;
+    });
+    const candidates = visible.length ? visible : worksheets;
+    if (!candidates.length) throw new Error("Berkas Excel tidak memiliki sheet yang dapat dibaca.");
     const previews = candidates.flatMap((name) => {
       try { return [{ name, preview: sheetPreview(book, name) }]; } catch { return []; }
     });
@@ -145,8 +164,8 @@ self.onmessage = async (event: MessageEvent<{ file: File; kind: SourceKind; type
       const mapping = guessMasterMapping(preview.headers, kind, preview.rows);
       return masterFields(kind).every((field) => !field.required || mapping[field.key]);
     }) ?? previews[0];
-    const first = detected?.name ?? candidates[0];
-    if (!first) throw new Error("Berkas Excel tidak memiliki sheet.");
+    const first = detected?.name;
+    if (!first) throw new Error("Sheet Excel kosong atau tidak memiliki nama kolom yang dapat dibaca.");
     await checkpoint();
     self.postMessage({ type: "complete", sheet: first, preview: detected?.preview });
   } catch (error) {

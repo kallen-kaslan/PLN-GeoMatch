@@ -4,6 +4,7 @@ import codecs
 import csv
 from collections.abc import Iterator
 from contextlib import contextmanager
+from itertools import chain
 from typing import BinaryIO
 
 import pandas as pd
@@ -15,6 +16,7 @@ from .normalization import clean_text, normalize_source_headers
 MAX_UPLOAD_BYTES = 500 * 1024 * 1024
 IMPORT_CHUNK_ROWS = 10000
 ENCODING_CHUNK_BYTES = 1024 * 1024
+HEADER_SCAN_ROWS = 30
 
 
 def validate_text_encoding(source: BinaryIO, encoding: str) -> None:
@@ -64,6 +66,18 @@ def check_file_size(source: BinaryIO) -> None:
     source.seek(0)
     if size > MAX_UPLOAD_BYTES:
         raise HTTPException(status_code=413, detail="Ukuran file maksimal 500 MB.")
+
+
+def header_row_index(rows: list[list[object]]) -> int | None:
+    """Pick the first row naming at least two columns; a title row names one."""
+    fallback = None
+    for index, values in enumerate(rows):
+        named = sum(1 for value in values if clean_text(value))
+        if named >= 2:
+            return index
+        if named and fallback is None:
+            fallback = index
+    return fallback
 
 
 @contextmanager
@@ -120,15 +134,22 @@ def read_upload(source: BinaryIO, filename: str, sheet_name: str | None):
 
         def excel_rows() -> Iterator[tuple[int, dict[str, str]]]:
             rows = enumerate(worksheet.iter_rows(values_only=True), start=1)
-            for _, values in rows:
-                if any(clean_text(value) for value in values):
-                    headers = normalize_source_headers(list(values))
+            # Some DIL exports put a title or label row above the real header.
+            # Buffer the physical rows after the first row naming any cell, the
+            # same window the frontend preview worker scans.
+            window: list[tuple[int, tuple[object, ...]]] = []
+            for number, values in rows:
+                if not window and not any(clean_text(value) for value in values):
+                    continue
+                window.append((number, values))
+                if number > window[0][0] + HEADER_SCAN_ROWS:
                     break
-            else:
+            index = header_row_index([values for _, values in window])
+            if index is None:
                 raise ValueError(f"Sheet '{selected_sheet}' tidak memiliki nama kolom")
-            # Preserve internal blank rows, but ignore Excel's trailing empty rows.
+            headers = normalize_source_headers(window[index][1])
             pending_blank = 0
-            for row_number, values in rows:
+            for row_number, values in chain(window[index + 1 :], rows):
                 if all(value is None or value == "" for value in values):
                     pending_blank += 1
                     continue
@@ -139,9 +160,9 @@ def read_upload(source: BinaryIO, filename: str, sheet_name: str | None):
                     row_number,
                     {
                         header: ""
-                        if index >= len(values) or values[index] is None
-                        else str(values[index])
-                        for index, header in enumerate(headers)
+                        if column_index >= len(values) or values[column_index] is None
+                        else str(values[column_index])
+                        for column_index, header in enumerate(headers)
                     },
                 )
 
