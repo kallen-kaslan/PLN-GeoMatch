@@ -33,7 +33,7 @@ from app.modules.corrections.radius_filter import (
 )
 from app.modules.corrections.results import router as results_router
 from app.modules.corrections.review_groups import router as review_groups_router
-from app.modules.corrections.selection_state import candidate_usage
+from app.modules.corrections.selection_state import candidate_usage, saved_choice_summary
 from app.modules.corrections.service import (
     CorrectionKind,
     check_process,
@@ -587,6 +587,13 @@ def summary(
             CorrectionTarget.identity_status == "not_found"
         ).count(),
         "eligible_searched": counts.get("matched", 0) + counts.get("no_candidates", 0),
+        **(
+            {"saved_choices": saved_choice_summary(
+                db, run.process_id, run.generation,
+                radius_meters if radius_meters is not None else run.radius_meters,
+            )}
+            if run is not None else {}
+        ),
     }
 
 

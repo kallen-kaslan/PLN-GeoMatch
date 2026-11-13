@@ -35,6 +35,7 @@ export function AutomaticCandidateResults({ kind, label, batchId, processId, run
   const busy = !settled || search !== q || searchPreparing(records.data);
   const data = valid && settled ? summary.data : undefined;
   return <>
+    <p className="text-xs text-ui-muted">Kandidat ditemukan menghitung target yang memiliki setidaknya satu kandidat dalam radius. Kandidat yang sama dapat muncul pada beberapa target; angka ini tidak menunjukkan jumlah pasangan IDPEL unik yang sudah dipilih.</p>
     <section aria-label={`Ringkasan ${label}`} className="geo-metrics geo-metrics-4">{[
       ["Total baris", data?.total_rows], ["Kandidat ditemukan", data?.matched],
       ["Tanpa kandidat dalam radius", data?.no_candidates], ["Benturan dengan PDPJ", data?.pdpj_conflicts],

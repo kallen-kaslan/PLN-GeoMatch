@@ -6,6 +6,7 @@ import { AutomaticSelection } from "@/components/corrections/AutomaticSelection"
 import { CompleteAutomaticSelection } from "@/components/corrections/CompleteAutomaticSelection";
 import { AutomaticExtensionNote } from "@/components/corrections/AutomaticExtensionNote";
 import { AutomaticCandidateResults } from "@/components/corrections/AutomaticCandidateResults";
+import { SavedChoicesSummary } from "@/components/corrections/SavedChoicesSummary";
 import { buttonClass } from "@/lib/button";
 import { CORRECTION_TYPES, correctionApi, mergeCheckProgress, type AutomaticMode, type CompleteResult, type CorrectionCheck } from "@/lib/corrections";
 import { usePermissions } from "@/hooks/usePermissions";
@@ -63,6 +64,12 @@ export default function AutomaticCorrectionsPage() {
   const selectScope = (next: Record<string, string>) => { setRadiusDraft(null); setParams(next); };
   const selectedRadius = Number(radius);
   const mapRadius = run && Number.isFinite(selectedRadius) && selectedRadius > 0 && selectedRadius <= run.radius_meters ? selectedRadius : run?.radius_meters;
+  const validRadius = !!run && Number.isFinite(selectedRadius) && selectedRadius > 0 && selectedRadius <= run.radius_meters;
+  const savedSummary = useQuery({
+    queryKey: ["corrections", kind, "summary", batchId, processId, run?.generation, selectedRadius],
+    queryFn: () => correctionApi.summary(kind, { batch_id: batchId!, process_id: processId!, generation: run!.generation, radius_meters: selectedRadius }),
+    enabled: ready && validRadius && radius === settledRadius,
+  });
   const mapUrl = `/peta-koreksi?category=${kind}&batch_id=${batchId}&process_id=${processId}&generation=${generation}&radius_meters=${mapRadius}`;
   const backParams = new URLSearchParams();
   if (batchId) backParams.set("batch_id", String(batchId));
@@ -97,6 +104,7 @@ export default function AutomaticCorrectionsPage() {
     {!loading && !failed && !invalidScope && run && !ready && <p role="status" className="rounded-lg bg-amber-50 p-4 text-sm text-amber-950">Pemilihan otomatis hanya tersedia pada hasil terbaru yang sudah selesai. <Link to={backUrl} className="font-semibold underline">Buka pemeriksaan asal</Link> untuk melihat progres atau melanjutkan pemeriksaan.</p>}
     {ready && batchId && processId && run && <>
       <AutomaticExtensionNote extension={run.processing?.automatic_extension} />
+      {validRadius && radius === settledRadius && <SavedChoicesSummary data={savedSummary.data?.saved_choices} resultUrl={`/result?category=${kind}&process_id=${processId}&generation=${generation}&radius_meters=${selectedRadius}`} />}
       <div className="flex flex-wrap gap-4 text-xs font-semibold"><Link to={mapUrl} className="underline">Tinjau melalui Peta Koreksi</Link><Link to={`/result?category=${kind}&process_id=${processId}&generation=${generation}&radius_meters=${mapRadius}`} className="underline">Hasil pemeriksaan ini</Link></div>
       {!canWrite ? <p role="status" className="rounded-lg bg-blue-50 p-4 text-sm">Auditor dapat meninjau kandidat. Penyimpanan pilihan otomatis tersedia bagi admin dan analis.</p> : tieStrategy === "complete" ? <CompleteAutomaticSelection key={`complete-${kind}-${processId}`} kind={kind} processId={processId} batchId={batchId} run={run} radius={radius} onRadiusChange={setRadius} onModeChange={setTieStrategy} onBusyChange={setWriting} onCompleted={completed} /> : <AutomaticSelection key={`automatic-${kind}-${processId}-${run.id}`} kind={kind} processId={processId} batchId={batchId} run={run} radius={radius} onRadiusChange={setRadius} onBusyChange={setWriting} tieStrategy={tieStrategy} onTieStrategyChange={setTieStrategy} />}
       {radius === settledRadius ? <AutomaticCandidateResults key={`candidates-${kind}-${processId}-${run.id}-${radius}`} kind={kind} label={descriptor.label} batchId={batchId} processId={processId} run={run} radius={radius} /> : <p role="status" className="text-sm">Memuat kandidat sesuai radius...</p>}

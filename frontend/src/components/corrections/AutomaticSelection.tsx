@@ -98,7 +98,7 @@ export function AutomaticSelection({ kind, processId, batchId, run, radius, onRa
         {filtering && <LoaderCircle size={16} className="animate-spin" />}Pratinjau pilihan otomatis
       </button>
     </div>
-    <p className="text-xs text-ui-muted">Radius ini otomatis memfilter ringkasan, kandidat pada tabel dan detail, serta pratinjau pilihan. Radius pemeriksaan tersimpan {count(run.radius_meters)} m.</p>
+    <p className="text-xs text-ui-muted">Radius ini memfilter kandidat pada tabel dan detail serta pilihan baru dalam pratinjau. Keputusan tersimpan dipertahankan pada semua radius, termasuk pembatalan. Mengubah radius tidak menghitung ulang atau mengganti pilihan lama. Radius pemeriksaan tersimpan {count(run.radius_meters)} m.</p>
     {!validRadius && <p role="alert" className="text-sm text-red-700">Radius harus lebih dari 0 dan paling besar {count(run.radius_meters)} meter.</p>}
     {busy && <p role="status" className="flex items-center gap-2 text-sm"><LoaderCircle size={16} className="animate-spin" />{filtering ? `Memuat kandidat dan pratinjau radius ${count(radiusMeters)} m. Data besar dapat memerlukan beberapa saat; pilihan belum diubah.` : save.isPending ? "Memvalidasi dan menyimpan pilihan beserta riwayatnya..." : searchingUnpaired ? "Memproses pencarian atau unduhan usulan lanjutan. Pilihan belum diubah..." : reviewing ? "Menyimpan pilihan hasil tinjauan..." : proposals.isPending ? "Menyiapkan XLSX usulan pasangan..." : "Menyiapkan berkas XLSX..."}</p>}
     {manualNotice && <p role="status" className="rounded-lg bg-green-50 p-3 text-sm text-green-800">{manualNotice}</p>}
@@ -108,6 +108,7 @@ export function AutomaticSelection({ kind, processId, batchId, run, radius, onRa
         ["Akan dipilih otomatis", preview.selected_count], ["Memakai kandidat alternatif", preview.fallback_count],
         ["Keputusan tersimpan dipertahankan", preview.protected_count], [tieStrategy === "suggest" ? "Belum mendapat pasangan" : "Belum dipilih / perlu tinjauan", tieStrategy === "suggest" ? preview.unpaired_count ?? preview.review_count : preview.review_count],
       ].map(([label, value]) => <div key={String(label)} className="rounded-lg bg-gray-50 p-3"><dt className="text-xs text-ui-muted">{label}</dt><dd className="mt-1 text-lg font-semibold">{count(Number(value))}</dd></div>)}</dl>
+      <p className="text-xs text-ui-muted">Angka belum dipilih / perlu tinjauan hanya menghitung target tanpa keputusan tersimpan. Pilihan lama di luar radius ditampilkan terpisah pada ringkasan pilihan tersimpan di atas.</p>
       {tieStrategy === "review" && Object.entries(preview.review_reasons).length > 0 && <ul className="list-inside list-disc space-y-1 text-xs">{Object.entries(preview.review_reasons).map(([reason, total]) => <li key={reason}>{reasons[reason] ?? reason}: {count(total)} target</li>)}</ul>}
       {tieStrategy === "suggest" && <TieSuggestions key={`suggestions-${preview.fingerprint}`} preview={preview} mapUrl={mapUrl} disabled={writing} onDownload={() => proposals.mutate(preview)}>{!!preview.unpaired_count && <UnpairedFollowUp kind={kind} processId={processId} preview={preview} mapUrl={mapUrl} disabled={writing} onResolved={refreshReview} onBusyChange={setReviewing} onSearchBusyChange={setSearchingUnpaired} />}</TieSuggestions>}
       {proposals.error && <p role="alert" className="text-sm text-red-700">Unduhan usulan belum berhasil. Muat ulang pratinjau jika pilihan berubah, lalu coba lagi.</p>}
@@ -120,11 +121,13 @@ export function AutomaticSelection({ kind, processId, batchId, run, radius, onRa
       {saved !== null && <p role="status" className="rounded-lg bg-green-50 p-3 text-sm text-green-800">{count(saved)} pilihan otomatis sudah tersimpan beserta petugas dan riwayat. Pilihan dapat ditinjau melalui Peta Koreksi.</p>}
       {download.error && <p role="alert" className="text-sm text-red-700">Pilihan sudah tersimpan. Berkas belum berhasil diunduh: {download.error.message}. Gunakan Unduh ulang XLSX.</p>}
       <div className="flex flex-wrap items-center gap-3">
-        {saved === null ? <button type="button" disabled={busy || save.error?.status === 409} onClick={() => save.mutate(preview)} className={buttonClass.primary}><Download size={16} />{tieStrategy === "suggest" ? "Simpan pilihan tanpa jarak sama & ekspor" : "Simpan & ekspor XLSX"}</button>
+        {saved === null && preview.selected_count > 0 ? <button type="button" disabled={busy || save.error?.status === 409} onClick={() => save.mutate(preview)} className={buttonClass.primary}><Download size={16} />{tieStrategy === "suggest" ? "Simpan pilihan tanpa jarak sama & ekspor" : "Simpan & ekspor XLSX"}</button>
+          : saved === null ? <button type="button" disabled={busy} onClick={() => download.mutate(preview.radius_meters)} className={buttonClass.primary}><Download size={16} />Ekspor pilihan tersimpan dalam radius</button>
           : <button type="button" disabled={busy} onClick={() => download.mutate(preview.radius_meters)} className={buttonClass.primary}><Download size={16} />Unduh ulang XLSX</button>}
         <Link to={mapUrl} className="text-xs font-semibold underline">Buka Peta Koreksi</Link>
         {saved !== null && <Link to={resultUrl} className="text-xs font-semibold underline">Lihat hasil tersimpan</Link>}
       </div>
+      {saved === null && preview.selected_count === 0 && <p className="text-xs text-ui-muted">Tidak ada pilihan baru untuk disimpan. Ekspor menggunakan pilihan aktif yang sudah tersimpan dalam radius ini.</p>}
       <p className="text-xs text-ui-muted">XLSX berisi pilihan aktif dalam radius {count(preview.radius_meters)} m, termasuk pilihan tersimpan sebelumnya yang memenuhi radius. Target tanpa pilihan tidak dimasukkan dalam ekspor.</p>
     </>}
   </section>;

@@ -21,6 +21,7 @@ from app.modules.corrections.export_data import (
     source_label,
     text,
 )
+from app.modules.corrections.selection_state import saved_choice_summary
 from app.modules.corrections.service import CorrectionKind, check_process
 from app.modules.corrections.spreadsheet import (
     CANDIDATE_DISTANCE_HEADER,
@@ -88,26 +89,20 @@ def latest_decisions(db: Session, process_id: int, generation: int) -> Subquery:
 
 
 def results_summary(
-    db: Session, kind: CorrectionKind, process_id: int, generation: int | None = None
+    db: Session,
+    kind: CorrectionKind,
+    process_id: int,
+    generation: int | None = None,
+    radius_meters: float | None = None,
 ) -> dict[str, Any]:
     check, process, run = result_scope(db, kind, process_id, generation)
     batch = db.get(UploadBatch, process.target_batch_id)
     assert batch is not None
-    latest = latest_decisions(db, process_id, run.generation)
-    chosen = (
-        db.query(func.count())
-        .select_from(latest)
-        .filter(latest.c.candidate_id.is_not(None))
-        .scalar()
-        or 0
+    choices = saved_choice_summary(
+        db, process_id, run.generation, export_radius(run, radius_meters)
     )
-    cancelled = (
-        db.query(func.count())
-        .select_from(latest)
-        .filter(latest.c.candidate_id.is_(None))
-        .scalar()
-        or 0
-    )
+    chosen = int(choices["active_count"] or 0)
+    cancelled = int(choices["cancelled_count"] or 0)
     outcomes = {
         status: number
         for status, number in db.query(
@@ -148,6 +143,7 @@ def results_summary(
         "matched_targets": matched,
         "unmatched_targets": saved - matched,
         "chosen_count": chosen,
+        "saved_choices": choices,
         "cancelled_count": cancelled,
         "not_selected": max(0, total - chosen),
         "decision_events": events,
@@ -203,8 +199,9 @@ def result_query(
         query = query.filter(
             or_(
                 CorrectionDecision.candidate_id.is_(None),
-                CorrectionDecision.candidate["distance_meters"].as_float()
-                <= radius_meters,
+                CorrectionDecision.candidate["distance_meters"]
+                .as_float()
+                .between(0, radius_meters),
             )
         )
     if q.strip():
@@ -298,7 +295,7 @@ def saved_results(
         if state and not state["ready"]:
             return {
                 **pending_search(state),
-                "summary": results_summary(db, kind, process_id, run.generation),
+                "summary": results_summary(db, kind, process_id, run.generation, radius),
             }
     query = result_query(db, process, run, q, status, radius)
     total = query.count()
@@ -306,7 +303,7 @@ def saved_results(
     assert batch is not None
     rows = query.order_by(SourceRecord.id).offset(skip).limit(limit).all()
     return {
-        "summary": results_summary(db, kind, process_id, run.generation),
+        "summary": results_summary(db, kind, process_id, run.generation, radius),
         "total": total,
         "items": [
             result_info(source, outcome, event, batch)

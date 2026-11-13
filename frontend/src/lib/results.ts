@@ -1,6 +1,6 @@
 import type { SearchPage } from "@/lib/search";
 import { api } from "@/lib/api";
-import type { CorrectionDecision } from "@/lib/corrections";
+import type { CorrectionDecision, SavedChoiceCounts } from "@/lib/corrections";
 import type { CorrectionKind } from "@/lib/master";
 import type { Fields } from "@/lib/pdpj";
 
@@ -12,6 +12,7 @@ export interface ProcessHistory {
   partial?: boolean; processing_state?: string;
 }
 export interface ResultSummary {
+  saved_choices: SavedChoiceCounts;
   automatic_extension?: import("./corrections").CorrectionProcessing["automatic_extension"];
   process_id: number; process_name: string; category: CorrectionKind; batch_id: number; filename: string;
   pdpj_review_id: number; generation: number; radius_meters: number; matching_status: string;

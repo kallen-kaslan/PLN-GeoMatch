@@ -7,6 +7,7 @@ import { Link, useSearchParams } from "react-router-dom";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { ResultDetail } from "@/components/corrections/ResultDetail";
 import { AutomaticExtensionNote } from "@/components/corrections/AutomaticExtensionNote";
+import { SavedChoicesSummary } from "@/components/corrections/SavedChoicesSummary";
 import { DecisionHistory } from "@/components/corrections/DecisionHistory";
 import type { ApiError } from "@/lib/api";
 import { buttonClass } from "@/lib/button";
@@ -55,10 +56,11 @@ export function CorrectionResults({ process, processes, category }: { process?: 
     {!process ? <p className="rounded-lg border border-gray-300 bg-white p-5">Belum ada pemeriksaan pada kategori ini. Mulai dari <Link className="font-semibold underline" to={`/koreksi/${descriptor.slug}`}>Data Koreksi</Link>.</p> : <>
       <section aria-label="Ringkasan hasil koreksi" className="geo-metrics geo-metrics-8">{[
         ["Total baris", summary?.total_targets, "primary"], ["Baris tersimpan", summary?.saved_rows, "neutral"],
-        ["Pilihan aktif", summary?.chosen_count, "success"], ["Belum ada pilihan aktif", summary?.not_selected, "warning"],
+        ["Belum ada pilihan aktif (semua radius)", summary?.not_selected, "warning"],
         ["Belum diproses", summary?.not_processed, "warning"], ["Pilihan dibatalkan", summary?.cancelled_count, "neutral"],
-        ["Kandidat ditemukan", summary?.matched_targets, "success"], ["Riwayat perubahan", summary?.decision_events, "violet"],
+        ["Target memiliki kandidat (versi pemeriksaan)", summary?.matched_targets, "success"], ["Riwayat perubahan", summary?.decision_events, "violet"],
       ].map(([label, value, tone]) => <MetricCard key={String(label)} label={String(label)} value={count(value as number | undefined)} compact tone={tone === "primary" || Number(value) > 0 ? tone as MetricTone : "neutral"} />)}</section>
+      <SavedChoicesSummary data={validRadius ? summary?.saved_choices : undefined} />
       <section aria-label="Daftar hasil koreksi" className="space-y-4 rounded-lg border border-ui-border bg-white p-4">
         <div className="flex flex-wrap gap-3"><input aria-label="Cari hasil koreksi" type="search" maxLength={120} value={search} onChange={(event) => { setSearch(event.target.value); setPage(1); }} placeholder="Cari target, kandidat, atau petugas" className={`${control} flex-1`} /><select aria-label="Filter hasil pilihan" value={status} onChange={(event) => { setStatus(event.target.value as ResultFilter); setPage(1); }} className={control}>{([["selected", "Kandidat dipilih"], ["all", "Semua baris"], ["not_selected", "Belum ada pilihan aktif"], ["cancelled", "Pilihan dibatalkan"], ["not_processed", "Belum diproses"]] as const).map(([key, label]) => <option key={key} value={key}>{label}</option>)}</select><button type="button" disabled={!validRadius || download.isPending || results.isPending || searchBusy || q !== search || !results.data?.total} onClick={() => download.mutate()} className={buttonClass.primary}>{download.isPending ? "Menyiapkan ekspor..." : "Ekspor hasil XLSX"}</button></div>
         <SearchFeedback state={results.data?.search_index} waiting={search !== q} fetching={Boolean(search) && results.isFetching} />

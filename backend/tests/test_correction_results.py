@@ -84,6 +84,31 @@ def test_export_keeps_original_objectid_and_applies_filter_radius_to_saved_choic
         book.close()
     filtered = client.get(base + "/results", params={"radius_meters": 50}).json()
     assert filtered["total"] == 1 and filtered["summary"]["chosen_count"] == 2
+    counts = filtered["summary"]["saved_choices"]
+    assert counts == {
+        "radius_meters": 50,
+        "active_count": 2,
+        "within_radius_count": 1,
+        "outside_radius_count": 1,
+        "unknown_distance_count": 0,
+        "cancelled_count": 0,
+        "max_distance_meters": max(saved_distances),
+    }
+    automatic_summary = client.get(
+        f"/corrections/{kind}/summary",
+        params={"process_id": check["process_id"], "generation": 1, "radius_meters": 50},
+    ).json()
+    assert automatic_summary["saved_choices"] == counts
+    boundary_response = client.get(
+        base + "/results", params={"radius_meters": saved_distances[1]}
+    )
+    assert boundary_response.status_code == 200, boundary_response.text
+    at_boundary = boundary_response.json()
+    assert at_boundary["total"] == 2
+    assert at_boundary["summary"]["saved_choices"]["within_radius_count"] == 2
+    wider = client.get(base + "/results", params={"radius_meters": 250}).json()
+    assert wider["summary"]["saved_choices"]["within_radius_count"] == 2
+    assert wider["summary"]["saved_choices"]["outside_radius_count"] == 0
     unfiltered = client.get(base + "/results/export")
     book = load_workbook(io.BytesIO(unfiltered.content))
     full = sheet_rows(book, "Hasil Koreksi")
@@ -224,6 +249,34 @@ def choose(
     return response.json()
 
 
+@pytest.mark.parametrize("distance", [None, -1])
+def test_saved_choice_with_invalid_distance_stays_saved_but_is_excluded_from_radius(
+    client: TestClient, db_session: Session, partial: dict, distance: float | None
+) -> None:
+    choose(client, partial)
+    event = db_session.query(CorrectionDecision).one()
+    event.candidate = {**event.candidate, "distance_meters": distance}
+    db_session.commit()
+    response = client.get(partial["base"] + "/results", params={"radius_meters": 10})
+    assert response.status_code == 200, response.text
+    result = response.json()
+    assert result["total"] == 0
+    counts = result["summary"]["saved_choices"]
+    assert counts["active_count"] == counts["unknown_distance_count"] == 1
+    assert counts["within_radius_count"] == counts["outside_radius_count"] == 0
+    assert counts["max_distance_meters"] is None
+    automatic = client.get(
+        f"/corrections/{partial['kind']}/summary",
+        params={"process_id": partial["process_id"], "generation": 1, "radius_meters": 10},
+    ).json()
+    assert automatic["saved_choices"] == counts
+    exported = client.get(partial["base"] + "/results/export", params={"radius_meters": 10})
+    book = load_workbook(io.BytesIO(exported.content))
+    assert sheet_rows(book, "Hasil Koreksi") == []
+    book.close()
+    assert db_session.query(CorrectionDecision).count() == 1
+
+
 def test_partial_choice_appears_in_results_history_and_xlsx_without_changing_source(
     client: TestClient, db_session: Session, partial: dict
 ) -> None:
@@ -353,6 +406,15 @@ def test_replacement_cancellation_filters_and_history_are_not_counted_as_extra_c
     result = client.get(partial["base"] + "/results").json()
     assert result["total"] == result["summary"]["chosen_count"] == 0
     assert result["summary"]["cancelled_count"] == 1
+    assert result["summary"]["saved_choices"] == {
+        "radius_meters": 10,
+        "active_count": 0,
+        "within_radius_count": 0,
+        "outside_radius_count": 0,
+        "unknown_distance_count": 0,
+        "cancelled_count": 1,
+        "max_distance_meters": None,
+    }
     assert result["summary"]["decision_events"] == 3
     assert (
         client.get(partial["base"] + "/results", params={"status": "cancelled"}).json()[
@@ -432,6 +494,9 @@ def test_resume_and_new_search_preserve_choices_and_allow_historical_result_expo
     ).json()
     assert current["items"][0]["choice"]["candidate"]["fields"]["idpel"] == "003"
     assert historical["items"][0]["choice"]["candidate"]["fields"]["idpel"] == "002"
+    assert historical["summary"]["saved_choices"]["active_count"] == 1
+    assert historical["summary"]["saved_choices"]["max_distance_meters"] == historical["items"][0]["choice"]["candidate"]["distance_meters"]
+    assert current["summary"]["saved_choices"]["max_distance_meters"] == current["items"][0]["choice"]["candidate"]["distance_meters"]
     export = client.get(partial["base"] + "/results/export", params={"generation": 1})
     book = load_workbook(io.BytesIO(export.content))
     assert sheet_rows(book, "Hasil Koreksi")[0]["idpelanggan"] == "002"

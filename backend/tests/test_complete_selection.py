@@ -65,6 +65,19 @@ def test_complete_saves_ties_and_extensions_and_preserves_history_and_map(
     )
     assert historical["summary"]["chosen_count"] == 0
     assert historical["summary"]["radius_meters"] == 10
+    narrow = client.get(
+        base + "/results", params={"generation": 2, "radius_meters": 10}
+    ).json()
+    counts = narrow["summary"]["saved_choices"]
+    assert counts["active_count"] == 5
+    assert counts["within_radius_count"] == narrow["total"] == 2
+    assert counts["outside_radius_count"] == 3
+    assert historical["summary"]["saved_choices"]["active_count"] == 0
+    automatic_counts = client.get(
+        base.split("/checks")[0] + "/summary",
+        params={"process_id": checked["process_id"], "generation": 2, "radius_meters": 10},
+    ).json()["saved_choices"]
+    assert automatic_counts == counts
     assert (
         len(
             client.get(

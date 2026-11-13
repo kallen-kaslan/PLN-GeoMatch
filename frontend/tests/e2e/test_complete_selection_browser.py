@@ -141,6 +141,48 @@ def test_complete_save_export_result_and_inherited_map_candidates(
     expect(
         page.get_by_text("Otomatis · Identitas belum diverifikasi", exact=True)
     ).to_have_count(4)
+    saved_metrics = page.get_by_role("region", name="Pilihan tersimpan menurut radius", exact=True)
+
+    def assert_metric(label, value):
+        expect(saved_metrics.get_by_text(label, exact=True).locator("..").get_by_text(value, exact=True)).to_be_visible()
+
+    assert_metric("Total pilihan aktif (semua radius)", "5")
+    assert_metric("Pilihan aktif dalam radius", "5")
+    assert_metric("Pilihan aktif di luar radius", "0")
+    page.get_by_label("Filter radius hasil ekspor (meter)", exact=True).fill("10")
+    assert_metric("Pilihan aktif dalam radius", "2")
+    assert_metric("Pilihan aktif di luar radius", "3")
+    expect(saved_metrics.get_by_role("status")).to_contain_text("3 pilihan aktif berada di luar radius 10 m")
+    expect(page.get_by_role("table").get_by_role("row")).to_have_count(3)
+    with page.expect_download() as filtered_download:
+        page.get_by_role("button", name="Ekspor hasil XLSX", exact=True).click()
+    filtered_path = tmp_path / filtered_download.value.suggested_filename
+    filtered_download.value.save_as(filtered_path)
+    filtered_book = load_workbook(filtered_path)
+    filtered_rows = list(filtered_book["Hasil Koreksi"].values)[1:]
+    assert len(filtered_rows) == 2 and all(row[11] <= 10 for row in filtered_rows)
+    filtered_book.close()
+
+    page.goto(f"/koreksi/pemilihan-otomatis?category={kind}&batch_id={batch}&process_id={process}&generation=2&radius_meters=10")
+    assert_metric("Total pilihan aktif (semua radius)", "5")
+    assert_metric("Pilihan aktif dalam radius", "2")
+    assert_metric("Pilihan aktif di luar radius", "3")
+    expect(page.get_by_role("button", name="Simpan & ekspor XLSX", exact=True)).to_have_count(0)
+    expect(page.get_by_role("button", name="Ekspor pilihan tersimpan dalam radius", exact=True)).to_be_enabled()
+    page.get_by_label("Penanganan jarak sama", exact=True).select_option("complete")
+    assert_metric("Pilihan aktif dalam radius", "2")
+    assert_metric("Pilihan aktif di luar radius", "3")
+    page.get_by_role("button", name="Pratinjau lengkap", exact=True).click()
+    expect(page.get_by_role("button", name="Ekspor pilihan tersimpan dalam radius", exact=True)).to_be_enabled()
+    with page.expect_download() as existing_download:
+        page.get_by_role("button", name="Ekspor pilihan tersimpan dalam radius", exact=True).click()
+    existing_path = tmp_path / existing_download.value.suggested_filename
+    existing_download.value.save_as(existing_path)
+    existing_book = load_workbook(existing_path)
+    assert len(list(existing_book["Hasil Koreksi"].values)) == 3
+    existing_book.close()
+    assert httpx.get(base + "/results/history").json()["total"] == 5
+    assert httpx.get(base + "/results").json()["summary"]["chosen_count"] == 5
     assert (
         httpx.get(base + "/results", params={"generation": 1}).json()["summary"][
             "chosen_count"

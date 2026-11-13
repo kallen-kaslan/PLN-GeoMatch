@@ -10,6 +10,11 @@ export const CORRECTION_TYPES: { key: CorrectionKind; slug: string; label: strin
   { key: "idpel_kosong", slug: "idpel-kosong", label: "IDPEL Kosong" },
 ];
 export type SearchStatus = "not_checked" | "pdpj_conflict" | "invalid_data" | "incomplete_coordinates" | "matched" | "no_candidates";
+export interface SavedChoiceCounts {
+  radius_meters: number; active_count: number; within_radius_count: number;
+  outside_radius_count: number; unknown_distance_count: number; cancelled_count: number;
+  max_distance_meters: number | null;
+}
 export type CorrectionFilter = SearchStatus | "all" | "identity_found" | "identity_not_found";
 export const searchLabel: Record<SearchStatus, string> = {
   not_checked: "Belum diperiksa", pdpj_conflict: "Benturan dengan PDPJ", invalid_data: "Data perlu diperbaiki",
@@ -48,7 +53,7 @@ export function mergeCheckProgress(previous: CorrectionCheck | undefined, next: 
     runs: next.runs.map((run) => run.id === latest.id ? latest : run) };
 }
 export interface CorrectionScope { batch_id?: number; process_id?: number; generation?: number; radius_meters?: number }
-export interface CorrectionSummary { total_rows: number; not_checked: number; pdpj_conflicts: number; matched: number; no_candidates: number; invalid_data: number; incomplete_coordinates: number; identity_found: number; identity_not_found: number; eligible_searched: number; generation: number | null }
+export interface CorrectionSummary { saved_choices?: SavedChoiceCounts; total_rows: number; not_checked: number; pdpj_conflicts: number; matched: number; no_candidates: number; invalid_data: number; incomplete_coordinates: number; identity_found: number; identity_not_found: number; eligible_searched: number; generation: number | null }
 export interface MapRadiusSummary {
   process_id: number; generation: number; revision: number; radius_meters: number; stored_radius_meters: number; partial: boolean;
   total_rows: number; saved_rows: number; not_checked: number; matched: number; no_candidates: number;
