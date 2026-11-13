@@ -136,6 +136,7 @@ export function PdpjProgress({ review, autoStart, saving = false, onBusyChange }
       {canWrite && !ready && (working || serverActive ? <button type="button" onClick={() => void pause()} disabled={saving || serverSaving || stopping || checkpoint.activity?.operation === "pausing"} className={buttonClass.secondary}><Pause size={16} />Hentikan sementara</button> : <button type="button" disabled={stopping || saving || monitor.isError} onClick={() => void run()} className={buttonClass.primary}>{stopping || saving ? <LoaderCircle size={16} className="animate-spin" /> : <Play size={16} />}{stopping ? "Menyimpan bagian aktif…" : "Lanjutkan pemeriksaan"}</button>)}
       {canWrite && !ready && !working && !stopping && !serverActive && progress.state === "running" && <button type="button" onClick={() => void pause()} className={buttonClass.secondary}>Jeda untuk validasi</button>}
     </div>
+    <details open={!ready} className="geo-progress-details"><summary className="text-xs font-medium">{ready ? "Detail pemeriksaan selesai" : "Detail progres pemeriksaan"}</summary>
     <div className="flex items-center gap-3"><progress aria-label="Kemajuan keseluruhan pemeriksaan PDPJ" max={100} value={percent} className="h-1.5 min-w-0 flex-1" /><span className="text-sm font-semibold">{progressLabel(percent)}</span></div>
 
     {busy && <p className="text-xs text-ui-muted">{saving || serverSaving ? "Persetujuan dan versi data sedang disimpan." : progress.stage === "validating" ? "Memeriksa dan menyimpan validasi akhir bagian aktif…" : "Memproses dan menyimpan bagian aktif…"} Angka berikut menunjukkan hasil yang sudah tersimpan.</p>}
@@ -145,6 +146,7 @@ export function PdpjProgress({ review, autoStart, saving = false, onBusyChange }
       <div><dt className="font-semibold">Baris sumber terakhir tersimpan</dt><dd>{progress.last_row_number === null ? "Belum ada" : count(progress.last_row_number)}</dd></div>
       <div><dt className="font-semibold">Durasi pemrosesan</dt><dd>{duration(progress.elapsed_seconds)}{busy && waitingSeconds > 0 ? ` · bagian aktif ${duration(waitingSeconds)}` : ""}</dd></div>
     </dl>
+    </details>
     {!ready && storageInfo}
     {monitor.isError && <p role="alert" className="text-sm text-amber-900">Status server belum dapat dipastikan. Memeriksa ulang sebelum melanjutkan.</p>}
     {(error || progress.error) && <p role="alert" className="text-sm text-red-700">{error || progress.error}</p>}

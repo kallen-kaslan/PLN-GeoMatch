@@ -40,7 +40,7 @@ export function PreviewPagination({ context, page, pageSize, total, loading, onP
           {[10, 25, 50, 100].map((size) => <option key={size} value={size}>{size} baris</option>)}
         </select>
       </label>
-      <form noValidate onSubmit={submit} className="flex flex-wrap items-center gap-2">
+      {pages > 1 && <><form noValidate onSubmit={submit} className="flex flex-wrap items-center gap-2">
         <label htmlFor={`${context}-page-number`} className="font-semibold">Ke halaman</label>
         <input id={`${context}-page-number`} aria-label={`Nomor halaman ${context}`} aria-invalid={!!error} aria-describedby={error ? `${context}-page-error` : undefined} type="number" inputMode="numeric" min={1} max={pages} step={1} value={input ?? page} onChange={(event) => { setInput(event.target.value); setError(""); }} disabled={disabled} className={`${control} w-24`} />
         <button type="submit" disabled={disabled} className={buttonClass.secondary}>Buka halaman</button>
@@ -49,6 +49,7 @@ export function PreviewPagination({ context, page, pageSize, total, loading, onP
         <button type="button" aria-label={context === "master" ? "Halaman sebelumnya" : `Halaman ${context} sebelumnya`} disabled={page <= 1 || loading} onClick={() => navigate(page - 1)} className={buttonClass.secondary}><ArrowLeft size={16} /></button>
         <button type="button" aria-label={context === "master" ? "Halaman berikutnya" : `Halaman ${context} berikutnya`} disabled={page >= pages || loading} onClick={() => navigate(page + 1)} className={buttonClass.secondary}><ArrowRight size={16} /></button>
       </div>
+      </>}
     </div>
     {error && <p id={`${context}-page-error`} role="alert" className="w-full text-red-700">{error}</p>}
   </footer>;

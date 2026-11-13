@@ -4,7 +4,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useSearchParams } from "react-router-dom";
 import { DecisionHistory } from "@/components/corrections/DecisionHistory";
 import { correctionApi } from "@/lib/corrections";
-import { downloadSpreadsheet, resultsApi, type ProcessHistory } from "@/lib/results";
+import { downloadSpreadsheet, resultsApi, reviewStatusLabel, type ProcessHistory } from "@/lib/results";
 import { Link } from "react-router-dom";
 import { api } from "@/lib/api";
 import { History, RotateCw, Trash2, ExternalLink, FileSpreadsheet, MapPin } from "lucide-react";
@@ -76,7 +76,7 @@ export default function HistoryPage() {
   return (
     <div className="space-y-6">
       {/* Header */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+      <div className="geo-page-heading geo-archive-heading">
         <div>
           <h1 className="text-xl sm:text-2xl font-semibold mb-1 flex items-center gap-2">
             <History className="w-6 h-6 sm:w-7 sm:h-7 text-neo-black" strokeWidth={2.5} />
@@ -88,6 +88,7 @@ export default function HistoryPage() {
         </div>
         <div className="flex flex-wrap items-center gap-2">
           {canDelete && processes.length > 0 && (
+            <details className="relative"><summary className="rounded-md border border-ui-border bg-white px-3 py-2 text-xs font-medium text-ui-muted">Kelola riwayat</summary>
             <button
               onClick={handleClearAll}
               disabled={clearingAll || loading}
@@ -96,6 +97,7 @@ export default function HistoryPage() {
               <Trash2 className="w-3.5 h-3.5" />
               <span>{clearingAll ? "Membersihkan..." : "Hapus Semua"}</span>
             </button>
+            </details>
           )}
           <button
             onClick={() => {
@@ -130,7 +132,7 @@ export default function HistoryPage() {
         </div>
       ) : processes.length === 0 ? (
         <div className="p-8 border border-dashed border-ui-border rounded-lg text-center text-sm text-ui-muted bg-white">
-          Belum ada proses yang pernah dijalankan. Silakan mulai di menu Proses.
+          Belum ada pemeriksaan tersimpan. Mulai dari Data PDPJ atau Data Koreksi.
         </div>
       ) : (
         <>
@@ -150,7 +152,7 @@ export default function HistoryPage() {
                     {p.category && <p className="mt-1 text-xs">{p.filename} | {p.partial ? "Hasil sebagian" : "Pemeriksaan selesai"} | {p.saved_rows} baris tersimpan | {p.not_processed} belum diproses | {p.chosen_count} pilihan aktif</p>}
                   </div>
                   <span className="shrink-0 px-2 py-0.5 border border-ui-border rounded text-xs uppercase font-semibold bg-[#f1f1f4]">
-                    {p.review_status.replace("_", " ")}
+                    {reviewStatusLabel(p.review_status)}
                   </span>
                 </div>
 
@@ -174,7 +176,7 @@ export default function HistoryPage() {
                     <span className="font-semibold">{p.total_targets}</span>
                   </div>
                   <div>
-                    <span className="text-gray-500 block text-xs">Hasil Cocok / Anomali:</span>
+                    <span className="text-gray-500 block text-xs">Dengan / tanpa kandidat:</span>
                     <span>
                       <strong className="text-[#16a34a]">{p.matched_targets}</strong> /{" "}
                       <strong className="text-[#dc2626]">{p.unmatched_targets}</strong>
@@ -224,7 +226,7 @@ export default function HistoryPage() {
                   <th className="p-3 border-r border-ui-border font-semibold">Tanggal Dibuat</th>
                   <th className="p-3 border-r border-ui-border font-semibold">Radius</th>
                   <th className="p-3 border-r border-ui-border font-semibold">Total Target</th>
-                  <th className="p-3 border-r border-ui-border font-semibold">Cocok / Anomali</th>
+                  <th className="p-3 border-r border-ui-border font-semibold">Dengan / tanpa kandidat</th>
                   <th className="p-3 border-r border-ui-border font-semibold">Status Review</th>
                   <th className="p-3 text-center font-semibold">Aksi Cepat</th>
                 </tr>
@@ -248,7 +250,7 @@ export default function HistoryPage() {
                     </td>
                     <td className="p-3 border-r border-ui-border">
                       <span className="neo-highlight px-2 py-1 border border-ui-border rounded text-xs uppercase font-semibold bg-neo-white">
-                        {p.review_status.replace("_", " ")}
+                        {reviewStatusLabel(p.review_status)}
                       </span>
                     </td>
                     <td className="p-3 text-center">

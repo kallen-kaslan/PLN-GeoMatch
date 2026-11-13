@@ -85,6 +85,8 @@ def test_upload_mapping_processing_and_history_controls_follow_role(
     expect(progress.get_by_role("button", name="Lanjutkan pemeriksaan koreksi", exact=True)).to_have_count(int(write))
     page.goto("/history")
     expect(page.get_by_role("table")).to_contain_text(str(process))
+    if role == "admin":
+        page.get_by_text("Kelola riwayat", exact=True).click()
     expect(page.get_by_role("button", name="Hapus Semua", exact=True)).to_have_count(int(role == "admin"))
     expect(page.locator('button[title="Hapus riwayat proses ini"]')).to_have_count(2 if role == "admin" else 0)
     expect(page.get_by_role("link", name="Input Manual & Matching", exact=True)).to_have_count(int(write))

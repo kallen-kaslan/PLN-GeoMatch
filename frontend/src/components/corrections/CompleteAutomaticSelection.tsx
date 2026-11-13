@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import { Link } from "react-router-dom";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { Download, LoaderCircle, WandSparkles } from "lucide-react";
@@ -11,10 +11,11 @@ import { downloadSpreadsheet, resultsApi } from "@/lib/results";
 const control = "rounded-lg border border-ui-border bg-white px-3 py-2 text-sm disabled:opacity-50";
 const count = (value: number) => value.toLocaleString("id-ID");
 const methods = { nearest: "Jarak terdekat", equal_distance: "Pasangan jarak sama", expanded_radius: "Radius tambahan" };
-export function CompleteAutomaticSelection({ kind, processId, batchId, run, radius, onRadiusChange, onModeChange, onBusyChange, onCompleted }: {
+export function CompleteAutomaticSelection({ kind, processId, batchId, run, radius, onRadiusChange, onModeChange, onBusyChange, onCompleted, savedSummary }: {
   kind: CorrectionKind; processId: number; batchId: number; run: CorrectionRun; radius: string;
   onRadiusChange: (value: string) => void; onModeChange: (value: AutomaticMode) => void;
   onBusyChange: (value: boolean) => void; onCompleted: (result: CompleteResult) => void;
+  savedSummary?: ReactNode;
 }) {
   const client = useQueryClient();
   const [maximum, setMaximum] = useState(String(Math.max(500, Number(radius))));
@@ -55,21 +56,21 @@ export function CompleteAutomaticSelection({ kind, processId, batchId, run, radi
   const viewGeneration = saved?.generation ?? run.generation;
   const viewRadius = saved?.radius_meters ?? Number(radius);
   const mapUrl = `/peta-koreksi?category=${kind}&batch_id=${batchId}&process_id=${processId}&generation=${viewGeneration}&radius_meters=${viewRadius}`;
-  return <section aria-label="Pemilihan otomatis lengkap" className="space-y-4 rounded-lg border border-ui-border bg-white p-4 sm:p-5">
+  return <section aria-label="Pemilihan otomatis lengkap" className="geo-panel geo-data-panel space-y-4 p-4 sm:p-5">
     <h2 className="flex items-center gap-2 text-sm font-semibold"><WandSparkles size={18} />Pemilihan otomatis lengkap</h2>
-    <p className="text-xs">Satu IDPEL untuk satu target. Pilihan tersimpan tetap dipertahankan. Sistem menyimpan pasangan terdekat dan jarak sama, lalu mencari kandidat bebas hingga batas radius hanya untuk target yang tersisa. Hasil dicatat sebagai pilihan otomatis dengan identitas belum diverifikasi.</p>
-    <p className="text-xs text-ui-muted">Ringkasan pilihan tersimpan di atas mengikuti radius awal. Pratinjau di bawah menghitung pilihan baru hingga batas radius otomatis. Keputusan lama pada semua radius, termasuk pembatalan, tetap dipertahankan.</p>
+    <p className="text-xs text-ui-muted">Satu IDPEL untuk satu target. Target tersisa dicari hingga batas radius. Pilihan lama tetap tersimpan; identitas pilihan otomatis belum diverifikasi.</p>
     <div className="flex flex-wrap items-end gap-3">
-      <label className="flex flex-col gap-1.5 text-xs font-semibold">Penanganan jarak sama<select aria-label="Penanganan jarak sama" value="complete" disabled={busy} onChange={(event) => onModeChange(event.target.value as AutomaticMode)} className={control}><option value="review">Tinjau manual</option><option value="suggest">Usulkan pasangan untuk jarak sama</option><option value="complete">Pemilihan otomatis lengkap</option></select></label>
+      <label className="flex flex-col gap-1.5 text-xs font-semibold">Mode pemilihan<select aria-label="Mode pemilihan" value="complete" disabled={busy} onChange={(event) => onModeChange(event.target.value as AutomaticMode)} className={control}><option value="review">Tinjau manual</option><option value="suggest">Usulkan pasangan untuk jarak sama</option><option value="complete">Pemilihan otomatis lengkap</option></select></label>
       <label className="flex flex-col gap-1.5 text-xs font-semibold">Radius pilihan otomatis (meter)<input aria-label="Radius pilihan otomatis (meter)" type="number" min="0.01" max={run.radius_meters} step="any" value={radius} disabled={busy} onChange={(event) => { reset(); onRadiusChange(event.target.value); }} className={`${control} w-52`} /></label>
       <label className="flex flex-col gap-1.5 text-xs font-semibold">Batas radius otomatis (meter)<input aria-label="Batas radius otomatis (meter)" type="number" min={Number(radius)} max={5000} step="any" value={maximum} disabled={busy} onChange={(event) => { reset(); setMaximum(event.target.value); }} className={`${control} w-52`} /></label>
       <button type="button" disabled={busy || !valid} className={buttonClass.secondary} onClick={() => { reset(); preview.mutate({ generation: run.generation, radius_meters: Number(radius), max_radius_meters: Number(maximum) }); }}>Pratinjau lengkap</button>
     </div>
     {!valid && <p role="alert" className="text-sm text-red-700">Radius awal harus berada dalam radius tersimpan. Batas radius harus sama atau lebih besar dari radius awal, maksimal 5.000 m.</p>}
+    {savedSummary}
     {busy && <p role="status" className="flex items-center gap-2 text-sm"><LoaderCircle size={16} className="animate-spin" />{preview.isPending ? "Menghitung pasangan, menyelesaikan jarak sama, dan mencari kandidat tambahan. Pilihan belum diubah..." : save.isPending && !saved ? "Memvalidasi pasangan dan menyimpan pilihan beserta versi radius dan riwayatnya..." : "Pilihan tersimpan. Menyiapkan XLSX dan memperbarui hasil..."}</p>}
     {(preview.error || save.error) && <p role="alert" className="text-sm text-red-700">{preview.error?.message ?? save.error?.message}{save.error?.status === 409 && " Buat pratinjau lengkap ulang."}</p>}
     {plan && <>
-      <dl className="grid gap-3 text-sm sm:grid-cols-2 lg:grid-cols-4">{[["Pilihan baru yang akan disimpan", plan.selected_count], ["Keputusan tersimpan dipertahankan", plan.protected_count], ["Pasangan jarak sama", plan.equal_distance_count], ["Pasangan radius tambahan", plan.expanded_count], ["Belum mendapat pasangan", plan.unpaired_count]].map(([label, value]) => <div key={String(label)} className="rounded-lg bg-gray-50 p-3"><dt className="text-xs text-ui-muted">{label}</dt><dd className="mt-1 text-lg font-semibold">{count(Number(value))}</dd></div>)}</dl>
+      <dl className="geo-stats-strip">{[["Pilihan baru yang akan disimpan", plan.selected_count], ["Keputusan tersimpan dipertahankan", plan.protected_count], ["Pasangan jarak sama", plan.equal_distance_count], ["Pasangan radius tambahan", plan.expanded_count], ["Belum mendapat pasangan", plan.unpaired_count]].map(([label, value]) => <div key={String(label)} className="geo-stat"><dt className="text-xs text-ui-muted">{label}</dt><dd className="mt-1 text-base font-semibold">{count(Number(value))}</dd></div>)}</dl>
       <p className="text-xs">Radius hasil dan ekspor: {count(plan.result_radius_meters)} m. {plan.creates_version ? "Penyimpanan membuat versi baru untuk kandidat tambahan terpilih; kandidat lama dan pilihan sebelumnya tetap tersedia." : "Pilihan disimpan pada versi pemeriksaan ini."} Target dengan data bermasalah atau tanpa IDPEL bebas tetap dilaporkan.</p>
       <label className="flex flex-col gap-1.5 text-xs font-semibold">Cari pasangan otomatis<input aria-label="Cari pasangan otomatis lengkap" type="search" value={search} onChange={(event) => { setSearch(event.target.value); setPage(1); }} className={control} /></label>
       <div className="overflow-x-auto"><table className="w-full min-w-[650px] text-left text-xs"><thead className="bg-ui-table-head"><tr>{["Baris target", "IDPEL terpilih", "Jarak", "Metode", "Peta"].map((label) => <th key={label} className="p-3">{label}</th>)}</tr></thead><tbody>{visible.map((item) => <tr key={item.record_id} className="border-t border-ui-border"><td className="p-3">{item.row_number}</td><td className="p-3 font-mono font-semibold">{item.idpel}</td><td className="p-3">{item.distance_meters.toLocaleString("id-ID", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} m</td><td className="p-3">{methods[item.method]}</td><td className="p-3"><Link to={`${mapUrl}&record_id=${item.record_id}&map_view=detail&suggested_idpel=${encodeURIComponent(item.idpel)}`} className="font-semibold underline">Tinjau baris {item.row_number}</Link></td></tr>)}</tbody></table></div>

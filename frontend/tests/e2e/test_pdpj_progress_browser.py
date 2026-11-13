@@ -33,7 +33,7 @@ def test_stop_reload_and_resume_from_saved_rows(page: Page, servers: tuple[str, 
     expect(page.get_by_label("Petugas untuk riwayat", exact=True)).to_have_value("test-admin")
     expect(page.get_by_role("button", name="Selesaikan validasi data tersimpan", exact=True)).to_be_enabled()
     page.get_by_role("button", name="Lanjutkan pemeriksaan", exact=True).click()
-    expect(progress.get_by_role("progressbar")).to_have_attribute("value", "100", timeout=30000)
+    expect(progress.get_by_role("progressbar", include_hidden=True)).to_have_attribute("value", "100", timeout=30000)
     expect(progress.get_by_role("status")).to_have_text("Menunggu tinjauan petugas")
     finished = httpx.get(path).json()
     assert finished["processing"]["processed_rows"] == finished["processing"]["validated_rows"] == 2401
@@ -69,5 +69,5 @@ def test_connection_loss_keeps_checkpoint_and_reload_can_continue(page: Page, se
     page.unroute("**/pdpj/reviews/*/advance", interrupt)
     page.reload()
     page.get_by_role("button", name="Lanjutkan pemeriksaan", exact=True).click()
-    expect(progress.get_by_role("progressbar")).to_have_attribute("value", "100", timeout=30000)
+    expect(progress.get_by_role("progressbar", include_hidden=True)).to_have_attribute("value", "100", timeout=30000)
     assert httpx.get(path).json()["summary"]["found"] == 805

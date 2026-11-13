@@ -16,6 +16,8 @@ export function DecisionHistory({ kind, processId, recordId, generation, radius 
     <div className="flex flex-wrap items-center justify-between gap-3"><h2 className="text-base font-semibold">Riwayat pilihan kandidat</h2><button type="button" disabled={download.isPending || !events.data?.total || !generation || radius === undefined} onClick={() => download.mutate()} className={buttonClass.secondary}>{download.isPending ? "Menyiapkan XLSX..." : "Unduh riwayat XLSX"}</button></div>
     {download.isError && <p role="alert" className="text-sm text-red-700">Riwayat belum dapat diunduh. Silakan coba lagi.</p>}
     <p className="text-xs text-ui-muted">{events.data?.total ?? 0} perubahan tersimpan pada pemeriksaan #{processId}. Pilihan, penggantian, dan pembatalan dicatat beserta petugas dan alasannya.</p>
+    {events.isError && <p role="alert" className="text-sm text-red-700">Riwayat belum dapat dimuat.</p>}
+    <details open={recordId !== undefined}><summary className="text-sm font-medium">Lihat riwayat keputusan ({events.data?.total ?? 0})</summary>
     {events.isPending ? <p role="status">Memuat riwayat pilihan...</p> : events.isError ? <p role="alert">Riwayat belum dapat dimuat.</p> : events.data?.items.length ? <ol className="space-y-3">{events.data.items.map((event) => <li key={event.id} className="space-y-1 rounded-lg border border-gray-300 p-3 text-xs">
       <p className="font-semibold">Baris {event.row_number} · Revisi {event.revision} · Versi pemeriksaan {event.generation}</p>
       <p>{event.candidate_id ? `Kandidat dipilih: ${displayValue(event.candidate.fields?.idpel)} · ${displayValue(event.candidate.fields?.nama)} · ${event.candidate.distance_meters?.toLocaleString("id-ID", { maximumFractionDigits: 2 })} m` : "Pilihan kandidat dibatalkan"}</p>
@@ -25,5 +27,6 @@ export function DecisionHistory({ kind, processId, recordId, generation, radius 
       </div>
     </li>)}</ol> : <p className="text-sm">Belum ada pilihan kandidat yang disimpan.</p>}
     <div className="flex flex-wrap items-center justify-between gap-2 text-xs"><span>Halaman {page} dari {pages}</span><div className="flex gap-2"><button type="button" className={buttonClass.secondary} disabled={page <= 1 || events.isFetching} onClick={() => setPage(page - 1)}>Riwayat sebelumnya</button><button type="button" className={buttonClass.secondary} disabled={page >= pages || events.isFetching} onClick={() => setPage(page + 1)}>Riwayat berikutnya</button></div></div>
+    </details>
   </section>;
 }

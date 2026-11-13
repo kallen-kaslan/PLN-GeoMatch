@@ -1,6 +1,6 @@
 """Real map interactions, stored-radius reuse, choices, and responsive fallback."""
 
-from workspace_controls import open_radius_controls
+from workspace_controls import open_radius_controls, open_map_context
 
 import httpx
 import re
@@ -155,6 +155,7 @@ def test_choose_replace_radius_expansion_history_and_category_isolation(
     expect(
         page.get_by_role("button", name="Batalkan pilihan", exact=True)
     ).to_be_disabled()
+    open_map_context(page)
     page.get_by_label("Kategori peta", exact=True).select_option("idpel_kosong")
     expect(
         page.get_by_role("region", name="Tabel target peta", exact=True)
@@ -311,10 +312,11 @@ def test_map_preview_page_input_sizes_filters_and_mobile(
     footer.get_by_role("button", name="Buka halaman", exact=True).click()
     page.get_by_label("Cari target peta", exact=True).fill("Target 105")
     expect(table.get_by_role("row")).to_have_count(2)
-    expect(jump).to_have_value("1")
+    expect(jump).to_have_count(0)
+    expect(footer).to_contain_text("Halaman 1 dari 1")
     page.get_by_label("Filter hasil peta", exact=True).select_option("no_candidates")
     expect(footer).to_contain_text("0 baris sesuai filter")
-    expect(jump).to_be_disabled()
+    expect(jump).to_have_count(0)
     page.get_by_label("Cari target peta", exact=True).fill("")
     page.get_by_label("Filter hasil peta", exact=True).select_option("all")
     jump.fill("4")

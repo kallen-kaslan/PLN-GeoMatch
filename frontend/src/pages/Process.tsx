@@ -1,3 +1,4 @@
+import { WorkspaceHeader, SectionHeading } from "@/components/layout/WorkspaceHeader";
 import { usePermissions } from "@/hooks/usePermissions";
 import { useRef, useState, type FormEvent } from "react";
 import { Link, useNavigate } from "react-router-dom";
@@ -90,30 +91,27 @@ export default function ProcessPage() {
   if (!canWrite) return <div role="alert" className="geo-panel space-y-3 p-6"><h1 className="text-xl font-semibold">Akses Ditolak</h1><p>Input manual dan matching hanya tersedia untuk admin dan analis. Auditor dapat melihat data dan mengunduh hasil.</p><Link to="/result" className={buttonClass.secondary}>Lihat hasil</Link></div>;
 
   return <div className="space-y-5">
-    <div className="space-y-2 border-b border-ui-border pb-4">
-      <h1 className="flex items-center gap-2 text-xl font-semibold"><MapPin size={22} />Input Manual & Matching</h1>
-      <p className="text-sm text-ui-muted">Masukkan satu titik lapangan, lalu periksa melalui Data Koreksi, pilih kandidat di Peta Koreksi, dan unduh Hasil Koreksi.</p>
-    </div>
+    <WorkspaceHeader icon={MapPin} eyebrow="Pemeriksaan lapangan" title="Input Manual & Matching" description="Catat satu titik lapangan untuk diperiksa melalui Data Koreksi dan Peta Koreksi." />
     <div className="mx-auto flex w-full max-w-5xl flex-wrap gap-2 text-sm">
       {CORRECTION_TYPES.map((item) => <Link key={item.key} to={"/koreksi/" + item.slug} className={buttonClass.secondary}>Gunakan berkas {item.label}</Link>)}
     </div>
-    <form onSubmit={save} className="mx-auto w-full max-w-5xl space-y-4 rounded-lg border border-ui-border bg-white p-4 sm:p-6 lg:p-8" aria-label="Input manual satu titik">
+    <form onSubmit={save} className="geo-panel mx-auto w-full max-w-5xl space-y-4 p-4 sm:p-6 lg:p-8" aria-label="Input manual satu titik">
       <fieldset disabled={stage !== null} className="min-w-0 space-y-4 disabled:opacity-70">
         <legend className="mb-4 font-semibold">Input Manual 1 Titik Koordinat</legend>
-        <div className="grid gap-4 md:grid-cols-2">
+        <div className="geo-form-group"><SectionHeading icon={MapPin} title="Sesi dan identitas titik" /><div className="grid gap-4 md:grid-cols-2">
         <label className="block space-y-1 text-sm font-semibold"><span>Nama sesi</span><input required maxLength={120} value={sessionName} onChange={(event) => setSessionName(event.target.value)} className={control} placeholder="Contoh: Survei Gardu A" /></label>
         <label className="block space-y-1 text-sm font-semibold"><span>Referensi survei / ID titik</span><input required maxLength={120} value={reference} onChange={(event) => setReference(event.target.value)} className={control} placeholder="Contoh: TIANG-001" /></label>
         <label className="block space-y-1 text-sm font-semibold"><span>IDPEL awal (opsional)</span><input value={idpel} onChange={(event) => setIdpel(event.target.value)} maxLength={64} className={control} placeholder="Kosongkan jika belum diketahui" /></label>
         <label className="block space-y-1 text-sm font-semibold"><span>Radius pemeriksaan (meter)</span><input required type="number" min="0.01" max="100000" step="any" value={radius} onChange={(event) => setRadius(event.target.value)} className={control} /></label>
-        </div>
+        </div></div>
         <p role="status" className="text-xs text-ui-muted">Titik akan disimpan pada kategori <strong>{descriptor.label}</strong>. Referensi titik disimpan sebagai referensi survei.</p>
-        <div className="grid gap-4 sm:grid-cols-2">
+        <div className="geo-form-group"><SectionHeading icon={MapPin} title="Referensi dan koordinat" /><div className="grid gap-4 sm:grid-cols-2">
           <label className="block space-y-1 text-sm font-semibold"><span>Nomor agenda (opsional)</span><input value={agenda} onChange={(event) => setAgenda(event.target.value)} maxLength={120} className={control} /></label>
           <label className="block space-y-1 text-sm font-semibold"><span>Nomor meter (opsional)</span><input value={meter} onChange={(event) => setMeter(event.target.value)} maxLength={120} className={control} /></label>
           <label className="block space-y-1 text-sm font-semibold"><span>Latitude (Y)</span><input required inputMode="decimal" value={latitude} onChange={(event) => setLatitude(event.target.value)} className={control} placeholder="Contoh: -6.20890" /></label>
           <label className="block space-y-1 text-sm font-semibold"><span>Longitude (X)</span><input required inputMode="decimal" value={longitude} onChange={(event) => setLongitude(event.target.value)} className={control} placeholder="Contoh: 106.84570" /></label>
-        </div>
-        <p className="text-sm text-ui-muted">Setelah disimpan, pilih versi PDPJ yang selesai divalidasi dan isi nama petugas di Data Koreksi, lalu jalankan pemeriksaan. Semua kandidat dalam radius dapat ditinjau.</p>
+        </div></div>
+        <p className="text-sm text-ui-muted">Setelah disimpan, pilih versi PDPJ yang selesai divalidasi di Data Koreksi, lalu jalankan pemeriksaan. Petugas tercatat dari akun Anda. Semua kandidat dalam radius dapat ditinjau.</p>
         <button type="submit" className={buttonClass.primary}>{stage ? <LoaderCircle size={16} className="animate-spin" /> : <Save size={16} />}Simpan & Buka Data Koreksi</button>
       </fieldset>
       {stage && <p role="status" className="flex items-center gap-2 text-sm"><LoaderCircle size={16} className="animate-spin" />{stage}</p>}

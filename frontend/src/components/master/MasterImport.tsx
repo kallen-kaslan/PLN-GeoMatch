@@ -136,8 +136,15 @@ export function MasterImport({ kind, saved, onSaved, onCancel }: {
     } finally { if (version === readVersion.current) setReading(false); }
   };
   const lockedFile = mutation.isPending;
+  const mainMappingKeys = new Set(["idpel", "nama", "lat", "lon", "tglbaca", "meter_ref", "survey_ref", "agenda_ref", "kode_gardu"]);
+  const mappingControl = (field: (typeof fields)[number]) => <label key={field.key} className="space-y-1.5 text-xs font-semibold">{field.label}{field.required && <span className="text-red-600"> *</span>}
+    <select aria-label={`Kolom ${field.label}`} value={mapping[field.key] ?? ""} onChange={(event) => setMapping((previous) => ({ ...previous, [field.key]: event.target.value }))} className={inputClass}>
+      <option value="">{field.required ? "Pilih kolom IDPEL" : "Otomatis bila tersedia"}</option>
+      {headers.map((header) => <option key={header} value={header}>{header}</option>)}
+    </select>
+  </label>;
   return (
-    <section aria-label={kind === "pdpj" ? "Impor PDPJ" : correction ? `Impor koreksi ${label}` : `Impor master ${label}`} className="space-y-5 rounded-lg border border-ui-border bg-white p-4  sm:p-6">
+    <section aria-label={kind === "pdpj" ? "Impor PDPJ" : correction ? `Impor koreksi ${label}` : `Impor master ${label}`} className="geo-panel space-y-5 p-4 sm:p-6">
       <div className="flex items-start justify-between gap-3 border-b border-ui-border pb-3">
         <div><h2 className="flex items-center gap-2 text-base font-semibold"><Upload size={18} />{saved ? "Lanjutkan mapping" : kind === "pdpj" || correction ? "Unggah" : "Unggah master"} {label}</h2>
           <p className="mt-1 text-xs text-ui-muted">{kind === "idpel_kosong" ? "IDPEL boleh kosong. Petakan referensi dan koordinat yang tersedia; semua baris tetap disimpan." : "IDPEL wajib dipetakan. Koordinat dan informasi lain dapat dilengkapi kemudian."}</p></div>
@@ -178,13 +185,9 @@ export function MasterImport({ kind, saved, onSaved, onCancel }: {
       {headers.length > 0 && <>
         {sheetNames.length > 0 && <p className="text-xs text-ui-muted">Nama kolom dibaca dari baris {firstDataRow - 1}. Baris kosong di awal dilewati.</p>}
         <div><h3 className="text-sm font-semibold">Pemetaan kolom</h3><p className="mt-1 text-xs text-ui-muted">{correction || kind === "pdpj" ? "Nomor agenda boleh sama dengan PDPJ. Petakan nomor meter dan referensi survei secara terpisah untuk memeriksa benturan identitas." : "Periksa hasil deteksi kolom. KODEDLPD, KDDK, kode gardu, dan kode lain disimpan terpisah. Kolom tanpa nama diberi label sesuai posisinya."}</p></div>
-        <fieldset disabled={mutation.isPending} className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
-          {fields.map((field) => <label key={field.key} className="space-y-1.5 text-xs font-semibold">{field.label}{field.required && <span className="text-red-600"> *</span>}
-            <select aria-label={`Kolom ${field.label}`} value={mapping[field.key] ?? ""} onChange={(event) => setMapping((previous) => ({ ...previous, [field.key]: event.target.value }))} className={inputClass}>
-              <option value="">{field.required ? "Pilih kolom IDPEL" : "Otomatis bila tersedia"}</option>
-              {headers.map((header) => <option key={header} value={header}>{header}</option>)}
-            </select>
-          </label>)}
+        <fieldset disabled={mutation.isPending} className="space-y-4">
+          <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">{fields.filter((field) => field.required || mainMappingKeys.has(field.key)).map(mappingControl)}</div>
+          <details><summary className="text-sm font-medium">Pemetaan kolom lainnya</summary><div className="mt-3 grid gap-3 sm:grid-cols-2 xl:grid-cols-3">{fields.filter((field) => !field.required && !mainMappingKeys.has(field.key)).map(mappingControl)}</div></details>
         </fieldset>
         <div><h3 className="mb-2 text-sm font-semibold">Pratinjau lima baris pertama</h3>
           <div className="neo-scrollbar max-h-64 overflow-auto rounded-lg border border-ui-border"><table className="w-full whitespace-nowrap text-left text-[13px]">

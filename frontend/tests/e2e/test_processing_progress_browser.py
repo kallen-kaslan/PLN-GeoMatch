@@ -69,7 +69,7 @@ def test_final_validation_and_approval_saving_are_visible(page: Page, servers: t
     assert 50 < float(progress.get_by_role("progressbar").get_attribute("value")) < 100
     expect(progress.get_by_text("Memeriksa dan menyimpan validasi akhir bagian aktif…", exact=False)).to_be_visible()
     captured(page, held).continue_()
-    expect(progress.get_by_role("progressbar")).to_have_attribute("value", "100", timeout=20000)
+    expect(progress.get_by_role("progressbar", include_hidden=True)).to_have_attribute("value", "100", timeout=20000)
     expect(progress.get_by_text("305 / 305 baris", exact=True)).to_have_count(2)
     approval: list[Route] = []
     page.route("**/pdpj/reviews/*/complete", lambda route: approval.append(route))
@@ -111,7 +111,7 @@ def test_correction_progress_saves_pauses_and_resumes_after_reload(page: Page, s
     expect(first_row.get_by_text("Kandidat ditemukan", exact=True)).to_be_visible()
     assert httpx.get(path).json()["latest_run"]["processing"] == stored["processing"]
     page.get_by_role("button", name="Lanjutkan pemeriksaan koreksi", exact=True).click()
-    expect(progress.get_by_role("progressbar")).to_have_attribute("value", "100", timeout=30000)
+    expect(progress.get_by_role("progressbar", include_hidden=True)).to_have_attribute("value", "100", timeout=30000)
     completed = httpx.get(path).json()
     assert completed["latest_run"]["id"] == stored["id"]
     assert completed["latest_run"]["processing"]["validated_rows"] == 1001

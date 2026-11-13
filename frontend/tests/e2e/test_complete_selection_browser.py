@@ -87,7 +87,7 @@ def test_complete_save_export_result_and_inherited_map_candidates(
     page.goto(
         f"/koreksi/pemilihan-otomatis?category={kind}&batch_id={batch}&process_id={process}"
     )
-    page.get_by_label("Penanganan jarak sama", exact=True).select_option("complete")
+    page.get_by_label("Mode pemilihan", exact=True).select_option("complete")
     panel = page.get_by_role("region", name="Pemilihan otomatis lengkap", exact=True)
     expect(
         panel.get_by_label("Batas radius otomatis (meter)", exact=True)
@@ -169,10 +169,12 @@ def test_complete_save_export_result_and_inherited_map_candidates(
     assert_metric("Pilihan aktif di luar radius", "3")
     expect(page.get_by_role("button", name="Simpan & ekspor XLSX", exact=True)).to_have_count(0)
     expect(page.get_by_role("button", name="Ekspor pilihan tersimpan dalam radius", exact=True)).to_be_enabled()
-    page.get_by_label("Penanganan jarak sama", exact=True).select_option("complete")
+    page.get_by_label("Mode pemilihan", exact=True).select_option("complete")
     assert_metric("Pilihan aktif dalam radius", "2")
     assert_metric("Pilihan aktif di luar radius", "3")
-    page.get_by_role("button", name="Pratinjau lengkap", exact=True).click()
+    with page.expect_response(lambda response: response.request.method == "POST" and response.url.endswith("/automatic/complete/preview")) as preview_response:
+        page.get_by_role("button", name="Pratinjau lengkap", exact=True).click()
+    assert preview_response.value.status == 200, preview_response.value.text()
     expect(page.get_by_role("button", name="Ekspor pilihan tersimpan dalam radius", exact=True)).to_be_enabled()
     with page.expect_download() as existing_download:
         page.get_by_role("button", name="Ekspor pilihan tersimpan dalam radius", exact=True).click()

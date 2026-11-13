@@ -53,6 +53,10 @@ export function createCorrectionMap(element: HTMLElement): MapProvider | null {
   const leaflet = (window as unknown as { L?: Leaflet }).L;
   if (!leaflet) return null;
   const map = leaflet.map(element, { scrollWheelZoom: false, zoomAnimation: false, fadeAnimation: false, markerZoomAnimation: false }).setView([-2.5, 118], 5);
+  // Leaflet's default focus scrolls nested workspaces between pointer down and up.
+  // Keep the map still so the first click reaches the intended marker.
+  const focusWithoutScroll = () => element.focus({ preventScroll: true });
+  element.addEventListener("mousedown", focusWithoutScroll, true);
   leaflet.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
     attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>', maxZoom: 20,
   }).addTo(map);
@@ -125,6 +129,6 @@ export function createCorrectionMap(element: HTMLElement): MapProvider | null {
         previousView = viewKey;
       }
     },
-    destroy() { observer.disconnect(); map.stop(); map.remove(); },
+    destroy() { element.removeEventListener("mousedown", focusWithoutScroll, true); observer.disconnect(); map.stop(); map.remove(); },
   };
 }

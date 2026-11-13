@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import { Link } from "react-router-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Download, LoaderCircle, WandSparkles } from "lucide-react";
@@ -23,11 +23,12 @@ const reasons: Record<string, string> = {
 };
 const count = (value: number) => value.toLocaleString("id-ID");
 
-export function AutomaticSelection({ kind, processId, batchId, run, radius, onRadiusChange, onBusyChange, tieStrategy, onTieStrategyChange }: {
+export function AutomaticSelection({ kind, processId, batchId, run, radius, onRadiusChange, onBusyChange, tieStrategy, onTieStrategyChange, savedSummary }: {
   kind: CorrectionKind; processId: number; batchId: number; run: CorrectionRun;
   radius: string; onRadiusChange: (value: string) => void;
   onBusyChange?: (value: boolean) => void;
   tieStrategy: "review" | "suggest"; onTieStrategyChange: (value: AutomaticMode) => void;
+  savedSummary?: ReactNode;
 }) {
   const client = useQueryClient();
   const [saved, setSaved] = useState<number | null>(null);
@@ -83,13 +84,12 @@ export function AutomaticSelection({ kind, processId, batchId, run, radius, onRa
   const busy = filtering || writing;
   const reset = () => { setSaved(null); setVisibleReviews(10); setManualNotice(""); save.reset(); download.reset(); proposals.reset(); requestKey.current = null; };
   const refreshReview = (notice: string) => { reset(); setManualNotice(notice); void inspect.refetch(); };
-  return <section aria-label="Pilihan kandidat otomatis" className="space-y-4 rounded-lg border border-ui-border bg-white p-4 sm:p-5">
+  return <section aria-label="Pilihan kandidat otomatis" className="geo-panel geo-data-panel space-y-4 p-4 sm:p-5">
     <div><h2 className="flex items-center gap-2 text-sm font-semibold"><WandSparkles size={18} />Pilih Terdekat &amp; Ekspor</h2>
-      <p className="mt-2 text-xs text-ui-muted">Satu IDPEL untuk satu target dalam pemeriksaan ini. Pasangan berjarak terkecil dipilih lebih dahulu; target lain mencoba kandidat berikutnya dalam radius. Pilihan dan pembatalan tersimpan tetap dipertahankan. Jarak sama memerlukan tinjauan melalui peta.</p>
-      <p className="mt-1 text-xs text-ui-muted">Menggunakan kandidat dan sumber pada hasil versi {run.generation}. Pratinjau mencakup seluruh berkas, termasuk baris di luar halaman atau pencarian tabel.</p>
+      <p className="mt-1 text-xs text-ui-muted">Satu IDPEL untuk satu target. Pratinjau memakai seluruh berkas pada versi {run.generation}; pilihan lama tetap dipertahankan.</p>
     </div>
     <div className="flex flex-wrap items-end gap-3">
-      <label className="flex flex-col gap-1.5 text-xs font-semibold">Penanganan jarak sama<select aria-label="Penanganan jarak sama" value={tieStrategy} disabled={writing} onChange={(event) => { reset(); onTieStrategyChange(event.target.value as AutomaticMode); }} className="rounded-lg border border-ui-border px-3 py-2 text-sm"><option value="review">Tinjau manual</option><option value="suggest">Usulkan pasangan untuk jarak sama</option><option value="complete">Pemilihan otomatis lengkap</option></select></label>
+      <label className="flex flex-col gap-1.5 text-xs font-semibold">Mode pemilihan<select aria-label="Mode pemilihan" value={tieStrategy} disabled={writing} onChange={(event) => { reset(); onTieStrategyChange(event.target.value as AutomaticMode); }} className="rounded-lg border border-ui-border px-3 py-2 text-sm"><option value="review">Tinjau manual</option><option value="suggest">Usulkan pasangan untuk jarak sama</option><option value="complete">Pemilihan otomatis lengkap</option></select></label>
       <label className="flex flex-col gap-1.5 text-xs font-semibold">Radius pilihan otomatis (meter)
         <input aria-label="Radius pilihan otomatis (meter)" type="number" min="0.01" max={run.radius_meters} step="any" value={radius} disabled={writing}
           onChange={(event) => { reset(); onRadiusChange(event.target.value); }} className="w-52 rounded-lg border border-ui-border px-3 py-2 text-sm" />
@@ -98,16 +98,17 @@ export function AutomaticSelection({ kind, processId, batchId, run, radius, onRa
         {filtering && <LoaderCircle size={16} className="animate-spin" />}Pratinjau pilihan otomatis
       </button>
     </div>
-    <p className="text-xs text-ui-muted">Radius ini memfilter kandidat pada tabel dan detail serta pilihan baru dalam pratinjau. Keputusan tersimpan dipertahankan pada semua radius, termasuk pembatalan. Mengubah radius tidak menghitung ulang atau mengganti pilihan lama. Radius pemeriksaan tersimpan {count(run.radius_meters)} m.</p>
+    <details className="text-xs"><summary>Aturan pemilihan dan cakupan radius</summary><p className="mt-2 text-ui-muted">Pasangan terdekat dipilih lebih dahulu; target lain mencoba kandidat berikutnya dalam radius. Jarak sama perlu tinjauan. Keputusan tersimpan pada semua radius, termasuk pembatalan, tetap dipertahankan. Radius pemeriksaan tersimpan {count(run.radius_meters)} m. Pencarian tabel tidak membatasi pratinjau.</p></details>
     {!validRadius && <p role="alert" className="text-sm text-red-700">Radius harus lebih dari 0 dan paling besar {count(run.radius_meters)} meter.</p>}
+    {savedSummary}
     {busy && <p role="status" className="flex items-center gap-2 text-sm"><LoaderCircle size={16} className="animate-spin" />{filtering ? `Memuat kandidat dan pratinjau radius ${count(radiusMeters)} m. Data besar dapat memerlukan beberapa saat; pilihan belum diubah.` : save.isPending ? "Memvalidasi dan menyimpan pilihan beserta riwayatnya..." : searchingUnpaired ? "Memproses pencarian atau unduhan usulan lanjutan. Pilihan belum diubah..." : reviewing ? "Menyimpan pilihan hasil tinjauan..." : proposals.isPending ? "Menyiapkan XLSX usulan pasangan..." : "Menyiapkan berkas XLSX..."}</p>}
     {manualNotice && <p role="status" className="rounded-lg bg-green-50 p-3 text-sm text-green-800">{manualNotice}</p>}
     {validRadius && settled && inspect.error && <p role="alert" className="text-sm text-red-700">{inspect.error.message}</p>}
     {preview && <>
-      <dl className="grid gap-3 text-sm sm:grid-cols-2 lg:grid-cols-4">{[
+      <dl className="geo-stats-strip">{[
         ["Akan dipilih otomatis", preview.selected_count], ["Memakai kandidat alternatif", preview.fallback_count],
         ["Keputusan tersimpan dipertahankan", preview.protected_count], [tieStrategy === "suggest" ? "Belum mendapat pasangan" : "Belum dipilih / perlu tinjauan", tieStrategy === "suggest" ? preview.unpaired_count ?? preview.review_count : preview.review_count],
-      ].map(([label, value]) => <div key={String(label)} className="rounded-lg bg-gray-50 p-3"><dt className="text-xs text-ui-muted">{label}</dt><dd className="mt-1 text-lg font-semibold">{count(Number(value))}</dd></div>)}</dl>
+      ].map(([label, value]) => <div key={String(label)} className="geo-stat"><dt className="text-xs text-ui-muted">{label}</dt><dd className="mt-1 text-base font-semibold">{count(Number(value))}</dd></div>)}</dl>
       <p className="text-xs text-ui-muted">Angka belum dipilih / perlu tinjauan hanya menghitung target tanpa keputusan tersimpan. Pilihan lama di luar radius ditampilkan terpisah pada ringkasan pilihan tersimpan di atas.</p>
       {tieStrategy === "review" && Object.entries(preview.review_reasons).length > 0 && <ul className="list-inside list-disc space-y-1 text-xs">{Object.entries(preview.review_reasons).map(([reason, total]) => <li key={reason}>{reasons[reason] ?? reason}: {count(total)} target</li>)}</ul>}
       {tieStrategy === "suggest" && <TieSuggestions key={`suggestions-${preview.fingerprint}`} preview={preview} mapUrl={mapUrl} disabled={writing} onDownload={() => proposals.mutate(preview)}>{!!preview.unpaired_count && <UnpairedFollowUp kind={kind} processId={processId} preview={preview} mapUrl={mapUrl} disabled={writing} onResolved={refreshReview} onBusyChange={setReviewing} onSearchBusyChange={setSearchingUnpaired} />}</TieSuggestions>}

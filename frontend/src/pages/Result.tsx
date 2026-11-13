@@ -3,7 +3,7 @@ import { useState, useEffect, useCallback } from "react";
 import { useSearchParams, Link } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import { CorrectionResults } from "@/components/corrections/CorrectionResults";
-import { resultsApi } from "@/lib/results";
+import { resultsApi, reviewStatusLabel } from "@/lib/results";
 import { CORRECTION_TYPES } from "@/lib/corrections";
 import { api, API_BASE_URL } from "@/lib/api";
 import { Download, ArrowLeft, CheckCircle2, XCircle, Clock, FileSpreadsheet, RefreshCw, Trash2 } from "lucide-react";
@@ -37,7 +37,7 @@ function LegacyResultPage({ initialId, onSelect }: { initialId: string; onSelect
       })
       .catch((err: any) => {
         if (err.status === 502) {
-          setError("Koneksi ke server backend terputus (502 Bad Gateway). Pastikan backend FastAPI sedang berjalan di port 8000.");
+          setError("Layanan belum dapat dihubungi. Muat ulang halaman atau hubungi pengelola.");
         } else {
           setError(err.message || "Gagal memuat ringkasan hasil proses.");
         }
@@ -73,9 +73,9 @@ function LegacyResultPage({ initialId, onSelect }: { initialId: string; onSelect
 
   return (
     <div className="space-y-5 sm:space-y-6">
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-ui-border pb-3">
+      <div className="geo-page-heading geo-archive-heading">
         <div>
-          <h1 className="fluid-h1 font-semibold tracking-tight text-neo-black">
+          <h1 className="fluid-h1 flex items-center gap-3 font-semibold tracking-tight text-neo-black"><FileSpreadsheet aria-hidden="true" />
             Hasil Rekonsiliasi & Ekspor
           </h1>
           <p className="text-xs sm:text-sm text-ui-muted mt-0.5">
@@ -133,16 +133,16 @@ function LegacyResultPage({ initialId, onSelect }: { initialId: string; onSelect
               </p>
             </div>
             <span className="self-start sm:self-auto px-2.5 py-1 text-xs font-semibold border border-ui-border bg-neo-white rounded-md">
-              Status: {summary.review_status?.toUpperCase() ?? "FINALIZED"}
+              Status: {reviewStatusLabel(summary.review_status)}
             </span>
           </div>
 
           {/* Statistik Cards */}
           <div className="geo-metrics geo-metrics-4">
-            <MetricCard label="TOTAL TARGET" value={summary.total_targets} tone="primary" />
-            <MetricCard label="VALID" value={summary.valid_count} tone="success" icon={CheckCircle2} />
-            <MetricCard label="DITOLAK" value={summary.rejected_count} tone="danger" icon={XCircle} />
-            <MetricCard label="PENDING" value={summary.pending_count} tone="warning" icon={Clock} />
+            <MetricCard label="Total target" value={summary.total_targets} tone="primary" />
+            <MetricCard label="Kandidat dipilih" value={summary.valid_count} tone="success" icon={CheckCircle2} />
+            <MetricCard label="Kandidat ditolak" value={summary.rejected_count} tone="danger" icon={XCircle} />
+            <MetricCard label="Kandidat belum ditinjau" value={summary.pending_count} tone="warning" icon={Clock} />
           </div>
 
           {/* Action Box */}
@@ -166,7 +166,7 @@ function LegacyResultPage({ initialId, onSelect }: { initialId: string; onSelect
                 className="touch-min px-5 py-2.5 min-h-[44px] border border-ui-border bg-ui-primary text-white text-xs font-semibold rounded-lg  hover:bg-ui-primary-hover transition  flex items-center justify-center gap-2"
               >
                 <Download size={16} />
-                <span>Unduh File XLSX (.xlsx)</span>
+                <span>Ekspor XLSX</span>
               </button>
             </div>
           </div>

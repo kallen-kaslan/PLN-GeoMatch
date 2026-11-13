@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { createCorrectionMap, type MapProvider, type MapScene } from "@/lib/correction-map";
 
-export function CorrectionMap(scene: MapScene) {
+export function CorrectionMap({ rows, selected, candidates, radius, onSelect, onCandidate }: MapScene) {
   const container = useRef<HTMLDivElement>(null);
   const provider = useRef<MapProvider | null>(null);
   const [available] = useState(() => Boolean((window as unknown as { L?: unknown }).L));
@@ -9,7 +9,7 @@ export function CorrectionMap(scene: MapScene) {
     if (container.current) provider.current = createCorrectionMap(container.current);
     return () => { provider.current?.destroy(); provider.current = null; };
   }, []);
-  useEffect(() => { provider.current?.render(scene); }, [scene]);
+  useEffect(() => { provider.current?.render({ rows, selected, candidates, radius, onSelect, onCandidate }); }, [rows, selected, candidates, radius, onSelect, onCandidate]);
   return <div>
     {!available && <p role="alert" className="border border-amber-600 bg-amber-50 p-3 text-sm">Peta belum dapat dimuat. Periksa koneksi lalu muat ulang. Anda tetap dapat memilih target dan kandidat melalui tabel.</p>}
     <div ref={container} aria-label="Peta target koreksi" className="relative z-0 h-[360px] w-full rounded-lg border border-ui-border sm:h-[440px] xl:h-[clamp(320px,48dvh,560px)]" />

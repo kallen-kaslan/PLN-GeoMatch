@@ -1,7 +1,8 @@
+import { StatusBadge } from "@/components/data/StatusBadge";
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { useDebouncedSearch } from "@/hooks/useDebouncedSearch";
-import { MetricCard } from "@/components/data/MetricCard";
+import { StatStrip } from "@/components/data/StatStrip";
 import { PreviewPagination } from "@/components/data/PreviewPagination";
 import { SearchFeedback } from "@/components/data/SearchFeedback";
 import { CorrectionDetail } from "@/components/corrections/CorrectionDetail";
@@ -36,11 +37,11 @@ export function AutomaticCandidateResults({ kind, label, batchId, processId, run
   const data = valid && settled ? summary.data : undefined;
   return <>
     <p className="text-xs text-ui-muted">Kandidat ditemukan menghitung target yang memiliki setidaknya satu kandidat dalam radius. Kandidat yang sama dapat muncul pada beberapa target; angka ini tidak menunjukkan jumlah pasangan IDPEL unik yang sudah dipilih.</p>
-    <section aria-label={`Ringkasan ${label}`} className="geo-metrics geo-metrics-4">{[
+    <section aria-label={`Ringkasan ${label}`}><StatStrip label="Ketersediaan kandidat" items={[
       ["Total baris", data?.total_rows], ["Kandidat ditemukan", data?.matched],
       ["Tanpa kandidat dalam radius", data?.no_candidates], ["Benturan dengan PDPJ", data?.pdpj_conflicts],
-    ].map(([title, value]) => <MetricCard key={String(title)} label={String(title)} value={count(typeof value === "number" ? value : undefined)} tone="neutral" compact />)}</section>
-    <section aria-label="Kandidat untuk pemilihan otomatis" className="space-y-4 rounded-lg border border-ui-border bg-white p-4 sm:p-5">
+    ].map(([title, value]) => ({ label: String(title), value: count(typeof value === "number" ? value : undefined) }))} /></section>
+    <section aria-label="Kandidat untuk pemilihan otomatis" className="geo-panel geo-data-panel space-y-4 p-4 sm:p-5">
       <div><h2 className="text-sm font-semibold">Kandidat tersimpan · {label}</h2><p className="mt-1 text-xs text-ui-muted">Tabel, detail, dan pratinjau mengikuti radius {valid ? count(radiusMeters) : "—"} m dari hasil versi {run.generation}, dengan radius pemeriksaan tersimpan {count(run.radius_meters)} m. Pencarian tabel tidak membatasi cakupan pemilihan otomatis.</p></div>
       <div className="flex flex-col gap-3 sm:flex-row"><input aria-label="Cari data koreksi" type="search" value={search} maxLength={120} onChange={(event) => { setSearch(event.target.value); setPage(1); }} placeholder="Cari IDPEL, nama, atau referensi..." className={`${control} flex-1`} /><select aria-label="Filter hasil koreksi" value={status} onChange={(event) => { setStatus(event.target.value as CorrectionFilter); setPage(1); }} className={control}><option value="all">Semua kondisi</option>{Object.entries(searchLabel).map(([key, title]) => <option key={key} value={key}>{title}</option>)}<option value="identity_found">IDPEL ditemukan di master</option><option value="identity_not_found">IDPEL tidak ditemukan di master</option></select></div>
       {summary.isError && <p role="alert" className="text-sm text-red-700">Ringkasan belum dapat dimuat. <button type="button" className="underline" onClick={() => void summary.refetch()}>Coba lagi</button></p>}
@@ -48,7 +49,7 @@ export function AutomaticCandidateResults({ kind, label, batchId, processId, run
         {!valid ? <tr><td colSpan={8} className="p-8 text-center">Masukkan radius pilihan otomatis yang valid untuk memuat kandidat.</td></tr>
           : busy || records.isPending ? <tr><td colSpan={8} className="p-8 text-center">Memuat kandidat sesuai radius...</td></tr>
           : records.isError ? <tr><td colSpan={8} className="p-8 text-center text-red-700">Kandidat belum dapat dimuat. <button type="button" className="underline" onClick={() => void records.refetch()}>Coba lagi</button></td></tr>
-          : records.data.items.length ? records.data.items.map((row) => <tr key={row.id} className="border-t border-gray-200 hover:bg-neo-white"><td className="p-3 font-mono">{row.row_number}</td><td className="p-3"><p className="font-mono font-semibold">{displayValue(row.fields.idpel)}</p><p className="mt-1 max-w-48 truncate">{displayValue(row.fields.nama)}</p></td><td className="p-3 font-mono">{displayValue(row.fields.meter_ref || row.fields.agenda_ref || row.fields.survey_ref || row.fields.target_ref)}</td><td className="p-3 font-mono">{displayValue(row.fields.lat)}, {displayValue(row.fields.lon)}</td><td className="p-3">{identityLabel[row.identity_status]}</td><td className="p-3 font-semibold">{searchLabel[row.search_status]}</td><td className="p-3">{row.candidate_count}</td><td className="p-3"><button type="button" aria-label={`Detail koreksi baris ${row.row_number}`} onClick={() => setRecordId(row.id)} className={buttonClass.secondary}>Detail</button></td></tr>)
+          : records.data.items.length ? records.data.items.map((row) => <tr key={row.id} className="border-t border-gray-200 hover:bg-neo-white"><td className="p-3 font-mono">{row.row_number}</td><td className="p-3"><p className="font-mono font-semibold">{displayValue(row.fields.idpel)}</p><p className="mt-1 max-w-48 truncate">{displayValue(row.fields.nama)}</p></td><td className="p-3 font-mono">{displayValue(row.fields.meter_ref || row.fields.agenda_ref || row.fields.survey_ref || row.fields.target_ref)}</td><td className="p-3 font-mono">{displayValue(row.fields.lat)}, {displayValue(row.fields.lon)}</td><td className="p-3">{identityLabel[row.identity_status]}</td><td className="p-3 font-semibold"><StatusBadge tone={row.search_status === "matched" ? "success" : row.search_status === "pdpj_conflict" || row.search_status === "invalid_data" ? "danger" : "warning"}>{searchLabel[row.search_status]}</StatusBadge></td><td className="p-3">{row.candidate_count}</td><td className="p-3"><button type="button" aria-label={`Detail koreksi baris ${row.row_number}`} onClick={() => setRecordId(row.id)} className={buttonClass.secondary}>Detail</button></td></tr>)
           : <tr><td colSpan={8} className="p-8 text-center">Belum ada data sesuai filter.</td></tr>}
       </tbody></table></div>
       <SearchFeedback state={records.data?.search_index} waiting={search !== q} fetching={Boolean(search) && records.isFetching} />

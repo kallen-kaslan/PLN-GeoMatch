@@ -7,7 +7,7 @@ import pytest
 from openpyxl import load_workbook
 from playwright.sync_api import Page, expect
 from test_correction_map_browser import setup_map
-from workspace_controls import open_radius_controls
+from workspace_controls import open_radius_controls, open_map_context
 
 
 @pytest.mark.parametrize("kind", ["idpel_kosong", "idpel_tidak_ketemu"])
@@ -40,6 +40,7 @@ def test_radius_dropdown_historical_choices_and_versioned_xlsx(
     expect(versions).to_have_value("2")
     expect(versions).to_contain_text("10 m · Versi 1 · Selesai")
     expect(versions).to_contain_text("100 m · Versi 2 · Selesai")
+    open_map_context(page)
     versions.select_option("1")
     summary = page.get_by_role("region", name="Ringkasan radius peta", exact=True)
     expect(summary).to_contain_text("Radius 10 m · Versi 1")
@@ -99,6 +100,7 @@ def test_radius_dropdown_historical_choices_and_versioned_xlsx(
     verify_download("Ekspor hasil XLSX", 10, 1, "002")
     page.get_by_role("link", name="Buka Riwayat Proses", exact=True).click()
     audit = page.get_by_role("region", name="Riwayat keputusan koreksi", exact=True)
+    audit.get_by_text("Lihat riwayat keputusan", exact=False).click()
     expect(audit).to_contain_text("Kandidat dipilih: 002")
     expect(audit).not_to_contain_text("Kandidat dipilih: 003")
     verify_download("Unduh riwayat XLSX", 10, 1, "002", history=True)

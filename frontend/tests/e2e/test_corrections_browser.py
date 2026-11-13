@@ -1,6 +1,7 @@
 """Categorized correction acceptance tests with stored candidates and real job completion."""
 
 import httpx
+import re
 from playwright.sync_api import Page, expect
 
 
@@ -47,8 +48,14 @@ def prepare(api_url: str, candidates: int = 7) -> int:
 
 def launch(page: Page) -> None:
     expect(page.get_by_label("Petugas untuk riwayat", exact=True)).to_have_value("test-admin")
-    page.get_by_label("Radius pemeriksaan (meter)", exact=True).fill("10")
-    page.get_by_role("button", name="Jalankan pemeriksaan", exact=True).click()
+    radius = page.get_by_label("Radius pemeriksaan (meter)", exact=True)
+    radius.fill("10")
+    # The controlled radius is restored from the URL; wait for navigation to commit.
+    expect(page).to_have_url(re.compile(r"[?&]radius_meters=10(?:&|$)"))
+    expect(radius).to_have_value("10")
+    with page.expect_request(lambda request: request.method == "POST" and request.url.endswith("/checks")) as started:
+        page.get_by_role("button", name="Jalankan pemeriksaan", exact=True).click()
+    assert started.value.post_data_json["radius_meters"] == 10
     dialog = page.get_by_role("dialog", name="Pemeriksaan koreksi selesai", exact=True)
     expect(dialog).to_be_visible(timeout=20000)
     dialog.get_by_role("button", name="Lihat hasil pemeriksaan", exact=True).click()

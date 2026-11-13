@@ -73,7 +73,7 @@ def test_partial_results_export_history_resume_replace_and_cancel(
     expect(detail).to_contain_text("Perbandingan target dan kandidat")
     expect(detail).to_contain_text("dil.csv")
     expect(detail.get_by_role("region", name="Riwayat keputusan koreksi", exact=True)).to_contain_text("Revisi 1")
-    expect(detail.locator("details")).to_have_count(0)
+    expect(detail.locator("summary").filter(has_text="Atribut lainnya")).to_be_visible()
     detail.get_by_role("heading", name="Detail hasil · Baris 2", exact=True).click()
     expect(detail).to_be_visible()
     page.mouse.click(20, 200)

@@ -57,4 +57,8 @@ export function downloadSpreadsheet(blob: Blob, filename: string): void {
 }
 
 export const resultStatus = { selected: "Kandidat dipilih", not_selected: "Belum dipilih", cancelled: "Pilihan dibatalkan", not_processed: "Belum diproses", all: "Semua baris" };
+export function reviewStatusLabel(value?: string): string {
+  const labels: Record<string, string> = { not_started: "Belum ditinjau", in_progress: "Sedang ditinjau", finalized: "Peninjauan selesai" };
+  return labels[(value ?? "not_started").toLowerCase()] ?? value ?? "Belum ditinjau";
+}
 export const localTime = (value: string) => new Date(/(?:Z|[+-]\d{2}:\d{2})$/.test(value) ? value : `${value}Z`).toLocaleString("id-ID");

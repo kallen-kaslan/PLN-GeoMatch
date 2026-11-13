@@ -1,3 +1,4 @@
+import { RefreshCw, Trash2, MapPin } from "lucide-react";
 import { usePermissions } from "@/hooks/usePermissions";
 import { MetricCard } from "@/components/data/MetricCard";
 import { useState, useEffect, useRef, useCallback } from "react";
@@ -347,9 +348,9 @@ export default function CandidatesPage() {
   return (
     <div className="space-y-6">
       {/* Top Header & Finish Button */}
-      <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-3 sm:gap-4 border-b border-ui-border pb-3">
+      <div className="geo-page-heading geo-archive-heading">
         <div>
-          <h1 className="fluid-h1 font-semibold tracking-tight text-neo-black">
+          <h1 className="fluid-h1 flex items-center gap-3 font-semibold tracking-tight text-neo-black"><MapPin aria-hidden="true" />
             Review & Peta Spasial Koordinat
           </h1>
           <p className="text-xs sm:text-sm text-ui-muted mt-0.5">
@@ -372,7 +373,7 @@ export default function CandidatesPage() {
             onClick={fetchCandidates}
             className="touch-min px-3 py-1.5 min-h-[38px] border border-ui-border bg-neo-white hover:bg-slate-100 text-xs font-semibold rounded-lg  transition "
           >
-            🔄 Refresh
+            <RefreshCw size={14} />Muat ulang
           </button>
 
           {canDelete && <button
@@ -381,16 +382,16 @@ export default function CandidatesPage() {
             className="touch-min px-3 py-1.5 min-h-[38px] border border-[#dc2626] bg-[#fee2e2] hover:bg-[#fef2f2] text-[#dc2626] text-xs font-semibold rounded-lg  transition  disabled:opacity-50"
             title="Hapus semua data dan mulai dari awal"
           >
-            🗑️ Reset
+            <Trash2 size={14} />Reset
           </button>}
 
           <button
             onClick={handleFinishReview}
             disabled={loading}
             className="touch-min px-4 py-2 min-h-[38px] border border-ui-border bg-neo-accent hover:bg-ui-primary-hover text-white text-xs font-semibold rounded-lg  flex items-center gap-1.5 transition  disabled:opacity-50"
-            title="Selesaikan verifikasi dan lihat rekapitulasi serta download CSV"
+            title="Selesaikan verifikasi dan lihat rekapitulasi serta ekspor XLSX"
           >
-            <span>{canWrite ? "✅ Selesai & Buka Hasil" : "Lihat Hasil"}</span>
+            <span>{canWrite ? "Selesai & Buka Hasil" : "Lihat Hasil"}</span>
             <span>→</span>
           </button>
         </div>
@@ -403,7 +404,7 @@ export default function CandidatesPage() {
             <div className="w-5 h-5 border border-neo-black border-t-transparent rounded-full animate-spin shrink-0"></div>
             <div>
               <p className="text-xs sm:text-sm font-semibold text-neo-black">
-                {processStatus === "queued" ? "⏳ Proses Masuk Antrean (QUEUED)" : "⚙️ Celery Worker Sedang Memproses Matching (RUNNING)..."}
+                {processStatus === "queued" ? "⏳ Menunggu antrean pemrosesan" : "⚙️ Pencocokan sedang berjalan..."}
               </p>
               <p className="text-xs text-ui-muted">
                 Halaman ini otomatis me-refresh data begitu worker menyelesaikan perhitungan spasial.
@@ -415,7 +416,7 @@ export default function CandidatesPage() {
             onClick={fetchCandidates}
             className="px-3 py-1.5 border border-neo-black bg-white text-xs font-semibold rounded-md  hover:bg-neo-white shrink-0"
           >
-            🔄 Refresh Manual
+            <RefreshCw size={14} />Muat ulang
           </button>
         </div>
       )}
@@ -423,10 +424,10 @@ export default function CandidatesPage() {
       {/* SUMMARY STATS BOX */}
       {candidates.length > 0 && (
         <div className="geo-metrics geo-metrics-4">
-          <MetricCard label="TOTAL KANDIDAT" value={totalCount} tone="primary" />
-          <MetricCard label="VALID" value={candidates.filter(c => c.is_accepted === 1).length} tone="success" />
-          <MetricCard label="DITOLAK" value={candidates.filter(c => c.is_accepted === -1).length} tone="danger" />
-          <MetricCard label="PENDING" value={candidates.filter(c => c.is_accepted === 0).length} tone="warning" />
+          <MetricCard label="Total kandidat (seluruh hasil)" value={totalCount} tone="primary" />
+          <MetricCard label="Dipilih (halaman ini)" value={candidates.filter(c => c.is_accepted === 1).length} tone="success" />
+          <MetricCard label="Ditolak (halaman ini)" value={candidates.filter(c => c.is_accepted === -1).length} tone="danger" />
+          <MetricCard label="Belum ditinjau (halaman ini)" value={candidates.filter(c => c.is_accepted === 0).length} tone="warning" />
         </div>
       )}
 

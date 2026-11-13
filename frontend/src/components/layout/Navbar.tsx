@@ -1,6 +1,7 @@
 import { useNavigate, useLocation } from "react-router-dom";
 import { useAppStore } from "@/store/app";
-import { ChevronDown, User, LogOut, Menu, PanelLeftClose, PanelLeft, MapPin } from "lucide-react";
+import { ChevronDown, User, LogOut, Menu, PanelLeftClose, PanelLeft } from "lucide-react";
+import { PlnLogo } from "@/components/auth/PlnLogo";
 import { useState, useRef, useEffect } from "react";
 import PasswordDialog from "./PasswordDialog";
 import type { ApiError } from "@/lib/api";
@@ -34,7 +35,7 @@ export default function Navbar() {
     <a href="#main-content" className="sr-only rounded-md bg-white px-3 py-2 focus:not-sr-only">Lewati navigasi</a>
     <div className="flex min-w-0 items-center gap-3">
       <button type="button" onClick={toggleMobileMenu} className="touch-min rounded-md text-ui-muted hover:bg-slate-100 lg:hidden" aria-label={isMobileMenuOpen ? "Tutup menu navigasi" : "Buka menu navigasi"} aria-expanded={isMobileMenuOpen} aria-controls="app-sidebar-drawer"><Menu size={20} /></button>
-      <div className="flex items-center gap-2.5"><span className="flex size-8 items-center justify-center rounded-lg bg-neo-accent text-white"><MapPin size={19} /></span><span className="whitespace-nowrap text-[15px] font-semibold tracking-tight">PLN GeoMatch</span></div>
+      <div className="flex items-center gap-2.5 lg:hidden"><span className="geo-brand-mark"><PlnLogo /></span><span className="whitespace-nowrap text-[15px] font-semibold tracking-tight">PLN GeoMatch</span></div>
       <button type="button" onClick={toggleSidebarCollapsed} className="touch-min ml-3 hidden rounded-md text-ui-muted hover:bg-slate-100 lg:flex" aria-label={isSidebarCollapsed ? "Perluas Sidebar" : "Perkecil Sidebar"} title={isSidebarCollapsed ? "Perluas Sidebar" : "Perkecil Sidebar"}>{isSidebarCollapsed ? <PanelLeft size={18} /> : <PanelLeftClose size={18} />}</button>
       <span className="hidden rounded-md bg-ui-context px-3 py-1 text-[13px] font-medium text-ui-primary-text md:inline">{page}</span>
     </div>

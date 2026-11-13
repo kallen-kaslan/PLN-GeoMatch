@@ -1,4 +1,4 @@
-import { AlertCircle, CheckCircle2, Clock3, Layers3, ListFilter, History, LoaderCircle, type LucideIcon } from "lucide-react";
+import { AlertCircle, CheckCircle2, Clock3, Layers3, History, LoaderCircle, type LucideIcon } from "lucide-react";
 
 export type MetricTone = "primary" | "success" | "warning" | "danger" | "violet" | "neutral";
 
@@ -8,7 +8,7 @@ const icons: Record<MetricTone, LucideIcon> = {
   warning: Clock3,
   danger: AlertCircle,
   violet: History,
-  neutral: ListFilter,
+  neutral: Layers3,
 };
 
 export function MetricCard({ label, value, tone = "neutral", icon, compact = false, definition = false, loading = false }: {

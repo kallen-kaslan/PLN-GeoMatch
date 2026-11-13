@@ -59,7 +59,8 @@ export function ImportProgress({ activity, snapshot, disconnected, onTogglePause
     </div>
     {controlError && <p role="alert" className="text-xs text-red-700">{controlError}</p>}
     {running && <p className="text-xs text-ui-muted">Jeda diterapkan setelah pengiriman atau bagian proses saat ini selesai. Biarkan halaman ini terbuka selama proses dijeda.</p>}
-    <ol aria-label="Tahapan impor" className="grid gap-2 text-xs sm:grid-cols-3">{steps.map((step, index) => <li key={step} aria-current={running && index === activeStep ? "step" : undefined} className="flex items-center gap-2">
+    <details open={running || failed}><summary className="text-xs font-medium">Detail tahapan impor</summary>
+    <ol aria-label="Tahapan impor" className="mt-3 grid gap-2 text-xs sm:grid-cols-3">{steps.map((step, index) => <li key={step} aria-current={running && index === activeStep ? "step" : undefined} className="flex items-center gap-2">
       {index < activeStep || !running && !failed ? <CheckCircle2 size={16} className="shrink-0 text-green-700" /> : index === activeStep ? paused ? <Pause size={16} className="shrink-0" /> : <LoaderCircle size={16} className={running ? "shrink-0 animate-spin" : "shrink-0"} /> : <Circle size={16} className="shrink-0 text-ui-muted" />}<span>{step}</span>
     </li>)}</ol>
     {running && <>
@@ -73,5 +74,6 @@ export function ImportProgress({ activity, snapshot, disconnected, onTogglePause
       <p className="text-xs text-ui-muted">Persentase mengikuti byte terkirim atau baris yang diproses. Estimasi dihitung dari kecepatan aktual dan dapat berubah.</p>
       {(lostConnection || stale) && <p role="status" className="text-xs font-semibold text-amber-900">{lostConnection ? "Pembaruan progres belum tersambung. Mencoba menghubungkan kembali; proses belum dinyatakan selesai." : "Belum ada pembaruan baru dari server. Proses mungkin sedang membaca berkas atau menunggu database."}</p>}
     </>}
+    </details>
   </section>;
 }

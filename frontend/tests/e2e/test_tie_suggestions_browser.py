@@ -47,7 +47,7 @@ def test_suggestions_download_verify_map_and_refresh_unique_pairs(
         f"/koreksi/pemilihan-otomatis?category={kind}&batch_id={batch}&process_id={process}"
     )
     panel = page.get_by_role("region", name="Pilihan kandidat otomatis", exact=True)
-    mode = panel.get_by_label("Penanganan jarak sama", exact=True)
+    mode = panel.get_by_label("Mode pemilihan", exact=True)
     expect(mode).to_have_value("review")
     mode.select_option("suggest")
     proposals = panel.get_by_role(

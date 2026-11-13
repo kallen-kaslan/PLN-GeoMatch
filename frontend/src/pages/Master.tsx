@@ -1,3 +1,5 @@
+import { StatusBadge } from "@/components/data/StatusBadge";
+import { WorkspaceHeader, SectionHeading } from "@/components/layout/WorkspaceHeader";
 import { usePermissions } from "@/hooks/usePermissions";
 import { useDebouncedSearch } from "@/hooks/useDebouncedSearch";
 import { SearchFeedback } from "@/components/data/SearchFeedback";
@@ -17,7 +19,7 @@ const count = (value: number | null | undefined) => value == null ? "—" : valu
 
 function RecordBadge({ record }: { record: MasterRecord }) {
   const label = !record.is_valid ? "Perlu perbaikan" : record.coordinates_complete ? "Lengkap" : "Koordinat belum lengkap";
-  return <span className={`inline-block whitespace-nowrap rounded-md border px-2 py-1 text-xs font-semibold ${!record.is_valid ? "border-red-600 bg-red-50 text-red-700" : record.coordinates_complete ? "border-green-600 bg-green-50 text-green-700" : "border-amber-600 bg-amber-50 text-amber-800"}`}>{label}</span>;
+  return <StatusBadge tone={!record.is_valid ? "danger" : record.coordinates_complete ? "success" : "warning"}>{label}</StatusBadge>;
 }
 
 function RecordDetail({ kind, id, onClose }: { kind: MasterKind; id: number; onClose: () => void }) {
@@ -87,12 +89,9 @@ function MasterWorkspace({ kind }: { kind: MasterKind }) {
   };
 
   return <div className="space-y-5 sm:space-y-6">
-    <header className="geo-page-heading">
-      <div><p className="text-xs font-semibold uppercase tracking-[0.18em] text-ui-muted">Referensi pelanggan</p><h1 className="fluid-h1 mt-1 flex items-center gap-2 font-semibold"><Database size={25} className="shrink-0" />Data Master {descriptor.label}</h1><p className="mt-1 text-xs text-ui-muted sm:text-sm">{descriptor.description}</p></div>
-      <div className="flex gap-2"><button type="button" aria-label="Muat ulang data master" onClick={() => void queryClient.invalidateQueries({ queryKey: ["masters", kind] })} className="touch-min rounded-lg border border-ui-border bg-white px-3  hover:bg-gray-100"><RefreshCw size={16} className={batches.isFetching || summary.isFetching || (records.isFetching || searchBusy) ? "animate-spin" : ""} /></button>
-        {canWrite && <button type="button" onClick={() => { setResumeId(null); setShowImport(true); }} disabled={showImport} className="touch-min gap-2 rounded-lg border border-ui-border bg-ui-primary px-4 text-xs font-semibold text-white  hover:bg-ui-primary-hover disabled:opacity-40"><Plus size={16} />Unggah berkas</button>}</div>
-    </header>
-    <nav aria-label="Jenis data master" className="flex gap-2 overflow-x-auto pb-1">
+    <WorkspaceHeader icon={Database} eyebrow="Data referensi" title={<>Data Master {descriptor.label}</>} description={descriptor.description} actions={<div className="flex gap-2"><button type="button" aria-label="Muat ulang data master" onClick={() => void queryClient.invalidateQueries({ queryKey: ["masters", kind] })} className="touch-min rounded-lg border border-ui-border bg-white px-3  hover:bg-gray-100"><RefreshCw size={16} className={batches.isFetching || summary.isFetching || (records.isFetching || searchBusy) ? "animate-spin" : ""} /></button>
+        {canWrite && <button type="button" onClick={() => { setResumeId(null); setShowImport(true); }} disabled={showImport} className="touch-min gap-2 rounded-lg border border-ui-border bg-ui-primary px-4 text-xs font-semibold text-white  hover:bg-ui-primary-hover disabled:opacity-40"><Plus size={16} />Unggah berkas</button>}</div>} />
+    <nav aria-label="Jenis data master" className="geo-tabs">
       {MASTER_TYPES.map((item) => <Link key={item.key} to={`/master/${item.key}`} aria-current={kind === item.key ? "page" : undefined} className={`touch-min whitespace-nowrap rounded-lg border border-ui-border px-5 text-xs font-semibold ${kind === item.key ? "bg-ui-primary text-white " : "bg-white hover:bg-gray-100"}`}>{item.label}</Link>)}
     </nav>
     {notice && <div role="status" className={`flex items-start justify-between gap-3 rounded-lg border p-4 text-xs ${notice.error_rows ? "border-amber-600 bg-amber-50 text-amber-900" : "border-green-600 bg-green-50 text-green-800"}`}>
@@ -110,9 +109,9 @@ function MasterWorkspace({ kind }: { kind: MasterKind }) {
       ].map((card) => <MetricCard key={card.label} label={card.label} value={count(card.value)} icon={card.icon} tone={card.tone === "primary" || (card.value ?? 0) > 0 ? card.tone as MetricTone : "neutral"} loading={summary.isFetching} />)}
     </section>
     {totals?.statistics_ready === false && <div aria-label="Status statistik master" className="rounded-lg border border-ui-border bg-white p-3 text-xs">{statistics.isError ? <p role="alert">Statistik rinci belum dapat dimuat. <button type="button" onClick={() => void statistics.refetch()} className="font-semibold underline">Coba lagi statistik master</button></p> : <p role="status" className="flex items-center gap-2"><LoaderCircle size={14} className="animate-spin" />Menghitung IDPEL unik dan kelengkapan koordinat. Jumlah utama dan tabel tetap dapat digunakan.</p>}</div>}
-    <section className="space-y-4 rounded-lg border border-ui-border bg-white p-4  sm:p-5">
+    <section className="geo-panel geo-data-panel space-y-4 p-4 sm:p-5">
       <div className="flex flex-col justify-between gap-3 lg:flex-row lg:items-end">
-        <div><h2 className="text-sm font-semibold">Daftar sumber master</h2><p className="mt-1 text-xs text-ui-muted">{count(totals?.ready_files)} berkas siap · {count(totals?.unique_idpels)} IDPEL unik · {count(totals?.duplicate_observations)} observasi berulang</p></div>
+        <div><SectionHeading icon={Database} title="Daftar sumber master" /><p className="mt-1 text-xs text-ui-muted">{count(totals?.ready_files)} berkas siap · {count(totals?.unique_idpels)} IDPEL unik · {count(totals?.duplicate_observations)} observasi berulang</p></div>
         <label className="flex flex-col gap-1.5 text-xs font-semibold lg:min-w-80">Berkas sumber
           <select aria-label="Berkas sumber" value={batchId ?? ""} onChange={(event) => { setBatchId(event.target.value ? Number(event.target.value) : undefined); setPage(1); }} className={controlClass}><option value="">Semua berkas {descriptor.label}</option>{batches.data?.map((batch) => <option key={batch.id} value={batch.id}>{batch.filename}{batch.period ? ` · ${batch.period}` : ""}{batch.status !== "completed" ? " · Menunggu mapping" : ""}</option>)}</select>
         </label>
@@ -130,8 +129,8 @@ function MasterWorkspace({ kind }: { kind: MasterKind }) {
             <td className="p-3 font-mono">{displayValue(record.row_number)}</td>
             <td className="p-3"><p className="font-mono font-semibold">{displayValue(record.fields.idpel)}</p><p className="mt-1 max-w-56 truncate text-ui-muted">{displayValue(record.fields.nama)}</p></td>
             <td className="p-3 font-mono"><p>{displayValue(record.fields.lat)}</p><p className="mt-1">{displayValue(record.fields.lon)}</p></td>
-            <td className="p-3">{kind === "dil" && <><p>KODEDLPD: <span className="font-mono">{displayValue(record.fields.kode_dlpd)}</span></p><p className="mt-1">KDDK: <span className="font-mono">{displayValue(record.fields.kddk)}</span></p></>}{record.fields.kode_dil && <p className="mt-1">Kode DIL: <span className="font-mono">{displayValue(record.fields.kode_dil)}</span></p>}<p className="mt-1">Gardu: <span className="font-mono">{displayValue(record.fields.kode_gardu)}</span></p></td>
-            <td className="p-3">{displayValue(record.period)}</td><td className="p-3"><p className="max-w-48 truncate" title={record.filename}>{record.filename}</p>{record.source_sheet && <p className="mt-1 text-xs text-ui-muted">Sheet: {record.source_sheet}</p>}</td><td className="p-3"><RecordBadge record={record} />{kind === "dil" && <p className="mt-1 text-xs text-ui-muted">STATUS_DIL: {displayValue(record.fields.status_dil)}</p>}</td>
+            <td className="p-3">{kind === "dil" && (record.fields.kode_dlpd || record.fields.kddk) && <><p>KODEDLPD: <span className="font-mono">{displayValue(record.fields.kode_dlpd)}</span></p><p className="mt-1">KDDK: <span className="font-mono">{displayValue(record.fields.kddk)}</span></p></>}{record.fields.kode_dil && <p className="mt-1">Kode DIL: <span className="font-mono">{displayValue(record.fields.kode_dil)}</span></p>}<p className="mt-1">Gardu: <span className="font-mono">{displayValue(record.fields.kode_gardu)}</span></p></td>
+            <td className="p-3">{displayValue(record.period)}</td><td className="p-3"><p className="max-w-48 truncate" title={record.filename}>{record.filename}</p>{record.source_sheet && <p className="mt-1 text-xs text-ui-muted">Sheet: {record.source_sheet}</p>}</td><td className="p-3"><RecordBadge record={record} />{kind === "dil" && record.fields.status_dil && <p className="mt-1 text-xs text-ui-muted">STATUS_DIL: {displayValue(record.fields.status_dil)}</p>}</td>
             <td className="p-3"><button type="button" onClick={() => setDetailId(record.id)} aria-label={`Lihat detail baris ${record.row_number ?? record.id}`} className="touch-min rounded-lg border border-ui-border px-3 font-semibold hover:bg-gray-100">Detail</button></td>
           </tr>) : <tr><td colSpan={8} className="p-10 text-center"><Database size={28} className="mx-auto mb-3 text-ui-muted" /><p className="text-sm font-semibold">{search || status !== "all" ? "Tidak ada data sesuai pencarian." : "Belum ada data master yang siap ditampilkan."}</p><p className="mt-1 text-xs text-ui-muted">{search || status !== "all" ? "Sesuaikan pencarian atau filter kondisi data." : "Unggah berkas dan konfirmasi pemetaan kolom untuk menambahkan referensi."}</p></td></tr>}</tbody>
         </table>

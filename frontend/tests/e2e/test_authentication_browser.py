@@ -8,9 +8,11 @@ USER_PASSWORD = "Password analis browser 593!"
 
 
 def login_ui(page: Page, username: str, password: str) -> None:
-    page.get_by_label("Username", exact=True).fill(username)
-    page.get_by_label("Password", exact=True).fill(password)
-    page.get_by_role("button", name="Masuk", exact=True).click()
+    form = page.get_by_role("form", name="Form login", exact=True)
+    expect(form).to_be_visible()
+    form.get_by_label("Username", exact=True).fill(username)
+    form.get_by_label("Password", exact=True).fill(password)
+    form.get_by_role("button", name="Masuk", exact=True).click()
 
 
 def sign_out(page: Page) -> None:

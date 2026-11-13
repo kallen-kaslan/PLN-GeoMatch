@@ -17,7 +17,7 @@ export default function LoginPage() {
   const navigate = useNavigate();
   const location = useLocation();
   useEffect(() => {
-    const delay = window.matchMedia("(prefers-reduced-motion: reduce)").matches ? 0 : 2500;
+    const delay = 0;
     const timer = window.setTimeout(() => setIntro(false), delay);
     return () => window.clearTimeout(timer);
   }, []);
