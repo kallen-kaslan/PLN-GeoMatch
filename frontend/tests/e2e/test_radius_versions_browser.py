@@ -1,7 +1,5 @@
 """Historical radius views and XLSX downloads stay on the selected search version."""
 
-from workspace_controls import open_radius_controls
-
 from pathlib import Path
 
 import httpx
@@ -9,6 +7,7 @@ import pytest
 from openpyxl import load_workbook
 from playwright.sync_api import Page, expect
 from test_correction_map_browser import setup_map
+from workspace_controls import open_radius_controls
 
 
 @pytest.mark.parametrize("kind", ["idpel_kosong", "idpel_tidak_ketemu"])
@@ -74,7 +73,7 @@ def test_radius_dropdown_historical_choices_and_versioned_xlsx(
         downloaded.value.save_as(target)
         book = load_workbook(target)
         sheet = book["Riwayat Pilihan" if history else "Hasil Koreksi"]
-        assert sheet["B2"].value == identity
+        assert sheet["C2"].value == identity
         assert sheet["A1"].fill.patternType is None and sheet.freeze_panes is None
         if history:
             info = dict(list(book["Informasi"].values)[1:])
@@ -83,8 +82,8 @@ def test_radius_dropdown_historical_choices_and_versioned_xlsx(
         else:
             assert book.sheetnames == ["Hasil Koreksi"]
             headers = [cell.value for cell in sheet[1]]
-            assert len(headers) == 9 and "verif" not in headers
-            assert headers[-2:] == ["x_akhir", "y_akhir"]
+            assert len(headers) == 12 and "verif" not in headers
+            assert headers[-4:] == ["x_akhir", "y_akhir", "radius_pemeriksaan_meter", "Jarak Kandidat (m)"]
         book.close()
 
     verify_download("Unduh hasil radius 10 m XLSX", 10, 1, "002")

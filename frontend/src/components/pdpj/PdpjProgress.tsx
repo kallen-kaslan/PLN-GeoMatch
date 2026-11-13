@@ -1,3 +1,4 @@
+import { usePermissions } from "@/hooks/usePermissions";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { CheckCircle2, LoaderCircle, Pause, Play } from "lucide-react";
@@ -12,6 +13,7 @@ const count = (value: number) => value.toLocaleString("id-ID");
 const duration = (seconds: number) => `${Math.floor(seconds / 60)} menit ${Math.floor(seconds % 60)} detik`;
 
 export function PdpjProgress({ review, autoStart, saving = false, onBusyChange }: { review: PdpjSummary; autoStart: boolean; saving?: boolean; onBusyChange?: (busy: boolean) => void }) {
+  const { canWrite } = usePermissions();
   const queryClient = useQueryClient();
   const generation = useRef(0);
   const activeRequest = useRef<Promise<PdpjReview> | null>(null);
@@ -97,9 +99,9 @@ export function PdpjProgress({ review, autoStart, saving = false, onBusyChange }
   }, [publish, queryClient, review.id, resume, advance]);
 
   useEffect(() => {
-    const timer = autoStart ? window.setTimeout(() => void run(), 0) : undefined;
+    const timer = canWrite && autoStart ? window.setTimeout(() => void run(), 0) : undefined;
     return () => { window.clearTimeout(timer); generation.current += 1; };
-  }, [autoStart, run]);
+  }, [canWrite, autoStart, run]);
 
   useEffect(() => {
     if (!busy) return;
@@ -131,8 +133,8 @@ export function PdpjProgress({ review, autoStart, saving = false, onBusyChange }
       <div className={ready ? "flex flex-wrap items-center gap-x-3 gap-y-1" : undefined}><h2 className="flex items-center gap-2 text-sm font-semibold">{busy ? <LoaderCircle size={18} className="animate-spin" /> : ready ? <CheckCircle2 size={18} className="text-green-700" /> : <Pause size={18} />}{stage}</h2>
         <p role="status" className={`${ready ? "" : "mt-1"} text-xs`}>{saving || serverSaving ? "Menyimpan versi hasil validasi…" : stopping || (serverActive && checkpoint.activity?.operation === "pausing") ? "Menghentikan setelah bagian aktif selesai disimpan…" : serverActive && !checkpoint.activity?.operation ? "Proses berjalan di server" : ready ? checkpoint.status === "completed" ? "Validasi PDPJ telah disetujui dan tersimpan" : "Menunggu tinjauan petugas" : working || serverActive ? "Proses berjalan · hasil disimpan bertahap" : progress.state === "failed" || error ? "Proses terhenti · hasil tersimpan dapat dilanjutkan" : progress.state === "running" ? "Menunggu dilanjutkan dari hasil tersimpan" : "Proses dijeda · siap dilanjutkan"}</p></div>
       {ready && storageInfo}
-      {!ready && (working || serverActive ? <button type="button" onClick={() => void pause()} disabled={saving || serverSaving || stopping || checkpoint.activity?.operation === "pausing"} className={buttonClass.secondary}><Pause size={16} />Hentikan sementara</button> : <button type="button" disabled={stopping || saving || monitor.isError} onClick={() => void run()} className={buttonClass.primary}>{stopping || saving ? <LoaderCircle size={16} className="animate-spin" /> : <Play size={16} />}{stopping ? "Menyimpan bagian aktif…" : "Lanjutkan pemeriksaan"}</button>)}
-      {!ready && !working && !stopping && !serverActive && progress.state === "running" && <button type="button" onClick={() => void pause()} className={buttonClass.secondary}>Jeda untuk validasi</button>}
+      {canWrite && !ready && (working || serverActive ? <button type="button" onClick={() => void pause()} disabled={saving || serverSaving || stopping || checkpoint.activity?.operation === "pausing"} className={buttonClass.secondary}><Pause size={16} />Hentikan sementara</button> : <button type="button" disabled={stopping || saving || monitor.isError} onClick={() => void run()} className={buttonClass.primary}>{stopping || saving ? <LoaderCircle size={16} className="animate-spin" /> : <Play size={16} />}{stopping ? "Menyimpan bagian aktif…" : "Lanjutkan pemeriksaan"}</button>)}
+      {canWrite && !ready && !working && !stopping && !serverActive && progress.state === "running" && <button type="button" onClick={() => void pause()} className={buttonClass.secondary}>Jeda untuk validasi</button>}
     </div>
     <div className="flex items-center gap-3"><progress aria-label="Kemajuan keseluruhan pemeriksaan PDPJ" max={100} value={percent} className="h-1.5 min-w-0 flex-1" /><span className="text-sm font-semibold">{progressLabel(percent)}</span></div>
 

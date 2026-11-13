@@ -3,11 +3,6 @@
 from io import BytesIO
 
 import pytest
-from fastapi.testclient import TestClient
-from openpyxl import load_workbook
-from sqlalchemy import create_engine
-from sqlalchemy.orm import Session
-
 from app.correction_observation_schema import upgrade_correction_observations
 from app.models.correction import CorrectionCandidateEvidence, CorrectionTarget
 from app.models.master_sisa import (
@@ -16,6 +11,11 @@ from app.models.master_sisa import (
 )
 from app.models.matching import MatchCandidate, MatchingRun
 from app.modules.corrections import observations
+from fastapi.testclient import TestClient
+from openpyxl import load_workbook
+from sqlalchemy import create_engine
+from sqlalchemy.orm import Session
+
 from tests.test_correction_progress import advance, finish, path
 from tests.test_corrections import upload
 
@@ -133,9 +133,10 @@ def test_search_all_sources_then_deduplicate_and_export_selected_observation(
     )
     book = load_workbook(BytesIO(response.content), read_only=True)
     exported = list(book.worksheets[0].values)
-    assert exported[1][1] == "002"
-    assert exported[1][-2:] == ("106.8", "-6.2001")
-    assert "dil.csv" in dict(zip(exported[0], exported[1]))["sumber file (sheet)"]
+    row = dict(zip(exported[0], exported[1]))
+    assert row["idpelanggan"] == "002"
+    assert (row["x_akhir"], row["y_akhir"]) == ("106.8", "-6.2001")
+    assert "dil.csv" in row["sumber file (sheet)"]
 
 
 def test_policy_migration_preserves_existing_runs_and_is_idempotent() -> None:
@@ -212,7 +213,10 @@ def test_new_observation_search_preserves_previously_approved_coordinate(
     book = load_workbook(
         BytesIO(client.get(path(check) + "/results/export").content), read_only=True
     )
-    assert list(book["Hasil Koreksi"].values)[1][-1] == "-6.2002"
+    exported = list(book["Hasil Koreksi"].values)
+    saved = dict(zip(exported[0], exported[1]))
+    assert saved["y_akhir"] == "-6.2002"
+    assert saved["Jarak Kandidat (m)"] == chosen["distance_meters"]
 
 
 def test_legacy_checkpoint_resumes_old_policy_and_explicit_retry_starts_from_zero(

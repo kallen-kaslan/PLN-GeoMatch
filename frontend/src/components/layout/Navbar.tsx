@@ -26,6 +26,7 @@ export default function Navbar() {
   const page =
     location.pathname.startsWith("/master") ? "Data Master" :
     location.pathname.startsWith("/pdpj") ? "Data PDPJ" :
+    location.pathname === "/koreksi/pemilihan-otomatis" ? "Data Koreksi / Pemilihan Otomatis" :
     location.pathname.startsWith("/koreksi") ? "Data Koreksi" :
     location.pathname.startsWith("/peta-koreksi") ? "Peta Koreksi" :
     location.pathname.startsWith("/result") ? "Hasil Rekonsiliasi" :
@@ -34,6 +35,7 @@ export default function Navbar() {
     location.pathname.startsWith("/process") ? "Input Manual & Matching" :
     location.pathname.startsWith("/candidates") ? "Review Kandidat" :
     "Dashboard";
+
 
   useEffect(() => {
     const outside = (event: MouseEvent) => {

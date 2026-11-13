@@ -11,7 +11,10 @@ from openpyxl.utils import get_column_letter
 from openpyxl.worksheet._write_only import WriteOnlyWorksheet
 
 XLSX_MEDIA_TYPE = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+CANDIDATE_DISTANCE_HEADER = "Jarak Kandidat (m)"
+DISTANCE_NUMBER_FORMAT = '0.00" m"'
 RESULT_HEADERS = [
+    "objectid",
     "noagenda",
     "idpelanggan",
     "jenispelanggan",
@@ -21,8 +24,10 @@ RESULT_HEADERS = [
     "sel (baris ke berapa)",
     "x_akhir",
     "y_akhir",
+    "radius_pemeriksaan_meter",
+    CANDIDATE_DISTANCE_HEADER,
 ]
-RESULT_WIDTHS = [26, 22, 22, 24, 24, 58, 26, 24, 24]
+RESULT_WIDTHS = [16, 26, 22, 22, 24, 24, 58, 26, 24, 24, 30, 26]
 
 
 class Spreadsheet:
@@ -31,11 +36,21 @@ class Spreadsheet:
     def __init__(self) -> None:
         self.book = Workbook(write_only=True)
         self.book.properties.creator = "PLN GeoMatch"
+        self.number_formats: dict[str, dict[int, str]] = {}
 
     def sheet(
-        self, title: str, headers: Sequence[str], widths: Sequence[int]
+        self,
+        title: str,
+        headers: Sequence[str],
+        widths: Sequence[int],
+        number_formats: dict[str, str] | None = None,
     ) -> WriteOnlyWorksheet:
         sheet = self.book.create_sheet(title)
+        self.number_formats[sheet.title] = {
+            index: number_formats[header]
+            for index, header in enumerate(headers)
+            if number_formats and header in number_formats
+        }
         for index, width in enumerate(widths, 1):
             sheet.column_dimensions[get_column_letter(index)].width = width
         sheet.append(list(headers))
@@ -43,12 +58,15 @@ class Spreadsheet:
 
     def append(self, sheet: WriteOnlyWorksheet, values: Sequence[Any]) -> None:
         cells = []
-        for value in values:
+        formats = self.number_formats.get(sheet.title, {})
+        for index, value in enumerate(values):
             cell = WriteOnlyCell(sheet, value=value)
             if isinstance(value, str):
                 # XLSX strings preserve leading zeroes, decimal digits, and literal '='.
                 cell.data_type = "s"
                 cell.number_format = "@"
+            elif isinstance(value, (int, float)) and index in formats:
+                cell.number_format = formats[index]
             cells.append(cell)
         sheet.append(cells)
 

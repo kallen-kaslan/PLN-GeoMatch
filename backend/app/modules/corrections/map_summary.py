@@ -2,14 +2,14 @@
 
 from typing import Any
 
-from fastapi import HTTPException
-from sqlalchemy import func
-from sqlalchemy.orm import Session
-
 from app.models.correction import CorrectionTarget
 from app.models.matching import MatchCandidate, MatchingRun, ProcessStatus
 from app.models.upload import SourceRecord, UploadBatch
+from app.modules.corrections.candidate_scope import candidate_scope
 from app.modules.corrections.service import CorrectionKind, check_process, selected_run
+from fastapi import HTTPException
+from sqlalchemy import func
+from sqlalchemy.orm import Session
 
 
 def radius_summary(
@@ -50,7 +50,7 @@ def radius_summary(
         )
         .filter(
             MatchCandidate.process_id == process.id,
-            MatchCandidate.generation == run.generation,
+            candidate_scope(run, process.id),
             MatchCandidate.distance_meters <= radius,
             CorrectionTarget.search_status == "matched",
         )

@@ -3,11 +3,6 @@
 from time import monotonic
 from typing import Any
 
-from fastapi import HTTPException
-from sqlalchemy import func
-from sqlalchemy.exc import SQLAlchemyError
-from sqlalchemy.orm import Session
-
 from app.models.correction import CorrectionCandidateEvidence, CorrectionTarget, utc_now
 from app.models.matching import (
     MatchCandidate,
@@ -17,6 +12,7 @@ from app.models.matching import (
     ReviewStatus,
 )
 from app.models.upload import SourceRecord
+from app.modules.corrections.candidate_scope import candidate_scope
 from app.modules.corrections.engine import run_correction_matching
 from app.modules.corrections.observations import (
     ALL_OBSERVATIONS_POLICY,
@@ -25,6 +21,10 @@ from app.modules.corrections.observations import (
 from app.modules.corrections.service import CorrectionKind, check_process
 from app.modules.pdpj.service import lock_review_session
 from app.modules.spatial.master_preparation import advance_preparation
+from fastapi import HTTPException
+from sqlalchemy import func
+from sqlalchemy.exc import SQLAlchemyError
+from sqlalchemy.orm import Session
 
 
 def initialize_progress(
@@ -135,7 +135,7 @@ def validate_chunk(
         )
         .filter(
             MatchCandidate.process_id == run.process_id,
-            MatchCandidate.generation == run.generation,
+            candidate_scope(run),
             MatchCandidate.target_record_id.in_(
                 [row.source_record_id for row in outcomes]
             ),

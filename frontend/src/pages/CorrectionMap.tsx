@@ -1,3 +1,4 @@
+import { usePermissions } from "@/hooks/usePermissions";
 import { SearchFeedback } from "@/components/data/SearchFeedback";
 import { useDebouncedSearch } from "@/hooks/useDebouncedSearch";
 import { CandidateCoordinateSource } from "@/components/corrections/CandidateCoordinateSource";
@@ -8,6 +9,7 @@ import { LoaderCircle, X } from "lucide-react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { CorrectionMap } from "@/components/corrections/CorrectionMap";
 import { CorrectionProgress } from "@/components/corrections/CorrectionProgress";
+import { AutomaticExtensionNote } from "@/components/corrections/AutomaticExtensionNote";
 import { PreviewPagination } from "@/components/data/PreviewPagination";
 import { MapRadiusSummary } from "@/components/corrections/MapRadiusSummary";
 import { coordinates } from "@/lib/correction-map";
@@ -42,11 +44,13 @@ function MapWorkspace({ kind, batchParam, processParam, generationParam, params,
 }) {
   const client = useQueryClient();
   const user = useAppStore((state) => state.user);
+  const { canWrite } = usePermissions();
   const actor = user?.username ?? "";
   const [reason, setReason] = useState("");
   const selected = Number(params.get("record_id")) || null;
   const radiusChoice = params.get("radius_meters");
-  const expansionChoice = params.get("expansion_radius_meters") ?? "";
+  const expansionChoice = canWrite ? params.get("expansion_radius_meters") ?? "" : "";
+  const [expansionOpen, setExpansionOpen] = useState(expansionChoice !== "");
   const [filterMessage, setFilterMessage] = useState("");
   const [autoRunId, setAutoRunId] = useState<number | null>(null);
   const updateView = useCallback((values: Record<string, string | null>) => {
@@ -123,21 +127,33 @@ function MapWorkspace({ kind, batchParam, processParam, generationParam, params,
   const completedView = run?.status === "completed";
   const readSearchBlocked = blockedBySearch && !completedView;
   const radiusFilterLocked = !completedView && (blockedBySearch || (busy && expanding));
-  const expansionBlocked = busy || partial;
+  const expansionBlocked = !canWrite || busy || partial;
   const historical = Boolean(generationParam && check.data && generation !== latestGeneration);
   const targetLoading = restoring || rows.isPending || (!!run && validRadius && radiusSummary.isPending);
   const searchableTarget = Boolean(active && coordinates(active.fields) && ["matched", "no_candidates"].includes(active.search_status));
   const requested = selected && validRadius && (!active || searchableTarget) ? { id: selected, radius } : null;
   const candidateQuery = useQuery({ queryKey: ["correction-map-candidates", kind, process, generation, requested], queryFn: ({ signal }) => correctionApi.mapCandidates(kind, requested!.id, scope, requested!.radius, signal), enabled: Boolean(scopeReady && searchableTarget && run && requested && requested.radius <= run.radius_meters && !readSearchBlocked) });
   const candidates = useMemo(() => requested?.id === selected && requested?.radius === radius ? candidateQuery.data ?? [] : [], [requested?.id, requested?.radius, selected, radius, candidateQuery.data]);
+  const suggestedIdpel = params.get("suggested_idpel");
+  const suggestionId = (Number(params.get("suggested_candidate_id")) || null) ?? candidates.find((candidate) => String(candidate.fields.idpel) === suggestedIdpel)?.id ?? null;
+  const suggestedCandidate = candidates.find((candidate) => candidate.id === suggestionId);
+  const focusedSuggestion = useRef("");
+  useEffect(() => {
+    const index = candidates.findIndex((candidate) => candidate.id === suggestionId);
+    const key = `${selected}-${generation}-${suggestionId}`;
+    if (index >= 0 && suggestionId && focusedSuggestion.current !== key) {
+      focusedSuggestion.current = key; setFocusedCandidate(suggestionId); setCandidatePage(Math.floor(index / 10) + 1);
+    }
+  }, [candidates, suggestionId, selected, generation]);
   const waitingForExpansion = Boolean(run?.id === check.data?.latest_run.id && expanding && busy && check.data?.latest_run.processing?.state === "running" && (check.data.latest_run.activity?.active || autoRunId === check.data.latest_run.id));
   const waitingForTarget = Boolean(requested && partial && !active && !targetLoading);
   const processStarted = useCallback(() => setNotice(""), []);
   const choiceKey = ["correction-choice", kind, process, selected, generation];
   const choice = useQuery({ queryKey: choiceKey, queryFn: () => correctionApi.choice(kind, process!, selected!, generation), enabled: Boolean(process && selected && active) });
-  const download = useMutation({ mutationFn: () => resultsApi.download(kind, process!, run!.generation, run!.radius_meters, "", "all"), onSuccess: (file) => downloadSpreadsheet(file.blob, file.filename) });
+  const download = useMutation({ mutationFn: () => resultsApi.download(kind, process!, run!.generation, displayRadius!, "", "all"), onSuccess: (file) => downloadSpreadsheet(file.blob, file.filename) });
   const expand = useMutation({
     mutationFn: () => {
+      if (!canWrite) throw new Error("Perluasan radius hanya tersedia untuk admin dan analis.");
       if (!validExpansion || historical || expansionBlocked || !actor.trim()) throw new Error("Isi radius perluasan yang lebih besar dari radius terbaru dan nama petugas.");
       return correctionApi.retry(kind, process!, { latest_run_id: check.data!.latest_run.id, radius_meters: expansionRadius, actor: actor.trim(), request_key: crypto.randomUUID(), incremental: true });
     },
@@ -182,7 +198,7 @@ function MapWorkspace({ kind, batchParam, processParam, generationParam, params,
   const candidatePages = Math.max(1, Math.ceil(candidates.length / 10));
   const activeCandidatePage = Math.min(candidatePage, candidatePages);
   const visibleCandidates = candidates.slice((activeCandidatePage - 1) * 10, activeCandidatePage * 10);
-  const canChoose = Boolean(scopeReady && !historical && !blockedBySearch && !expand.isPending && !choose.isPending && choice.data && !choice.isFetching && actor.trim() && (!choice.data.current || reason.trim()));
+  const canChoose = Boolean(canWrite && scopeReady && !historical && !blockedBySearch && !expand.isPending && !choose.isPending && choice.data && !choice.isFetching && actor.trim() && (!(choice.data.current || suggestedCandidate || suggestedIdpel) || reason.trim()));
   const selectedChoice = choice.data?.current?.candidate;
   const dataError = batches.error || checks.error || check.error || rows.error;
   const noCoordinates = mapRows.filter((row) => !coordinates(row.fields)).length;
@@ -204,13 +220,14 @@ function MapWorkspace({ kind, batchParam, processParam, generationParam, params,
       </fieldset>
       </div>
       <Link className="inline-block text-xs font-semibold underline" to={`/koreksi/${descriptor.slug}${batch ? `?batch_id=${batch}${process ? `&process_id=${process}` : ""}` : ""}`}>Buka data dan riwayat pemeriksaan</Link>
-      {process && <div className="flex flex-wrap gap-4 text-xs font-semibold"><Link to={`/result?category=${kind}&process_id=${process}${generation ? `&generation=${generation}` : ""}`} className="underline">Lihat Hasil Koreksi</Link><Link to={`/history?process_id=${process}${generation ? `&generation=${generation}` : ""}`} className="underline">Lihat Riwayat Proses</Link><button type="button" className="underline disabled:opacity-50" disabled={!run || download.isPending || !scopeReady} onClick={() => download.mutate()}>{download.isPending ? "Menyiapkan XLSX…" : `Unduh hasil radius ${run?.radius_meters ?? ""} m XLSX`}</button></div>}
-      <details className="text-xs"><summary>Cakupan ekspor</summary>      {run && <p className="text-xs">Ekspor seluruh hasil pemeriksaan versi {run.generation}, radius tersimpan {run.radius_meters} m. Format kolom tetap polos; radius dan versi dicantumkan pada file.</p>}</details>
+      {process && <div className="flex flex-wrap gap-4 text-xs font-semibold"><Link to={`/result?category=${kind}&process_id=${process}${generation ? `&generation=${generation}` : ""}${displayRadius !== null ? `&radius_meters=${displayRadius}` : ""}`} className="underline">Lihat Hasil Koreksi</Link><Link to={`/history?process_id=${process}${generation ? `&generation=${generation}` : ""}`} className="underline">Lihat Riwayat Proses</Link><button type="button" className="underline disabled:opacity-50" disabled={!run || displayRadius === null || download.isPending || !scopeReady} onClick={() => download.mutate()}>{download.isPending ? "Menyiapkan XLSX…" : `Unduh hasil radius ${displayRadius ?? ""} m XLSX`}</button></div>}
+      <details className="text-xs"><summary>Cakupan ekspor</summary>      {run && <p className="text-xs">Ekspor mengikuti filter radius {displayRadius ?? "?"} m pada versi {run.generation} (pencarian tersimpan {run.radius_meters} m). Pilihan kandidat di luar filter tidak disertakan. Baris tanpa pilihan tetap disertakan dengan jarak kosong.</p>}</details>
       {download.isError && <p role="alert" className="text-sm text-red-700">{message(download.error)}</p>}
       {dataError && <p role="alert" className="text-sm text-red-700">{message(dataError)}</p>}
       {!process && !checks.isPending && <p className="text-sm">Belum ada pemeriksaan. Selesaikan pemeriksaan pada Data Koreksi untuk menampilkan peta.</p>}
       {check.data && batch && check.data.batch_id !== batch && <p role="alert" className="text-red-700">Pemeriksaan tidak sesuai dengan berkas terpilih.</p>}
       {historical && <p role="status" className="text-sm text-amber-900">Anda melihat versi historis {generation}. Pilihan mengikuti riwayat hingga versi ini dan tidak dapat diubah. <button className="underline" onClick={() => updateView({ generation: null, radius_meters: String(check.data!.latest_run.radius_meters) })}>Buka versi terbaru</button></p>}
+      <AutomaticExtensionNote extension={run?.processing?.automatic_extension} />
       {partial && <p role="status" className="text-sm">{run.processing!.processed_rows.toLocaleString("id-ID")} dari {run.processing!.total_rows.toLocaleString("id-ID")} baris sudah tersimpan dan tersedia untuk koreksi di peta. Pilihan kandidat langsung disimpan. Pemeriksaan sisa baris dapat dilanjutkan melalui Data Koreksi tanpa mengubah pilihan yang sudah tersimpan.</p>}
       {radiusExpansion && busy && !check.data?.latest_run.processing && <LegacySearchProgress run={check.data!.latest_run} />}
       {check.data?.latest_run.status === "failed" && <p role="alert" className="text-sm text-red-700">Pencarian terakhir terhenti. Hasil yang sudah tersimpan tetap tersedia. Lanjutkan pemeriksaan melalui Data Koreksi.</p>}
@@ -222,16 +239,17 @@ function MapWorkspace({ kind, batchParam, processParam, generationParam, params,
         <label className="flex flex-col gap-1 text-xs font-semibold">Filter radius (meter)<input aria-label="Radius peta (meter)" type="number" min="0.01" max={run?.radius_meters ?? 100000} step="any" value={exceedsStoredRadius ? String(radius) : radiusChoice ?? (restoring ? "" : run?.radius_meters ?? check.data?.latest_run.radius_meters ?? 100)} onChange={(event) => {
           const value = Number(event.target.value);
           const exceeds = !!run && Number.isFinite(value) && value > run.radius_meters;
-          setFilterMessage(exceeds ? `Filter radius maksimal ${run!.radius_meters} m. Gunakan Radius perluasan untuk pemeriksaan yang lebih besar.` : "");
+          setFilterMessage(exceeds ? `Filter radius maksimal ${run!.radius_meters} m. ${canWrite ? "Gunakan Radius perluasan untuk pemeriksaan yang lebih besar." : "Auditor hanya dapat melihat kandidat dalam radius pemeriksaan tersimpan."}` : "");
           setPage(1); setCandidatePage(1); updateView({ radius_meters: exceeds ? String(run!.radius_meters) : event.target.value });
         }} disabled={radiusFilterLocked || expand.isPending || choose.isPending} className={control} /></label>          <label className="flex flex-col gap-1 text-xs font-semibold">Petugas<input aria-label="Petugas peta" disabled={choose.isPending} value={actor} maxLength={80} readOnly className={control} /></label>
-        <button type="button" disabled={choose.isPending || !validRadius || readSearchBlocked || expand.isPending || !run} onClick={() => void radiusSummary.refetch()} className={`${button} col-span-2 self-end xl:col-span-1`}>Perbarui ringkasan radius</button>
+        {canWrite && <button type="button" disabled={choose.isPending || !validRadius || readSearchBlocked || expand.isPending || !run} onClick={() => void radiusSummary.refetch()} className={`${button} col-span-2 self-end xl:col-span-1`}>Perbarui ringkasan radius</button>}
 
       </fieldset>
       {(filterMessage || exceedsStoredRadius) && <p role="alert" className="text-xs text-amber-900">{filterMessage || `Filter radius dibatasi maksimal ${run?.radius_meters} m sesuai versi tersimpan.`}</p>}
       {!validRadius && <p role="alert" className="text-xs text-red-700">Filter radius harus lebih dari 0 dan maksimal {run?.radius_meters ?? 100000} meter.</p>}
       <p className="text-xs">{run ? `Filter maksimal ${run.radius_meters} m pada versi ini dan hanya membaca kandidat tersimpan.` : "Selesaikan pemeriksaan terlebih dahulu."} {!active ? " Pilih target untuk menampilkan peta dan kandidat secara otomatis." : " Kandidat diperbarui otomatis mengikuti target dan radius terpilih."}</p>
-      <details className="space-y-2 border-t border-ui-border pt-3" aria-label="Perluasan radius seluruh berkas"><summary className="text-sm font-medium">Perluasan radius seluruh berkas</summary>
+      {!canWrite && <p className="text-xs text-ui-muted">Perluasan radius hanya tersedia untuk admin dan analis. Auditor dapat mengubah filter hingga batas radius tersimpan atau melihat versi pemeriksaan yang tersedia.</p>}
+      {canWrite && <details open={expansionOpen} onToggle={(event) => setExpansionOpen(event.currentTarget.open)} className="space-y-2 border-t border-ui-border pt-3" aria-label="Perluasan radius seluruh berkas"><summary className="text-sm font-medium">Perluasan radius seluruh berkas</summary>
         <p className="text-xs text-ui-muted">Radius lebih besar menjalankan pemeriksaan baru untuk seluruh berkas dan menyimpan versi baru.{historical ? " Buka versi terbaru untuk menjalankan perluasan." : partial ? " Selesaikan pemeriksaan aktif terlebih dahulu." : ""}</p>
         <fieldset disabled={!scopeReady} className="grid gap-3 sm:grid-cols-[minmax(160px,1fr)_auto]">
           <label className="flex flex-col gap-1 text-xs font-semibold">Radius perluasan (meter)<input aria-label="Radius perluasan (meter)" type="number" min={latestRadius ?? 0} max="100000" step="any" value={expansionChoice} placeholder={latestRadius === undefined ? "Radius baru" : `Lebih dari ${latestRadius} m`} onChange={(event) => updateView({ expansion_radius_meters: event.target.value })} disabled={historical || expansionBlocked || expand.isPending || choose.isPending} className={control} /></label>
@@ -239,7 +257,7 @@ function MapWorkspace({ kind, batchParam, processParam, generationParam, params,
           <button type="button" aria-busy={expand.isPending || waitingForExpansion} disabled={choose.isPending || expand.isPending || !validExpansion || !run || historical || expansionBlocked || !actor.trim()} onClick={() => { setNotice(""); expand.mutate(); }} className={`${buttonClass.primary} self-end`}>{expand.isPending || waitingForExpansion ? <><LoaderCircle size={16} className="animate-spin" />Memproses pencarian…</> : "Perluas pemeriksaan dan tampilkan kandidat"}</button>
         </fieldset>
         {expansionChoice !== "" && !validExpansion && <p role="alert" className="text-xs text-red-700">Radius perluasan harus lebih dari {latestRadius} m dan paling besar 100.000 m.</p>}
-      </details>
+      </details>}
       {(expand.error || choose.error) && <p role="alert" className="text-sm text-red-700">{message(expand.error || choose.error)}</p>}
       {notice && <p role="status" className="border border-green-700 bg-green-50 p-3 text-sm">{notice}</p>}
 </section>
@@ -281,8 +299,11 @@ function MapWorkspace({ kind, batchParam, processParam, generationParam, params,
       {active.search_status === "invalid_data" && <p className="text-sm text-amber-900">Data target perlu diperbaiki sebelum kandidat dapat ditampilkan. Tinjau rincian pada Data Koreksi.</p>}
       {active.warnings.length > 0 && <p className="text-sm text-amber-900">Koordinat sama dengan baris PDPJ; periksa bukti identitas dan detail sumber sebelum memilih.</p>}
       {choice.isError && <p role="alert" className="text-sm text-red-700">{message(choice.error)}</p>}
-      {choice.data?.current?.candidate_id && <div className="space-y-2 border border-green-700 bg-green-50 p-3 text-sm"><p className="font-semibold">Pilihan aktif: {displayValue(selectedChoice?.fields?.idpel)} · {selectedChoice?.distance_meters?.toFixed(2)} m</p><p>Dipilih oleh {choice.data.current.actor} · Versi pencarian {choice.data.current.generation}. Pilihan ini tetap disimpan ketika radius berubah.</p><details><summary className="cursor-pointer font-semibold">Detail pilihan aktif</summary><Fields fields={selectedChoice?.fields ?? {}} /></details><button disabled={!canChoose} className={button} onClick={() => choose.mutate(null)}>Batalkan pilihan</button></div>}
-      <label className="flex flex-col gap-1 text-xs font-semibold">Alasan perubahan pilihan<textarea aria-label="Alasan perubahan pilihan" disabled={choose.isPending} placeholder="Wajib untuk mengganti atau membatalkan pilihan" maxLength={1000} value={reason} onChange={(event) => setReason(event.target.value)} className={control} /></label>
+      {choice.data?.current?.candidate_id && <div className="space-y-2 border border-green-700 bg-green-50 p-3 text-sm"><p className="font-semibold">Pilihan aktif: {displayValue(selectedChoice?.fields?.idpel)} · {selectedChoice?.distance_meters?.toFixed(2)} m</p><p>Dipilih oleh {choice.data.current.actor} · Versi pencarian {choice.data.current.generation}. Pilihan ini tetap disimpan ketika radius berubah.</p><details><summary className="cursor-pointer font-semibold">Detail pilihan aktif</summary><Fields fields={selectedChoice?.fields ?? {}} /></details>{canWrite && <button disabled={!canChoose} className={button} onClick={() => choose.mutate(null)}>Batalkan pilihan</button>}</div>}
+      {suggestedCandidate && choice.data?.current?.candidate_id !== suggestedCandidate.id && <p role="status" className="rounded-lg bg-amber-50 p-3 text-sm text-amber-950">Usulan IDPEL {displayValue(suggestedCandidate.fields.idpel)} untuk target ini masih perlu verifikasi identitas. Isi dasar verifikasi pada alasan perubahan sebelum memilih kandidat.</p>}
+      {suggestedIdpel && !suggestedCandidate && !candidateQuery.isFetching && <p role="status" className="rounded-lg bg-amber-50 p-3 text-sm text-amber-950">Usulan lanjutan IDPEL {suggestedIdpel} belum tersedia pada kandidat dalam radius ini. Tinjau perluasan pemeriksaan dan verifikasi identitas sebelum menyimpan pilihan.</p>}
+      {(suggestedCandidate || suggestedIdpel) && <Link to={`/koreksi/pemilihan-otomatis?category=${kind}&batch_id=${batch}&process_id=${process}&generation=${generation}&radius_meters=${displayRadius}&tie_strategy=suggest`} className="inline-block text-xs font-semibold underline">Kembali ke usulan pasangan</Link>}
+      {canWrite && <label className="flex flex-col gap-1 text-xs font-semibold">Alasan perubahan pilihan<textarea aria-label="Alasan perubahan pilihan" disabled={choose.isPending} placeholder="Wajib untuk mengganti atau membatalkan pilihan" maxLength={1000} value={reason} onChange={(event) => setReason(event.target.value)} className={control} /></label>}
       {choice.data && choice.data.history.length > 0 && <details><summary className="cursor-pointer text-xs font-semibold">Riwayat pilihan ({choice.data.history.length})</summary><ol className="mt-3 space-y-3">{choice.data.history.map((event) => <li key={event.id} className="border p-3 text-xs"><p>Revisi {event.revision} · {event.actor} · {new Date(event.created_at + "Z").toLocaleString("id-ID")}</p><p>{event.candidate_id ? `IDPEL ${displayValue(event.candidate.fields?.idpel)} · ${event.candidate.distance_meters?.toFixed(2)} m` : "Pilihan dibatalkan"} · Versi {event.generation}</p><p>{event.reason}</p></li>)}</ol></details>}
     </section>}
     {requested && requested.id === selected && <section className={panel} aria-label="Kandidat target peta" aria-busy={targetLoading || candidateQuery.isFetching || readSearchBlocked}>
@@ -293,7 +314,7 @@ function MapWorkspace({ kind, batchParam, processParam, generationParam, params,
         : candidateQuery.isError ? <p role="alert" className="text-sm text-red-700">{message(candidateQuery.error)} <button type="button" onClick={() => void candidateQuery.refetch()} className={button}>Coba lagi kandidat</button></p>
         : candidateQuery.isSuccess && !candidates.length ? <p className="text-sm">Tidak ada kandidat dalam radius ini.</p> : null}
       {active && candidateQuery.isSuccess && !targetLoading && !readSearchBlocked && <p className="text-xs">{candidates.length} kandidat tersimpan. Jarak dihitung dari koordinat target sebelum koreksi.</p>}
-      <div className="grid gap-3">{visibleCandidates.map((candidate) => <CandidateCard key={candidate.id} candidate={candidate} selected={choice.data?.current?.candidate_id === candidate.id} disabled={!canChoose || !candidates.some((item) => item.id === candidate.id)} choose={() => choose.mutate(candidate.id)} />)}</div>
+      <div className="grid gap-3">{visibleCandidates.map((candidate) => <CandidateCard key={candidate.id} candidate={candidate} selected={choice.data?.current?.candidate_id === candidate.id} readOnly={!canWrite} disabled={!canChoose || !candidates.some((item) => item.id === candidate.id)} choose={() => choose.mutate(candidate.id)} />)}</div>
       <div className="flex flex-wrap items-center justify-between gap-3 text-xs"><span>Halaman kandidat {activeCandidatePage} dari {candidatePages}</span><div className="flex gap-3"><button className={button} disabled={activeCandidatePage <= 1} onClick={() => setCandidatePage(activeCandidatePage - 1)}>Kandidat sebelumnya</button><button className={button} disabled={activeCandidatePage >= candidatePages} onClick={() => setCandidatePage(activeCandidatePage + 1)}>Kandidat berikutnya</button></div></div>
     </section>}
       </aside>
@@ -312,6 +333,6 @@ function Fields({ fields }: { fields: CorrectionCandidate["fields"] }) {
   return <dl className="mt-3 grid gap-2 sm:grid-cols-2">{PDPJ_FIELDS.filter((field) => fields[field.key] !== undefined && fields[field.key] !== null && fields[field.key] !== "").map((field) => <div key={field.key} className="min-w-0 text-xs"><dt className="font-semibold">{field.label}</dt><dd className="break-words">{displayValue(fields[field.key])}</dd></div>)}</dl>;
 }
 
-function CandidateCard({ candidate, selected, disabled, choose }: { candidate: CorrectionCandidate; selected: boolean; disabled: boolean; choose: () => void }) {
-  return <article id={`candidate-${candidate.id}`} tabIndex={-1} className={`space-y-3 rounded-lg border p-4 focus:ring-2 focus:ring-blue-500 ${selected ? "border-green-700 bg-green-50" : "border-ui-border"}`} aria-label={`Kandidat peta ${candidate.rank}`}><h3 className="text-sm font-semibold">Kandidat {candidate.rank} · {displayValue(candidate.fields.idpel)}</h3><p className="text-sm">{displayValue(candidate.fields.nama)} · <strong>{candidate.distance_meters.toFixed(2)} m</strong></p><p className="font-mono text-xs text-ui-muted">{displayValue(candidate.fields.lat)}, {displayValue(candidate.fields.lon)}</p><details><summary className="text-xs font-medium">Detail kandidat</summary><Fields fields={candidate.fields} /></details><CandidateCoordinateSource fields={candidate.fields} /><details><summary className="cursor-pointer text-xs font-semibold">Sumber kandidat ({candidate.observations.length})</summary>{candidate.observations.map((source, index) => <div key={index} className="mt-3 border p-3 text-xs"><p className="font-semibold">{source.dataset_type} · {source.filename} · Baris {source.row_number}</p><p>{source.source_sheet}</p><Fields fields={source.fields} /></div>)}</details><button type="button" disabled={disabled || selected} onClick={choose} className={selected ? buttonClass.success : buttonClass.primary}>{selected ? "Kandidat terpilih" : `Pilih kandidat ${candidate.rank}`}</button></article>;
+function CandidateCard({ candidate, selected, disabled, choose, readOnly }: { candidate: CorrectionCandidate; selected: boolean; disabled: boolean; choose: () => void; readOnly: boolean }) {
+  return <article id={`candidate-${candidate.id}`} tabIndex={-1} className={`space-y-3 rounded-lg border p-4 focus:ring-2 focus:ring-blue-500 ${selected ? "border-green-700 bg-green-50" : "border-ui-border"}`} aria-label={`Kandidat peta ${candidate.rank}`}><h3 className="text-sm font-semibold">Kandidat {candidate.rank} · {displayValue(candidate.fields.idpel)}</h3><p className="text-sm">{displayValue(candidate.fields.nama)} · <strong>{candidate.distance_meters.toFixed(2)} m</strong></p><p className="font-mono text-xs text-ui-muted">{displayValue(candidate.fields.lat)}, {displayValue(candidate.fields.lon)}</p><details><summary className="text-xs font-medium">Detail kandidat</summary><Fields fields={candidate.fields} /></details><CandidateCoordinateSource fields={candidate.fields} /><details><summary className="cursor-pointer text-xs font-semibold">Sumber kandidat ({candidate.observations.length})</summary>{candidate.observations.map((source, index) => <div key={index} className="mt-3 border p-3 text-xs"><p className="font-semibold">{source.dataset_type} · {source.filename} · Baris {source.row_number}</p><p>{source.source_sheet}</p><Fields fields={source.fields} /></div>)}</details>{!readOnly && <button type="button" disabled={disabled || selected} onClick={choose} className={selected ? buttonClass.success : buttonClass.primary}>{selected ? "Kandidat terpilih" : `Pilih kandidat ${candidate.rank}`}</button>}</article>;
 }

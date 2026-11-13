@@ -1,5 +1,6 @@
 """Read saved correction choices, including partial runs and earlier search versions."""
 
+import math
 from typing import Annotated, Any, Literal
 
 from app.database import get_db
@@ -12,6 +13,7 @@ from app.models.matching import (
     ReconciliationProcess,
 )
 from app.models.upload import SourceRecord, UploadBatch
+from app.modules.corrections.candidate_scope import candidate_scope
 from app.modules.corrections.decisions import decision_info
 from app.modules.corrections.export_data import (
     coordinate_sources,
@@ -21,6 +23,8 @@ from app.modules.corrections.export_data import (
 )
 from app.modules.corrections.service import CorrectionKind, check_process
 from app.modules.corrections.spreadsheet import (
+    CANDIDATE_DISTANCE_HEADER,
+    DISTANCE_NUMBER_FORMAT,
     RESULT_HEADERS,
     RESULT_WIDTHS,
     Spreadsheet,
@@ -133,6 +137,7 @@ def results_summary(
         "pdpj_review_id": check.pdpj_review_id,
         "generation": run.generation,
         "radius_meters": run.radius_meters,
+        "automatic_extension": (run.processing or {}).get("automatic_extension"),
         "matching_status": run.status.value,
         "review_status": process.review_status.value,
         "processing_state": (run.processing or {}).get("state", run.status.value),
@@ -147,7 +152,7 @@ def results_summary(
         "not_selected": max(0, total - chosen),
         "decision_events": events,
         "total_candidates": db.query(MatchCandidate.id)
-        .filter_by(process_id=process_id, generation=run.generation)
+        .filter(candidate_scope(run))
         .count(),
         "valid_count": chosen,
         "rejected_count": 0,
@@ -162,6 +167,7 @@ def result_query(
     run: MatchingRun,
     q: str,
     status: ResultFilter,
+    radius_meters: float | None = None,
 ) -> OrmQuery[Any]:
     latest = latest_decisions(db, process.id, run.generation)
     query = (
@@ -193,11 +199,26 @@ def result_query(
         )
     elif status == "not_processed":
         query = query.filter(CorrectionTarget.id.is_(None))
+    if radius_meters is not None:
+        query = query.filter(
+            or_(
+                CorrectionDecision.candidate_id.is_(None),
+                CorrectionDecision.candidate["distance_meters"].as_float()
+                <= radius_meters,
+            )
+        )
     if q.strip():
-        query = query.filter(search_candidates(db, (
-            ("source", SourceRecord.id), ("target", CorrectionTarget.id),
-            ("decision", CorrectionDecision.id),
-        ), q))
+        query = query.filter(
+            search_candidates(
+                db,
+                (
+                    ("source", SourceRecord.id),
+                    ("target", CorrectionTarget.id),
+                    ("decision", CorrectionDecision.id),
+                ),
+                q,
+            )
+        )
         pattern = (
             "%"
             + q.strip().replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
@@ -268,8 +289,10 @@ def saved_results(
     status: ResultFilter = "selected",
     skip: int = Query(0, ge=0),
     limit: int = Query(25, ge=1, le=100),
+    radius_meters: float | None = Query(None, gt=0, le=100000),
 ) -> dict[str, Any]:
     _, process, run = result_scope(db, kind, process_id, generation)
+    radius = export_radius(run, radius_meters)
     if q.strip():
         state = prepare_search(db, ("source", "target", "decision"))
         if state and not state["ready"]:
@@ -277,7 +300,7 @@ def saved_results(
                 **pending_search(state),
                 "summary": results_summary(db, kind, process_id, run.generation),
             }
-    query = result_query(db, process, run, q, status)
+    query = result_query(db, process, run, q, status, radius)
     total = query.count()
     batch = db.get(UploadBatch, process.target_batch_id)
     assert batch is not None
@@ -349,6 +372,15 @@ def export_info(
         ["Radius pemeriksaan (meter)", run.radius_meters],
         ["Status pemeriksaan", run.status.value],
         ["Cakupan ekspor", scope],
+        ["objectid", "OBJECTID asli dari data target; kosong jika tidak tersedia."],
+        [
+            "radius_pemeriksaan_meter",
+            "Radius filter ekspor hasil. Pada riwayat, radius pemeriksaan saat pilihan disimpan.",
+        ],
+        [
+            CANDIDATE_DISTANCE_HEADER,
+            "Jarak aktual dalam meter, ditampilkan dua angka desimal dan satuan m. Nilai angka asli tetap disimpan; kosong tanpa pilihan aktif.",
+        ],
         [
             "noagenda",
             "Nilai dari data target; kosong jika sumber tidak mengisinya.",
@@ -391,11 +423,25 @@ def export_info(
 
 
 def radius_filename(
-    prefix: str, kind: CorrectionKind, process_id: int, run: MatchingRun
+    prefix: str,
+    kind: CorrectionKind,
+    process_id: int,
+    run: MatchingRun,
+    radius_meters: float | None = None,
 ) -> str:
-    radius = float(run.radius_meters)
+    radius = float(run.radius_meters if radius_meters is None else radius_meters)
     label = (str(int(radius)) if radius.is_integer() else str(radius)).replace(".", "_")
     return f"{prefix}_koreksi_{kind.value}_{process_id}_radius_{label}m_v{run.generation}.xlsx"
+
+
+def export_radius(run: MatchingRun, requested: float | None) -> float:
+    radius = float(run.radius_meters if requested is None else requested)
+    if not math.isfinite(radius) or radius <= 0 or radius > run.radius_meters:
+        raise HTTPException(
+            422,
+            f"Radius ekspor harus lebih dari 0 dan maksimal {run.radius_meters:g} meter sesuai versi pemeriksaan",
+        )
+    return radius
 
 
 def evidence_sheet(book: Spreadsheet) -> Any:
@@ -453,14 +499,21 @@ def export_results(
     generation: int | None = None,
     q: str = "",
     status: ResultFilter = "selected",
+    radius_meters: float | None = None,
 ) -> StreamingResponse:
     _, process, run = result_scope(db, kind, process_id, generation)
+    radius = export_radius(run, radius_meters)
     batch = db.get(UploadBatch, process.target_batch_id)
     assert batch is not None
     book = Spreadsheet()
-    main = book.sheet("Hasil Koreksi", RESULT_HEADERS, RESULT_WIDTHS)
+    main = book.sheet(
+        "Hasil Koreksi",
+        RESULT_HEADERS,
+        RESULT_WIDTHS,
+        number_formats={CANDIDATE_DISTANCE_HEADER: DISTANCE_NUMBER_FORMAT},
+    )
     for source, outcome, decision in (
-        result_query(db, process, run, q, status)
+        result_query(db, process, run, q, status, radius)
         .options(undefer(SourceRecord.data))
         .order_by(SourceRecord.id)
         .yield_per(200)
@@ -470,9 +523,12 @@ def export_results(
             decision.candidate if decision and decision.candidate_id is not None else {}
         )
         book.append(
-            main, result_columns(source, batch, item["target_fields"], candidate)
+            main,
+            result_columns(
+                source, batch, item["target_fields"], candidate, radius_meters=radius
+            ),
         )
-    return book.response(radius_filename("hasil", kind, process_id, run))
+    return book.response(radius_filename("hasil", kind, process_id, run, radius))
 
 
 @router.get("/{kind}/checks/{process_id}/results/history/export")
@@ -518,6 +574,7 @@ def download_history(
             "radius_pilihan_meter",
         ],
         [*RESULT_WIDTHS, 18, 22, 24, 18, 18, 28, 30, 60, 22],
+        number_formats={CANDIDATE_DISTANCE_HEADER: DISTANCE_NUMBER_FORMAT},
     )
     evidence = evidence_sheet(book)
     for decision, source in query.order_by(
@@ -527,7 +584,13 @@ def download_history(
         book.append(
             main,
             [
-                *result_columns(source, batch, decision.target_fields, candidate),
+                *result_columns(
+                    source,
+                    batch,
+                    decision.target_fields,
+                    candidate,
+                    radius_meters=choice_radii.get(decision.generation),
+                ),
                 source.row_number,
                 text(decision.target_fields.get("idpel")),
                 "Kandidat dipilih"
@@ -565,5 +628,6 @@ def download_results(
     generation: int | None = Query(None, ge=1),
     q: str = Query("", max_length=120),
     status: ResultFilter = "selected",
+    radius_meters: float | None = Query(None, gt=0, le=100000),
 ) -> StreamingResponse:
-    return export_results(db, kind, process_id, generation, q, status)
+    return export_results(db, kind, process_id, generation, q, status, radius_meters)

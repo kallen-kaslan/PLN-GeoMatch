@@ -1,3 +1,4 @@
+import { usePermissions } from "@/hooks/usePermissions";
 import { Link, useLocation } from "react-router-dom";
 import { useEffect, useRef, useState, Fragment } from "react";
 import {
@@ -44,6 +45,7 @@ const menu: Item[] = [
     children: [
       { to: "/koreksi/idpel-tidak-ketemu", label: "IDPEL Tidak Ketemu" },
       { to: "/koreksi/idpel-kosong", label: "IDPEL Kosong" },
+      { to: "/koreksi/pemilihan-otomatis", label: "Pemilihan Otomatis" },
     ],
   },
   { to: "/peta-koreksi", label: "Peta Koreksi", icon: Map, group: "Pemeriksaan" },
@@ -105,6 +107,7 @@ function NavigationItem({ item, collapsed }: { item: Item; collapsed: boolean })
 
 export default function Sidebar() {
   const { user, isMobileMenuOpen, setIsMobileMenuOpen, isSidebarCollapsed } = useAppStore();
+  const { canWrite } = usePermissions();
   const { pathname } = useLocation();
   const dialog = useRef<HTMLDialogElement>(null);
 
@@ -135,7 +138,7 @@ export default function Sidebar() {
 
   const navigation = (collapsed: boolean) => (
     <nav className="min-h-0 flex-1 space-y-1 overflow-y-auto p-3 neo-scrollbar" aria-label="Menu utama">
-      {menu.map((item) => (
+      {menu.filter((item) => canWrite || item.to !== "/process").map((item) => (
         <Fragment key={item.to}>
           {item.group &&
             (!collapsed ? (

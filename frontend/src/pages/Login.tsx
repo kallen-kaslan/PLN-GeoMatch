@@ -22,7 +22,7 @@ function SpatialPanel() {
         <rect width="100%" height="100%" fill="url(#geo-grid)" />
       </svg>
 
-      {/* Lintasan dan node — viewBox tetap, posisi proporsional */}
+      {/* Lintasan dan node â€” viewBox tetap, posisi proporsional */}
       <svg viewBox="0 0 600 800" preserveAspectRatio="xMidYMid slice" className="absolute inset-0 h-full w-full">
         {/* Pulse ring pada focal point */}
         <circle cx="388" cy="322" r="14" fill="none" stroke="#ff6b35" strokeWidth="1.5" className="geo-pulse-ring" />
@@ -60,9 +60,9 @@ function SpatialPanel() {
         </g>
       </svg>
 
-      {/* Label koordinat dekoratif — bukan data pelanggan asli */}
+      {/* Label koordinat dekoratif â€” bukan data pelanggan asli */}
       <span className="geo-coord-label absolute right-[16%] top-[36%] font-mono text-[10px] tracking-wider text-neo-accent/80">-6.2088, 106.8456</span>
-      <span className="geo-coord-label geo-coord-alt absolute bottom-[34%] left-[18%] font-mono text-[10px] tracking-wider text-white/40">R=150m · Δ 4.2m</span>
+      <span className="geo-coord-label geo-coord-alt absolute bottom-[34%] left-[18%] font-mono text-[10px] tracking-wider text-white/40">R=150m Â· Î” 4.2m</span>
 
       {/* Branding */}
       <div className="relative z-10 p-10 xl:p-14">
@@ -140,7 +140,7 @@ function RightSpatialBackground() {
           -6.2104, 106.8482
         </text>
         <text x="202" y="564" fill="#111111" fillOpacity="0.28" fontSize="9" fontFamily="IBM Plex Mono, monospace" letterSpacing="0.05em">
-          ZONE 48S · ELEV 18M
+          ZONE 48S Â· ELEV 18M
         </text>
       </svg>
     </div>
@@ -156,7 +156,13 @@ export default function LoginPage() {
   const navigate = useNavigate();
   const location = useLocation();
   const { login, authStatus, authNotice } = useAppStore();
-  const from = (location.state as any)?.from || "/";
+  // Shell stores the original Location object in state.from; accept it, else a safe internal path string.
+  const requested = location.state?.from;
+  const from = requested && typeof requested === "object"
+    ? requested
+    : typeof requested === "string" && requested.startsWith("/") && !requested.startsWith("//") && !requested.startsWith("/login")
+      ? requested
+      : "/";
 
   const ambientCanvasRef = useRef<HTMLCanvasElement>(null);
 
@@ -268,9 +274,11 @@ export default function LoginPage() {
 
     try {
       await login(username.trim(), password);
+      setPassword("");
       navigate(from, { replace: true });
     } catch (err) {
       setError((err as ApiError).message || "Login gagal. Periksa kembali kredensial Anda.");
+      setPassword("");
     } finally {
       setLoading(false);
     }
@@ -283,7 +291,7 @@ export default function LoginPage() {
       <canvas ref={ambientCanvasRef} aria-hidden="true" className="auth-ambient-canvas" />
       <SpatialPanel />
 
-      {/* Header branding versi mobile/tablet — ringkas, selaras dengan dark panel */}
+      {/* Header branding versi mobile/tablet â€” ringkas, selaras dengan dark panel */}
       <header className="border-b-2 border-neo-black bg-[#111111] px-4 py-5 lg:hidden">
         <p className="font-mono text-[10px] font-bold uppercase tracking-[0.3em] text-neo-accent">PLN GeoMatch</p>
         <h1 className="mt-1.5 text-lg font-black tracking-tight text-neo-white">Verifikasi Koordinat Pelanggan</h1>

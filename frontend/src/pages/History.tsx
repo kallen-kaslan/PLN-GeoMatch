@@ -1,3 +1,4 @@
+import { usePermissions } from "@/hooks/usePermissions";
 import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useSearchParams } from "react-router-dom";
@@ -11,6 +12,7 @@ import { History, RotateCw, Trash2, ExternalLink, FileSpreadsheet, MapPin } from
 
 export default function HistoryPage() {
   const queryClient = useQueryClient();
+  const { canDelete } = usePermissions();
   const [params, setParams] = useSearchParams();
   const history = useQuery({ queryKey: ["process-history"], queryFn: ({ signal }) => resultsApi.processes(signal), refetchInterval: 5000 });
   const processes = history.data ?? [];
@@ -85,7 +87,7 @@ export default function HistoryPage() {
           </p>
         </div>
         <div className="flex flex-wrap items-center gap-2">
-          {processes.length > 0 && (
+          {canDelete && processes.length > 0 && (
             <button
               onClick={handleClearAll}
               disabled={clearingAll || loading}
@@ -199,14 +201,14 @@ export default function HistoryPage() {
                   </Link>
                   <button type="button" aria-label={`Unduh hasil XLSX proses ${p.id}`} disabled={download.isPending || (p.category !== undefined && !p.chosen_count)} onClick={() => download.mutate(p)} className="rounded border border-ui-border bg-white px-2 py-2 text-xs font-semibold disabled:opacity-50">{download.isPending && download.variables?.id === p.id ? "Menyiapkan..." : "XLSX"}</button>
                   {p.category && <button type="button" onClick={() => setParams({ process_id: String(p.id) })} className="text-xs font-semibold underline">Riwayat pilihan</button>}
-                  <button
+                  {canDelete && <button
                     onClick={() => handleDeleteProcess(p.id, p.process_name)}
                     disabled={deletingId === p.id}
                     className="touch-min w-11 h-10 flex items-center justify-center border border-[#dc2626] rounded text-[#dc2626] bg-white hover:bg-[#fee2e2]   disabled:opacity-50"
                     title="Hapus riwayat proses ini"
                   >
                     <Trash2 className="w-4 h-4" />
-                  </button>
+                  </button>}
                 </div>
               </div>
             ))}
@@ -269,14 +271,14 @@ export default function HistoryPage() {
                         </Link>
                         <button type="button" aria-label={`Unduh hasil XLSX proses ${p.id}`} disabled={download.isPending || (p.category !== undefined && !p.chosen_count)} onClick={() => download.mutate(p)} className="rounded border border-ui-border bg-white px-2 py-2 text-xs font-semibold disabled:opacity-50">{download.isPending && download.variables?.id === p.id ? "Menyiapkan..." : "XLSX"}</button>
                   {p.category && <button type="button" onClick={() => setParams({ process_id: String(p.id) })} className="text-xs font-semibold underline">Riwayat pilihan</button>}
-                        <button
+                        {canDelete && <button
                           onClick={() => handleDeleteProcess(p.id, p.process_name)}
                           disabled={deletingId === p.id}
                           className="p-1.5 min-h-[34px] min-w-[34px] flex items-center justify-center border border-[#dc2626] rounded text-xs font-semibold text-[#dc2626] bg-white hover:bg-[#fee2e2]  disabled:opacity-50"
                           title="Hapus riwayat proses ini"
                         >
                           {deletingId === p.id ? "..." : <Trash2 className="w-3.5 h-3.5" />}
-                        </button>
+                        </button>}
                       </div>
                     </td>
                   </tr>

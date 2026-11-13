@@ -11,6 +11,7 @@ from openpyxl import Workbook, load_workbook
 from sqlalchemy.orm import Session
 
 from tests.test_correction_map import body
+from tests.test_corrections import reference as reference  # noqa: PLC0414 -- Re-export shared pytest fixture.
 from tests.test_corrections import upload
 
 
@@ -18,6 +19,98 @@ def sheet_rows(book, name: str) -> list[dict]:
     rows = iter(book[name].values)
     headers = next(rows)
     return [dict(zip(headers, row)) for row in rows]
+
+
+@pytest.mark.parametrize("kind", ["idpel_kosong", "idpel_tidak_ketemu"])
+def test_export_keeps_original_objectid_and_applies_filter_radius_to_saved_choices(
+    client: TestClient,
+    db_session: Session,
+    reference: int,
+    kind: str,
+) -> None:
+    batch = upload(
+        client,
+        kind,
+        "OBJECT_ID,IDPEL,NAMA,LAT,LON\n"
+        + f"000017,{'' if kind == 'idpel_kosong' else '777'},Near,-6.2,106.8\n"
+        + f"000018,{'' if kind == 'idpel_kosong' else '778'},Far,-6.2,106.8\n",
+    )
+    response = client.post(
+        f"/corrections/{kind}/checks",
+        json={
+            "batch_id": batch,
+            "pdpj_review_id": reference,
+            "radius_meters": 250,
+            "actor": "Petugas",
+            "request_key": "radius_export_check",
+        },
+    )
+    assert response.status_code == 200, response.text
+    check = response.json()
+    base = f"/corrections/{kind}/checks/{check['process_id']}"
+    rows = client.get(
+        f"/corrections/{kind}/records", params={"process_id": check["process_id"]}
+    ).json()["items"]
+    saved_distances = []
+    for row, identity in zip(rows, ("002", "020")):
+        candidates = client.get(
+            f"/corrections/{kind}/records/{row['id']}",
+            params={"process_id": check["process_id"]},
+        ).json()["candidates"]
+        chosen = next(
+            item for item in candidates if item["fields"]["idpel"] == identity
+        )
+        saved_distances.append(chosen["distance_meters"])
+        response = client.post(
+            base + f"/records/{row['id']}/choice",
+            json=body(chosen["id"], key=f"radius_choice_{row['id']}"),
+        )
+        assert response.status_code == 200, response.text
+    assert saved_distances[0] <= 50 < saved_distances[1] < 250
+    for url in (base + "/results/export", f"/process/{check['process_id']}/export"):
+        exported = client.get(url, params={"radius_meters": 50})
+        assert exported.status_code == 200, exported.text
+        assert "radius_50m_v1.xlsx" in exported.headers["content-disposition"]
+        book = load_workbook(io.BytesIO(exported.content))
+        result = sheet_rows(book, "Hasil Koreksi")
+        assert len(result) == 1
+        assert result[0]["objectid"] == "000017"
+        assert book["Hasil Koreksi"]["A2"].data_type == "s"
+        assert result[0]["idpelanggan"] == "002"
+        assert result[0]["radius_pemeriksaan_meter"] == 50
+        assert result[0]["Jarak Kandidat (m)"] == pytest.approx(saved_distances[0])
+        assert book["Hasil Koreksi"]["L2"].data_type == "n"
+        assert book["Hasil Koreksi"]["L2"].number_format == '0.00" m"'
+        book.close()
+    filtered = client.get(base + "/results", params={"radius_meters": 50}).json()
+    assert filtered["total"] == 1 and filtered["summary"]["chosen_count"] == 2
+    unfiltered = client.get(base + "/results/export")
+    book = load_workbook(io.BytesIO(unfiltered.content))
+    full = sheet_rows(book, "Hasil Koreksi")
+    assert [row["objectid"] for row in full] == ["000017", "000018"]
+    assert all(row["radius_pemeriksaan_meter"] == 250 for row in full)
+    assert full[1]["Jarak Kandidat (m)"] == pytest.approx(saved_distances[1])
+    assert book["Hasil Koreksi"]["L3"].number_format == '0.00" m"'
+    book.close()
+    # Filtering is read-only: decisions and their original evidence remain intact.
+    assert db_session.query(CorrectionDecision).count() == 2
+    book = load_workbook(
+        io.BytesIO(client.get(base + "/results/history/export").content)
+    )
+    assert all(
+        row["radius_pemeriksaan_meter"] == 250
+        for row in sheet_rows(book, "Riwayat Pilihan")
+    )
+    assert book["Riwayat Pilihan"]["L2"].number_format == '0.00" m"'
+    assert book["Riwayat Pilihan"]["L2"].data_type == "n"
+    book.close()
+    for invalid in (0, -1, 251, "nan", "inf"):
+        assert (
+            client.get(
+                base + "/results/export", params={"radius_meters": invalid}
+            ).status_code
+            == 422
+        )
 
 
 @pytest.fixture(params=["idpel_kosong", "idpel_tidak_ketemu"])
@@ -176,6 +269,7 @@ def test_partial_choice_appears_in_results_history_and_xlsx_without_changing_sou
         sheet = book["Hasil Koreksi"]
         assert list(next(sheet.values)) == RESULT_HEADERS
         assert RESULT_HEADERS == [
+            "objectid",
             "noagenda",
             "idpelanggan",
             "jenispelanggan",
@@ -185,10 +279,17 @@ def test_partial_choice_appears_in_results_history_and_xlsx_without_changing_sou
             "sel (baris ke berapa)",
             "x_akhir",
             "y_akhir",
+            "radius_pemeriksaan_meter",
+            "Jarak Kandidat (m)",
         ]
         exported = sheet_rows(book, "Hasil Koreksi")
         assert len(exported) == 1
         row = exported[0]
+        assert row["objectid"] is None
+        assert row["radius_pemeriksaan_meter"] == 10
+        assert row["Jarak Kandidat (m)"] == pytest.approx(
+            selected["current"]["candidate"]["distance_meters"]
+        )
         assert row["idpelanggan"] == "002"
         assert row["noagenda"] == "000AGENDA0"
         assert "verif" not in row
@@ -204,12 +305,12 @@ def test_partial_choice_appears_in_results_history_and_xlsx_without_changing_sou
         assert not sheet["A1"].font.bold
         assert sheet["A1"].fill.patternType is None
         assert sheet["A2"].fill.patternType is None
-        assert sheet.max_column == 9
-        assert sheet["H1"].value == "x_akhir"
-        assert sheet["I1"].value == "y_akhir"
-        assert sheet.column_dimensions["F"].width >= 50
-        assert sheet["B2"].data_type == "s" and sheet["B2"].number_format == "@"
-        assert sheet["E2"].data_type == "s"
+        assert sheet.max_column == 12
+        assert sheet["I1"].value == "x_akhir"
+        assert sheet["J1"].value == "y_akhir"
+        assert sheet.column_dimensions["G"].width >= 50
+        assert sheet["C2"].data_type == "s" and sheet["C2"].number_format == "@"
+        assert sheet["F2"].data_type == "s"
         book.close()
     assert db_session.get(SourceRecord, partial["record"]).data == source_before
     wrong = (
@@ -283,6 +384,7 @@ def test_replacement_cancellation_filters_and_history_are_not_counted_as_extra_c
     assert history[0]["status"] == "Pilihan dibatalkan"
     assert history[0]["x_akhir"] is None
     assert history[0]["y_akhir"] is None
+    assert history[0]["Jarak Kandidat (m)"] is None
     assert history[0]["sumber file (sheet)"] is None
     book.close()
 

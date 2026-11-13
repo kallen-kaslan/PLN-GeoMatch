@@ -2,10 +2,6 @@ import csv
 import io
 from typing import Annotated, Literal
 
-from fastapi import APIRouter, Depends, HTTPException, Query, Response
-from sqlalchemy.exc import SQLAlchemyError
-from sqlalchemy.orm import Session
-
 from app.database import get_db
 from app.models.correction import CorrectionCheck
 from app.models.matching import MatchCandidate, MatchingRun, ReconciliationProcess
@@ -14,6 +10,9 @@ from app.modules.corrections.service import CorrectionKind
 from app.modules.corrections.spreadsheet import Spreadsheet
 from app.modules.history.deletion import delete_history
 from app.modules.upload.storage import database_write_error
+from fastapi import APIRouter, Depends, HTTPException, Query, Response
+from sqlalchemy.exc import SQLAlchemyError
+from sqlalchemy.orm import Session
 
 DbSession = Annotated[Session, Depends(get_db)]
 
@@ -145,12 +144,17 @@ def export_process_results(
     db: DbSession,
     generation: int | None = Query(None, ge=1),
     format: Literal["csv", "xlsx"] = "csv",
+    radius_meters: float | None = Query(None, gt=0, le=100000),
 ) -> Response:
     """Export categorized results as XLSX; keep legacy CSV callers compatible."""
     check = db.get(CorrectionCheck, process_id)
     if check is not None:
         return export_results(
-            db, CorrectionKind(check.category), process_id, generation
+            db,
+            CorrectionKind(check.category),
+            process_id,
+            generation,
+            radius_meters=radius_meters,
         )
     _, selected, _ = get_process_generation(db, process_id, generation)
     candidates = (

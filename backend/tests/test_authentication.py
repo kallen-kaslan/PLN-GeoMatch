@@ -68,6 +68,15 @@ def add_user(client, username="analis", role="analis"):
         ("GET", "/admin/users"),
         ("GET", "/auth/me"),
         ("POST", "/upload/progress"),
+        ("POST", "/corrections/idpel_kosong/checks/1/automatic/preview"),
+        ("POST", "/corrections/idpel_kosong/checks/1/automatic/apply"),
+        ("POST", "/corrections/idpel_kosong/checks/1/automatic/complete/preview"),
+        ("POST", "/corrections/idpel_kosong/checks/1/automatic/complete/apply"),
+        ("POST", "/corrections/idpel_kosong/checks/1/automatic/review-groups"),
+        ("POST", "/corrections/idpel_kosong/checks/1/automatic/suggestions/export"),
+        ("POST", "/corrections/idpel_kosong/checks/1/automatic/unpaired-search"),
+        ("POST", "/corrections/idpel_kosong/checks/1/automatic/unpaired-search/export"),
+        ("GET", "/corrections/idpel_kosong/checks/1/records/1/advanced-candidates"),
     ],
 )
 def test_all_data_routes_reject_missing_and_fake_tokens(secured, method, path):
@@ -191,6 +200,8 @@ def test_auditor_read_only_and_password_change_revokes_all_sessions(secured):
     login(client, "audit01", OTHER_PASSWORD)
     assert client.get("/history/processes").status_code == 200
     assert client.post("/pdpj/reviews", json={"batch_id": 1}).status_code == 403
+    for action in ("preview", "apply", "review-groups", "suggestions/export", "unpaired-search", "unpaired-search/export", "complete/preview", "complete/apply"):
+        assert client.post(f"/corrections/idpel_kosong/checks/1/automatic/{action}", json={}).status_code == 403
     old_token = client.cookies[cookie_name()]
     result = client.post(
         "/auth/password",
@@ -203,6 +214,29 @@ def test_auditor_read_only_and_password_change_revokes_all_sessions(secured):
     assert db.query(AuthSession).filter_by(token_hash=digest(old_token)).count() == 0
     assert login(client, "audit01", OTHER_PASSWORD).status_code == 401
     assert login(client, "audit01", "Password auditor baru 774!").status_code == 200
+
+
+def test_auditor_cannot_mutate_any_business_route(secured):
+    import re
+
+    from fastapi.routing import APIRoute
+
+    client, db = secured
+    login(client)
+    add_user(client, "route-auditor", "auditor")
+    login(client, "route-auditor", OTHER_PASSWORD)
+    checked = 0
+    for route in client.app.routes:
+        if not isinstance(route, APIRoute) or route.path.startswith("/auth/"):
+            continue
+        path = re.sub(r"\{[^}]+\}", "1", route.path)
+        for method in route.methods - {"GET", "HEAD", "OPTIONS"}:
+            response = client.request(method, path, json={})
+            assert response.status_code == 403, (method, path, response.text)
+            assert response.json()["detail"] == "Auditor hanya memiliki izin membaca data"
+            checked += 1
+    assert checked > 30
+    assert db.query(User).count() == 2
 
 
 def test_idle_and_absolute_expiration_are_enforced_on_server(secured):

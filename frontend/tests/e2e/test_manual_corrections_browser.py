@@ -68,7 +68,7 @@ def test_manual_point_check_map_choice_and_export(
     assert book.sheetnames == ["Hasil Koreksi"]
     values = list(book.active.values)
     assert len(values) == 2
-    assert len(values[0]) == 9
+    assert len(values[0]) == 12
     result = dict(zip(values[0], values[1]))
     assert result["noagenda"] == "000123"
     assert result["idpelanggan"] == "002"

@@ -1,8 +1,8 @@
+import { usePermissions } from "@/hooks/usePermissions";
 import { MetricCard } from "@/components/data/MetricCard";
 import { useState, useEffect, useRef, useCallback } from "react";
 import { useSearchParams, useNavigate } from "react-router-dom";
 import { api } from "@/lib/api";
-import { useAppStore } from "@/store/app";
 
 declare global {
   interface Window {
@@ -29,10 +29,8 @@ interface Candidate {
 }
 
 export default function CandidatesPage() {
-  const { user } = useAppStore();
-  const isAdmin = user?.role === "admin";
-  const canOperate = user?.role === "admin" || user?.role === "analis";
   const navigate = useNavigate();
+  const { canWrite, canDelete } = usePermissions();
   const [searchParams, setSearchParams] = useSearchParams();
   const processId = searchParams.get("process_id") || "1";
 
@@ -63,6 +61,7 @@ export default function CandidatesPage() {
 
   const handleFinishReview = async () => {
     if (!processId) return;
+    if (!canWrite) { navigate(`/result?process_id=${processId}`); return; }
     setLoading(true);
     try {
       await api.post(`/process/${processId}/finalize-review`);
@@ -376,37 +375,24 @@ export default function CandidatesPage() {
             🔄 Refresh
           </button>
 
-          {isAdmin && (
-            <button
-              onClick={handleReset}
-              disabled={loading}
-              className="touch-min px-3 py-1.5 min-h-[38px] border border-[#dc2626] bg-[#fee2e2] hover:bg-[#fef2f2] text-[#dc2626] text-xs font-semibold rounded-lg  transition  disabled:opacity-50"
-              title="Hapus semua data dan mulai dari awal"
-            >
-              🗑️ Reset
-            </button>
-          )}
+          {canDelete && <button
+            onClick={handleReset}
+            disabled={loading}
+            className="touch-min px-3 py-1.5 min-h-[38px] border border-[#dc2626] bg-[#fee2e2] hover:bg-[#fef2f2] text-[#dc2626] text-xs font-semibold rounded-lg  transition  disabled:opacity-50"
+            title="Hapus semua data dan mulai dari awal"
+          >
+            🗑️ Reset
+          </button>}
 
-          {isAdmin ? (
-            <button
-              onClick={handleFinishReview}
-              disabled={loading}
-              className="touch-min px-4 py-2 min-h-[38px] border border-ui-border bg-neo-accent hover:bg-ui-primary-hover text-white text-xs font-semibold rounded-lg  flex items-center gap-1.5 transition  disabled:opacity-50"
-              title="Selesaikan verifikasi dan lihat rekapitulasi serta download CSV"
-            >
-              <span>✅ Selesai & Buka Hasil</span>
-              <span>→</span>
-            </button>
-          ) : (
-            <button
-              onClick={() => navigate(`/result?process_id=${processId}`)}
-              className="touch-min px-4 py-2 min-h-[38px] border border-ui-border bg-white hover:bg-gray-100 text-xs font-semibold rounded-lg flex items-center gap-1.5 transition"
-              title="Lihat hasil rekonsiliasi yang sudah ada"
-            >
-              <span>📊 Lihat Hasil</span>
-              <span>→</span>
-            </button>
-          )}
+          <button
+            onClick={handleFinishReview}
+            disabled={loading}
+            className="touch-min px-4 py-2 min-h-[38px] border border-ui-border bg-neo-accent hover:bg-ui-primary-hover text-white text-xs font-semibold rounded-lg  flex items-center gap-1.5 transition  disabled:opacity-50"
+            title="Selesaikan verifikasi dan lihat rekapitulasi serta download CSV"
+          >
+            <span>{canWrite ? "✅ Selesai & Buka Hasil" : "Lihat Hasil"}</span>
+            <span>→</span>
+          </button>
         </div>
       </div>
 
@@ -622,7 +608,7 @@ export default function CandidatesPage() {
       </div>
 
       {/* BULK ACTION BUTTON */}
-      {canOperate && candidates.length > 0 && (
+      {canWrite && candidates.length > 0 && (
         <div className="flex justify-end">
           <button
             type="button"
@@ -658,19 +644,19 @@ export default function CandidatesPage() {
             Proses ini belum memiliki data kandidat atau pencocokan belum dijalankan. Anda dapat menjalankan alur data demo secara instan atau upload file baru.
           </p>
           <div className="flex justify-center gap-3 pt-2">
-            <button
+            {canDelete && <button
               onClick={handleQuickDemoHere}
               disabled={seedingQuick}
               className="px-4 py-2 border border-ui-border bg-neo-accent text-white text-xs font-semibold rounded-lg  hover:bg-ui-primary-hover disabled:opacity-50"
             >
               {seedingQuick ? "Memproses Data Demo..." : "⚡ Muat Data Demo Lengkap Langsung"}
-            </button>
-            <button
+            </button>}
+            {canWrite && <button
               onClick={() => navigate("/upload")}
               className="px-4 py-2 border border-ui-border bg-white text-neo-black text-xs font-semibold rounded-lg  hover:bg-slate-100"
             >
               📤 Buka Menu Upload
-            </button>
+            </button>}
           </div>
         </div>
       ) : (
@@ -796,7 +782,7 @@ export default function CandidatesPage() {
                       )}
                     </td>
                     <td className="p-3 text-center" onClick={(e) => e.stopPropagation()}>
-                      {canOperate ? (
+                      {canWrite ? (
                         <div className="flex justify-center items-center gap-1.5">
                           <button
                             onClick={(e) => handleDecision(c.id, 1, e)}
@@ -886,7 +872,7 @@ export default function CandidatesPage() {
             disabled={loading}
             className="touch-min px-5 py-3 min-h-[44px] border border-ui-border bg-ui-primary text-white text-xs sm:text-sm font-semibold rounded-lg  hover:bg-ui-primary-hover transition  disabled:opacity-50 shrink-0 text-center"
           >
-            ✅ Selesaikan Review & Buka Hasil Rekonsiliasi →
+            {canWrite ? "✅ Selesaikan Review & Buka Hasil Rekonsiliasi →" : "Lihat Hasil Rekonsiliasi →"}
           </button>
         </div>
       )}
