@@ -24,7 +24,7 @@ def test_login_logo_intro_responsive_layout_password_visibility_and_sign_in(
     page.context.clear_cookies()
     page.goto("/login")
     form = page.get_by_role("form", name="Form login", exact=True)
-    expect(form).to_be_visible()
+    expect(form).to_be_visible(timeout=10000)
     expect(page.get_by_role("heading", name="Masuk", exact=True)).to_be_visible()
     logo = page.get_by_role("img", name="Logo PLN", exact=True)
     assert logo.evaluate("element => element.complete && element.naturalWidth > 0")
@@ -92,7 +92,7 @@ def test_reduced_motion_and_keyboard_password_control(page):
     page.emulate_media(reduced_motion="reduce")
     page.context.clear_cookies()
     page.goto("/login")
-    expect(page.get_by_role("form", name="Form login", exact=True)).to_be_visible()
+    expect(page.get_by_role("form", name="Form login", exact=True)).to_be_visible(timeout=10000)
     assert (
         page.locator(".auth-card").evaluate("element => element.getAnimations().length")
         == 0
@@ -132,7 +132,8 @@ def test_startup_zoom_settles_into_orbit_and_waits_for_the_real_session(page):
     page.screenshot(path=str(folder / "startup-zoom.png"))
     page.wait_for_function("""() => {
       const mark = document.querySelector('.app-entrance-overlay .auth-splash-mark');
-      return mark && Math.abs(mark.getBoundingClientRect().width - 96) < 1;
+      return mark && Math.abs(mark.getBoundingClientRect().width - 96) < 1
+        && Number(getComputedStyle(mark, '::after').opacity) > .9;
     }""")
     first = mark.evaluate("el => getComputedStyle(el, '::after').transform")
     page.wait_for_timeout(300)
@@ -143,6 +144,6 @@ def test_startup_zoom_settles_into_orbit_and_waits_for_the_real_session(page):
     assert pending
     for request in pending:
         request.continue_()
-    expect(page.get_by_role("form", name="Form login", exact=True)).to_be_visible()
+    expect(page.get_by_role("form", name="Form login", exact=True)).to_be_visible(timeout=10000)
     expect(splash).to_have_count(0)
     assert page.locator(".app-entrance-content").get_attribute("inert") is None

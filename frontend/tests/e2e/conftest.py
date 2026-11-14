@@ -13,11 +13,14 @@ from pathlib import Path
 
 import httpx
 import pytest
-from playwright.sync_api import Browser, Page, sync_playwright
+from playwright.sync_api import Browser, Page, expect, sync_playwright
 
 ROOT = Path(__file__).resolve().parents[3]
 TEST_USERNAME = "test-admin"
 TEST_PASSWORD = "Browser admin password 2026!"
+
+# The startup animation now includes a five-second logo entrance and a fade.
+expect.set_options(timeout=10000)
 
 
 def free_port() -> int:

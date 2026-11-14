@@ -16,14 +16,14 @@ export function AppEntrance({ children }: { children: ReactNode }) {
     return () => media.removeEventListener("change", update);
   }, []);
   useEffect(() => {
-    const timer = window.setTimeout(() => setIntroComplete(true), reducedMotion ? 0 : 2000);
+    const timer = window.setTimeout(() => setIntroComplete(true), reducedMotion ? 0 : 5600);
     return () => window.clearTimeout(timer);
   }, [reducedMotion]);
 
   const revealing = introComplete && !checking;
   useEffect(() => {
     if (!revealing || finished) return;
-    const timer = window.setTimeout(() => setFinished(true), reducedMotion ? 0 : 700);
+    const timer = window.setTimeout(() => setFinished(true), reducedMotion ? 0 : 1100);
     return () => window.clearTimeout(timer);
   }, [revealing, finished, reducedMotion]);
 
